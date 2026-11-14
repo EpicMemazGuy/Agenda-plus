@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Agenda+ • Motion Graphics Promo (115 BPM) - Dual Theme</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Fullscreen Scaled Video Container -->
+  <div class="video-container" id="video-container">
+    <div class="stage-scaler" id="stage">
+
+      <!-- Scanlines, Vignette, and Global Beat Flash -->
+      <div class="stage-overlay">
+        <div class="scanlines"></div>
+        <div class="vignette"></div>
+      </div>
+      <div class="beat-flash" id="beat-flash"></div>
+
+      <!-- ====================================================================
+           SCENE 1: THE MEME HOOK (Bars 1–3: 0.0s – 6.26s / Beats 0–12)
+           ==================================================================== -->
+      <section class="scene active" id="scene-hook">
+        <div class="meme-top-banner">
+          <h1 class="meme-title" id="meme-title">magister in 2026 be like...</h1>
+        </div>
+
+        <!-- Simulated Cluttered Legacy Magister Screen -->
+        <div class="legacy-window" id="legacy-window">
+          <div class="legacy-window-header">
+            <span>Magister 6 • Rooster & Lessen</span>
+            <div class="legacy-nav-dots">
+              <div class="legacy-dot"></div>
+              <div class="legacy-dot"></div>
+              <div class="legacy-dot"></div>
+            </div>
+          </div>
+
+          <div class="legacy-body">
+            <!-- Simulated Loading Spinner -->
+            <div class="legacy-spinner-wrap" id="legacy-spinner">
+              <div class="legacy-spinner"></div>
+              <div class="legacy-spinner-text">Gegevens ophalen van server (12.4s)...</div>
+            </div>
+
+            <div class="legacy-schedule-header">
+              <span class="legacy-date-label">Maandag 16 November</span>
+              <span style="font-size: 18px; color: #64748b;">Klas 4V2 • Leerling 121579</span>
+            </div>
+
+            <table class="legacy-table">
+              <thead>
+                <tr>
+                  <th>Uur</th>
+                  <th>Vak</th>
+                  <th>Docent</th>
+                  <th>Lokaal</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1e</td>
+                  <td>Nederlands</td>
+                  <td>Jansen (JAN)</td>
+                  <td>A102</td>
+                  <td>Normaal</td>
+                </tr>
+                <tr class="canceled">
+                  <td>2e</td>
+                  <td>Wiskunde B</td>
+                  <td>Bakker (BAK)</td>
+                  <td>B204</td>
+                  <td>UITVAL</td>
+                </tr>
+                <tr>
+                  <td>3e</td>
+                  <td>Lichamelijke Opvoeding</td>
+                  <td>Visser (VIS)</td>
+                  <td>Gym 2</td>
+                  <td>Normaal</td>
+                </tr>
+                <tr>
+                  <td>4e</td>
+                  <td>Geschiedenis</td>
+                  <td>Smit (SMI)</td>
+                  <td>C003</td>
+                  <td>Normaal</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Animated Hand-Drawn Red SVG Circle & Arrow -->
+          <svg class="hand-drawn-svg" id="hand-drawn-svg" viewBox="0 0 300 300">
+            <path class="drawn-circle" d="M 150,50 C 220,40 270,100 260,170 C 250,240 180,265 110,250 C 50,235 35,160 50,110 C 65,60 120,45 160,52" fill="none" stroke="#d71921" stroke-width="8" stroke-linecap="round" />
+            <path class="drawn-arrow" d="M 270,260 Q 230,220 190,195 M 190,195 L 220,185 M 190,195 L 205,225" fill="none" stroke="#d71921" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </div>
+
+        <!-- Sarcastic Kinetic Captions Popping on the Beat -->
+        <div class="kinetic-captions-list">
+          <div class="kinetic-pill alert" id="caption-traag">
+            <span>traag.</span>
+          </div>
+          <div class="kinetic-pill" id="caption-widgets">
+            <span>geen widgets.</span>
+          </div>
+          <div class="kinetic-pill" id="caption-darkmode">
+            <span>geen dark mode.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           SCENE 2: BEAT DROP TRANSITION (Bar 4: 6.26s – 8.35s / Beats 12–16)
+           ==================================================================== -->
+      <section class="scene" id="scene-drop">
+        <div class="glitch-screen">
+          <svg class="shatter-svg" id="shatter-svg" viewBox="0 0 1080 1920">
+            <line x1="0" y1="0" x2="1080" y2="1920" stroke="#d71921" stroke-width="4" />
+            <line x1="1080" y1="0" x2="0" y2="1920" stroke="#ffffff" stroke-width="3" />
+            <polygon points="200,400 600,300 450,800" fill="none" stroke="#d71921" stroke-width="3" />
+            <polygon points="800,1200 1000,1600 500,1500" fill="none" stroke="#ffffff" stroke-width="3" />
+            <line x1="300" y1="960" x2="780" y2="960" stroke="#d71921" stroke-width="8" />
+          </svg>
+
+          <div class="drop-content">
+            <div class="drop-radar-ring" id="drop-ring"></div>
+            <div class="drop-text-matrix" id="drop-text">TOT NU.</div>
+            <div class="drop-sub-red" id="drop-sub">115 BPM DROP • AGENDA+</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           SCENE 3: AGENDA+ HERO REVEAL (Bars 5–8: 8.35s – 16.70s / Beats 16–32)
+           ==================================================================== -->
+      <section class="scene" id="scene-hero">
+        <div class="phone-stage-wrapper" id="hero-phone-wrapper">
+          <div class="phone-chassis">
+            <div class="phone-screen">
+
+              <div class="phone-status-bar">
+                <span>10:14</span>
+                <div class="phone-camera-hole"></div>
+                <span>5G 98%</span>
+              </div>
+
+              <div class="phone-app-topbar">
+                <div class="phone-app-brand">
+                  <div class="brand-dot-icon">A+</div>
+                  <span class="brand-dot-title">AGENDA+</span>
+                </div>
+                <div class="brand-school-badge" id="brand-theme-badge">Nothing OS & Material You</div>
+              </div>
+
+              <div class="phone-scroll-content">
+                <div class="phone-card">
+                  <div class="card-label-row">
+                    <span class="card-pill-tag">VOLGEND LESUUR</span>
+                    <span class="card-time">10:15 – 11:05 (3e uur)</span>
+                  </div>
+                  <div class="card-title-lg">Lichamelijke opvoeding</div>
+                  <div class="card-meta-row">
+                    <div class="card-meta-item">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                        <circle cx="12" cy="7" r="4" />
+                      </svg>
+                      <span>Bakker (BAK)</span>
+                    </div>
+                    <div class="card-meta-item">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <path d="M9 3v18" />
+                      </svg>
+                      <span>Gymzaal 2</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="bus-map-card">
+                  <div class="bus-header">
+                    <div class="bus-title-group">
+                      <div class="bus-icon-circle">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="4" y="3" width="16" height="16" rx="2" />
+                          <path d="M4 11h16M8 15h.01M16 15h.01M6 19v2M18 19v2" />
+                        </svg>
+                      </div>
+                      <div>
+                        <div class="bus-title-text">Bustijd • Lijn 156</div>
+                        <div class="bus-subtitle-text">'s-Hertogenbosch - Eindhoven</div>
+                      </div>
+                    </div>
+                    <div class="brand-school-badge" style="color: #22c55e;">Live OVapi</div>
+                  </div>
+
+                  <div class="bus-map-viewport">
+                    <svg class="map-svg-grid" viewBox="0 0 400 170">
+                      <line x1="0" y1="40" x2="400" y2="40" stroke="#1c1c20" stroke-width="1" />
+                      <line x1="0" y1="90" x2="400" y2="90" stroke="#1c1c20" stroke-width="1" />
+                      <line x1="0" y1="140" x2="400" y2="140" stroke="#1c1c20" stroke-width="1" />
+                      <line x1="80" y1="0" x2="80" y2="170" stroke="#1c1c20" stroke-width="1" />
+                      <line x1="200" y1="0" x2="200" y2="170" stroke="#1c1c20" stroke-width="1" />
+                      <line x1="320" y1="0" x2="320" y2="170" stroke="#1c1c20" stroke-width="1" />
+
+                      <polyline points="20,130 90,110 180,95 240,75 320,50 380,35" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" />
+                      <circle cx="20" cy="130" r="5" fill="#ffffff" />
+                      <circle cx="90" cy="110" r="5" fill="#ffffff" />
+                      <circle cx="180" cy="95" r="5" fill="#ffffff" />
+                      <circle cx="240" cy="75" r="8" fill="#d71921" stroke="#ffffff" stroke-width="2" />
+                      <circle cx="320" cy="50" r="5" fill="#ffffff" />
+                      <circle cx="380" cy="35" r="5" fill="#ffffff" />
+                      <circle cx="215" cy="85" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
+                      <line x1="215" y1="85" x2="240" y2="75" stroke="#d71921" stroke-width="2" stroke-dasharray="4,4" />
+                    </svg>
+
+                    <div class="bus-live-badge">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                        <circle cx="12" cy="12" r="10" />
+                      </svg>
+                      <span>BUS 156 • 10:22</span>
+                    </div>
+                  </div>
+
+                  <div class="bus-stop-info">
+                    <div>
+                      <div class="bus-stop-name">Schijndel, Plein 1944</div>
+                      <div class="bus-subtitle-text">Verwacht over 8 min • Op tijd</div>
+                    </div>
+                    <div class="bus-stop-dist">350m lopen</div>
+                  </div>
+                </div>
+
+                <div class="hw-item">
+                  <div class="hw-checkbox"></div>
+                  <div>
+                    <div class="hw-text">Engels: Unit 4 Vocabulaire & Grammatica</div>
+                    <div class="hw-subject">Morgen inleveren • 21 open taken</div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="floating-pills-container">
+          <div class="feature-float-pill pill-pos-1" id="pill-nothing">
+            <div class="pill-dot"></div>
+            <span id="pill-1-text">Nothing OS & Material You</span>
+          </div>
+          <div class="feature-float-pill pill-pos-2" id="pill-ovapi">
+            <div class="pill-dot"></div>
+            <span>Live OV Buskaart</span>
+          </div>
+          <div class="feature-float-pill pill-pos-3" id="pill-offline">
+            <div class="pill-dot"></div>
+            <span>100% Offline-modus</span>
+          </div>
+          <div class="feature-float-pill pill-pos-4" id="pill-kwt">
+            <div class="pill-dot"></div>
+            <span>KWT Keuzelessen</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           SCENE 4: FAST FEATURE SHOWCASE (Bars 9–11: 16.70s – 22.96s / Beats 32–44)
+           ==================================================================== -->
+      <section class="scene" id="scene-features">
+        <div class="showcase-header">
+          <div class="showcase-step-label" id="showcase-step-label">FEATURE 01 / 03</div>
+          <div class="showcase-step-title" id="showcase-step-title">Cijfers & What-If</div>
+        </div>
+
+        <div class="feature-cards-deck">
+
+          <div class="feature-card-slide active" id="slide-cijfers">
+            <div class="grade-top-grid">
+              <div class="grade-circle-wrap">
+                <svg class="grade-svg-circle" viewBox="0 0 320 320">
+                  <circle class="grade-bg-circle" cx="160" cy="160" r="140" />
+                  <circle class="grade-progress-bar" id="grade-progress" cx="160" cy="160" r="140" />
+                </svg>
+                <div class="grade-center-text">
+                  <span class="grade-val-lg" id="grade-val">7,8</span>
+                  <span class="grade-sub-txt">Gemiddelde</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="grade-list-rows">
+              <div class="grade-row-item">
+                <div>
+                  <div class="grade-row-title">Wiskunde B • Hoofdstuk 3 Toets</div>
+                  <div class="grade-row-weight">Weging: 3.0x • 12 nov</div>
+                </div>
+                <div class="grade-row-score">8.2</div>
+              </div>
+              <div class="grade-row-item">
+                <div>
+                  <div class="grade-row-title">Engels • Reading Comprehension</div>
+                  <div class="grade-row-weight">Weging: 2.0x • 10 nov</div>
+                </div>
+                <div class="grade-row-score">7.5</div>
+              </div>
+              <div class="grade-row-item">
+                <div>
+                  <div class="grade-row-title">Nederlands • Betoog Schrijven</div>
+                  <div class="grade-row-weight">Weging: 1.0x • 8 nov</div>
+                </div>
+                <div class="grade-row-score">7.7</div>
+              </div>
+            </div>
+
+            <div class="whatif-box">
+              <div class="whatif-label">
+                <span>What-If Simulator: "Wat als ik een 6,5 haal?"</span>
+                <span style="color: var(--nothing-red); font-family: var(--font-matrix);" id="whatif-val">7,8 → 7,6</span>
+              </div>
+              <div class="whatif-slider-track">
+                <div class="whatif-slider-fill" id="whatif-fill"></div>
+                <div class="whatif-slider-thumb" id="whatif-thumb"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="feature-card-slide" id="slide-meer">
+            <div class="meer-grid-showcase">
+              <div class="meer-card-item">
+                <div class="meer-item-left">
+                  <div class="meer-icon-box red-tint">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                      <polyline points="22,6 12,13 2,6" />
+                    </svg>
+                  </div>
+                  <div>
+                    <div class="meer-item-title">Magister Berichten</div>
+                    <div class="meer-item-sub">Direct in de app • Versturen & Lezen</div>
+                  </div>
+                </div>
+                <div class="meer-badge-count">3 ONGELEZEN</div>
+              </div>
+
+              <div class="meer-card-item">
+                <div class="meer-item-left">
+                  <div class="meer-icon-box">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <div class="meer-item-title">Studiewijzers & Bronnen</div>
+                    <div class="meer-item-sub">Quizlet, StudyGo, PDF's & Bijlagen</div>
+                  </div>
+                </div>
+                <div class="brand-school-badge">Direct openen</div>
+              </div>
+
+              <div class="meer-card-item">
+                <div class="meer-item-left">
+                  <div class="meer-icon-box">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <polyline points="12 6 12 12 16 14" />
+                    </svg>
+                  </div>
+                  <div>
+                    <div class="meer-item-title">Keuzelessen (KWT)</div>
+                    <div class="meer-item-sub">Kies direct je steunles of stilte-uur</div>
+                  </div>
+                </div>
+                <div class="brand-school-badge" style="color: var(--nothing-red);">Nu open</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="feature-card-slide" id="slide-widgets">
+            <div class="widgets-canvas">
+              <div class="widget-nothing-lg">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span class="widget-header-matrix">ROOSTER • 10:15 - 11:05</span>
+                  <div style="width: 10px; height: 10px; border-radius: 50%; background: var(--nothing-red);"></div>
+                </div>
+                <div>
+                  <div class="widget-val-matrix" style="font-size: 42px;">LICHAMELIJKE OPVOEDING</div>
+                  <div class="widget-sub-label" style="font-size: 24px; margin-top: 8px;">Bakker (BAK) • Gymzaal 2</div>
+                </div>
+                <div style="border-top: 1px dotted #333; padding-top: 14px; display: flex; justify-content: space-between;">
+                  <span class="widget-sub-label">Hierna: Wiskunde B (204)</span>
+                  <span class="widget-header-matrix" style="color: #ffffff;">ELDE COLLEGE</span>
+                </div>
+              </div>
+
+              <div class="widget-nothing-row">
+                <div class="widget-nothing-sm">
+                  <span class="widget-header-matrix">CIJFERS</span>
+                  <div>
+                    <div class="widget-val-matrix">7,8</div>
+                    <div class="widget-sub-label">GEMIDDELD</div>
+                  </div>
+                  <div style="color: var(--green-pass); font-weight: 700; font-size: 16px;">Voldoende (100%)</div>
+                </div>
+
+                <div class="widget-nothing-sm">
+                  <span class="widget-header-matrix">HUISWERK</span>
+                  <div>
+                    <div class="widget-val-matrix">21</div>
+                    <div class="widget-sub-label">OPEN TAKEN</div>
+                  </div>
+                  <div style="color: var(--nothing-red); font-weight: 700; font-size: 16px;">3 Toetsen deze week</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           SCENE 5: KINETIC TYPOGRAPHY FLEX (Bars 12–14: 22.96s – 29.22s / Beats 44–56)
+           ==================================================================== -->
+      <section class="scene" id="scene-kinetic">
+        <div class="kinetic-stage">
+          <div class="kinetic-line" id="kin-line-1">gemaakt voor</div>
+          <div class="kinetic-line red-accent" id="kin-line-2">scholieren.</div>
+          <div class="kinetic-line" id="kin-line-3">door een scholier.</div>
+          <div class="kinetic-line" id="kin-line-4">en ja.</div>
+          <div class="kinetic-line giant red-accent" id="kin-line-5">GRATIS.</div>
+          <div class="kinetic-line sub-pill" id="kin-line-6">geen abonnement. geen bullshit.</div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           SCENE 6: OUTRO & CTA (Bars 15–16: 29.22s – 33.39s / Beats 56–64)
+           ==================================================================== -->
+      <section class="scene" id="scene-outro">
+        <div class="outro-content">
+          <div class="app-icon-outer">
+            <div class="app-icon-halo"></div>
+            <div class="app-icon-squircle">
+              <svg class="app-icon-svg" viewBox="0 0 200 200">
+                <path d="M 45,150 L 75,50 L 105,150 M 56,120 L 94,120" fill="none" stroke="#ffffff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M 125,95 L 155,95 M 140,80 L 140,110" fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round" />
+                <circle cx="150" cy="145" r="16" fill="#d71921" />
+              </svg>
+            </div>
+          </div>
+
+          <div class="outro-title-matrix">AGENDA+</div>
+          <div class="outro-tagline">De ultieme Magister-ervaring.</div>
+
+          <div class="outro-badges-grid">
+            <div class="outro-badge cta">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span>Binnenkort op Android</span>
+            </div>
+
+            <div class="outro-badge">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <span>Nothing OS & Material You Ondersteuning</span>
+            </div>
+
+            <div class="outro-footer-note">
+              Onafhankelijke Magister-client • Gebouwd met Jetpack Compose & Nothing OS
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       BOTTOM MASTER TIMELINE CONTROL BAR
+       ==================================================================== -->
+  <footer class="timeline-hud" id="timeline-hud">
+    <div class="hud-progress-row">
+      <div class="hud-scrubber-track" id="hud-scrubber">
+        <div class="hud-scrubber-fill" id="hud-fill"></div>
+        <div class="hud-scrubber-thumb" id="hud-thumb"></div>
+      </div>
+    </div>
+
+    <div class="hud-controls-row">
+      <div class="hud-left-actions">
+        <button class="hud-btn" id="btn-play-pause">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" id="icon-play">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
+          <span id="label-play-pause">Pauzeer</span>
+        </button>
+
+        <button class="hud-btn" id="btn-restart">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 4v6h6" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+          </svg>
+          <span>Opnieuw</span>
+        </button>
+
+        <!-- Theme Toggle Button -->
+        <button class="hud-btn active" id="btn-theme-toggle" title="Wissel tussen Nothing OS en Material You">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+          </svg>
+          <span id="label-theme">Thema: Nothing OS</span>
+        </button>
+
+        <div class="hud-beat-clock">
+          <div class="beat-led" id="beat-led"></div>
+          <span id="hud-clock-text">BAR 01 : BEAT 1 (115 BPM)</span>
+        </div>
+      </div>
+
+      <div class="hud-right-actions">
+        <button class="hud-btn active" id="btn-audio-synth">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+          </svg>
+          <span id="label-audio">115 BPM Audio Beat</span>
+        </button>
+
+        <!-- Download MP4 / WebM Recording Button -->
+        <button class="hud-btn" id="btn-download-video" title="Neem video op en download als MP4 / WebM">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          <span id="label-download">Download MP4</span>
+        </button>
+
+        <button class="hud-btn" id="btn-clean-mode" title="Verberg alle controls voor opnames (Druk op 'C')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+            <circle cx="12" cy="13" r="4" />
+          </svg>
+          <span>Clean (C)</span>
+        </button>
+
+        <button class="hud-btn" id="btn-fullscreen">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </footer>
+
+  <script src="timeline.js"></script>
+</body>
+</html>

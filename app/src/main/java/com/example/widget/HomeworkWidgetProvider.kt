@@ -1,0 +1,164 @@
+package com.example.widget
+
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.graphics.Color
+import android.view.View
+import android.widget.RemoteViews
+import com.example.MainActivity
+import com.example.R
+import com.example.data.AppPreferencesStore
+import com.example.model.AppThemeStyle
+import com.example.model.TaskCategory
+import com.example.model.cleanSchoolText
+
+class HomeworkWidgetProvider : AppWidgetProvider() {
+
+    override fun onUpdate(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetIds: IntArray
+    ) {
+        for (appWidgetId in appWidgetIds) {
+            updateSingleWidget(context, appWidgetManager, appWidgetId)
+        }
+    }
+
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+        if (intent.action == ACTION_REFRESH || intent.action == AppWidgetManager.ACTION_APPWIDGET_UPDATE) {
+            updateAllWidgets(context)
+        }
+    }
+
+    companion object {
+        const val ACTION_REFRESH = "com.example.widget.ACTION_REFRESH_HOMEWORK"
+
+        fun updateAllWidgets(context: Context) {
+            val manager = AppWidgetManager.getInstance(context)
+            val componentName = ComponentName(context, HomeworkWidgetProvider::class.java)
+            val ids = manager.getAppWidgetIds(componentName)
+            for (id in ids) {
+                updateSingleWidget(context, manager, id)
+            }
+        }
+
+        private fun updateSingleWidget(
+            context: Context,
+            appWidgetManager: AppWidgetManager,
+            appWidgetId: Int
+        ) {
+            val store = AppPreferencesStore(context)
+            val isNothing = store.getAppThemeStyle() == AppThemeStyle.NOTHING_OS
+            val layoutId = if (isNothing) R.layout.widget_homework_nothing else R.layout.widget_homework
+            val views = RemoteViews(context.packageName, layoutId)
+            val session = store.loadSession()
+            val tasks = store.loadTasks()
+
+            val launchIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(WidgetUpdater.EXTRA_OPEN_TAB, "HUISWERK")
+            }
+            val launchPendingIntent = PendingIntent.getActivity(
+                context,
+                301,
+                launchIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.widget_hw_root, launchPendingIntent)
+
+            val refreshIntent = Intent(context, HomeworkWidgetProvider::class.java).apply {
+                action = ACTION_REFRESH
+            }
+            val refreshPendingIntent = PendingIntent.getBroadcast(
+                context,
+                302,
+                refreshIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.widget_hw_refresh_btn, refreshPendingIntent)
+
+            val rowIds = listOf(
+                Triple(R.id.widget_hw_row_1, R.id.widget_hw_title_1, R.id.widget_hw_meta_1),
+                Triple(R.id.widget_hw_row_2, R.id.widget_hw_title_2, R.id.widget_hw_meta_2),
+                Triple(R.id.widget_hw_row_3, R.id.widget_hw_title_3, R.id.widget_hw_meta_3)
+            )
+
+            if (!session.isAuthenticated) {
+                views.setTextViewText(R.id.widget_hw_count, if (isNothing) "NIET INGELOGD" else "Log in")
+                views.setTextViewText(R.id.widget_hw_empty, "Log in bij Magister voor huiswerk")
+                views.setViewVisibility(R.id.widget_hw_empty, View.VISIBLE)
+                rowIds.forEach { (rowId, _, _) -> views.setViewVisibility(rowId, View.GONE) }
+                appWidgetManager.updateAppWidget(appWidgetId, views)
+                return
+            }
+
+            val openTasks = tasks
+                .filter { !it.isCompleted }
+                .sortedWith(
+                    compareByDescending<com.example.model.HomeworkTask> {
+                        it.category == TaskCategory.MAJOR_TEST || it.category == TaskCategory.EXAM
+                    }.thenBy { it.dueDate }
+                )
+
+            val openCount = openTasks.size
+            if (isNothing) {
+                views.setTextViewText(
+                    R.id.widget_hw_count,
+                    if (openCount > 0) "$openCount OPEN" else "KLAAR"
+                )
+                views.setInt(
+                    R.id.widget_hw_badge,
+                    "setBackgroundResource",
+                    if (openCount > 0) R.drawable.widget_nothing_red_pill_bg else R.drawable.widget_nothing_pill_bg
+                )
+            } else {
+                views.setTextViewText(
+                    R.id.widget_hw_count,
+                    if (openCount == 1) "1 open taak" else "$openCount open taken"
+                )
+            }
+
+            if (openTasks.isEmpty()) {
+                views.setTextViewText(R.id.widget_hw_empty, "Geen openstaand huiswerk")
+                views.setViewVisibility(R.id.widget_hw_empty, View.VISIBLE)
+                rowIds.forEach { (rowId, _, _) -> views.setViewVisibility(rowId, View.GONE) }
+            } else {
+                views.setViewVisibility(R.id.widget_hw_empty, View.GONE)
+                rowIds.forEachIndexed { index, (rowId, titleId, metaId) ->
+                    val task = openTasks.getOrNull(index)
+                    if (task == null) {
+                        views.setViewVisibility(rowId, View.GONE)
+                    } else {
+                        views.setViewVisibility(rowId, View.VISIBLE)
+                        val title = task.title.cleanSchoolText() ?: "Huiswerk"
+                        val subj = task.subject.cleanSchoolText() ?: "Vak"
+                        val isExam = task.category == TaskCategory.EXAM || task.category == TaskCategory.MAJOR_TEST
+                        views.setTextViewText(titleId, title)
+                        views.setTextViewText(metaId, if (isExam) "TOETS • $subj" else subj.take(10))
+
+                        if (isNothing) {
+                            views.setInt(
+                                metaId,
+                                "setBackgroundResource",
+                                if (isExam) R.drawable.widget_nothing_red_pill_bg else R.drawable.widget_nothing_pill_bg
+                            )
+                            views.setTextColor(metaId, Color.WHITE)
+                        } else {
+                            views.setTextColor(
+                                metaId,
+                                if (isExam) Color.parseColor("#FCA5A5") else Color.parseColor("#CBD5E1")
+                            )
+                        }
+                    }
+                }
+            }
+
+            appWidgetManager.updateAppWidget(appWidgetId, views)
+        }
+    }
+}

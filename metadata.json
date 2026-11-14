@@ -1,0 +1,6 @@
+{
+  "name": "Agenda+",
+  "description": "Modern Material You school companion and schedule app replacing legacy Magister",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

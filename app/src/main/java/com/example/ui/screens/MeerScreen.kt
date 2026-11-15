@@ -272,7 +272,7 @@ fun MeerScreen(
                                 val ctx = context
                                 val versionName = runCatching {
                                     ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
-                                }.getOrDefault("0.1.2")
+                                }.getOrNull()?.takeIf { it.isNotBlank() } ?: com.example.BuildConfig.VERSION_NAME
                                 val intent = Intent(Intent.ACTION_SENDTO).apply {
                                     data = Uri.parse("mailto:support@agendaplus.nl?subject=${Uri.encode("Agenda+ Support (v$versionName)")}")
                                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -306,6 +306,34 @@ fun MeerScreen(
                             badgeText = null,
                             onClick = { onSelectSection(MeerSection.INSTELLINGEN) },
                             tag = "meer_tile_instellingen"
+                        )
+                    }
+
+                    item(key = "meer_version_footer") {
+                        val pkgInfo = remember(context) {
+                            runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
+                        }
+                        val installedVersion = pkgInfo?.versionName?.takeIf { it.isNotBlank() }
+                            ?: com.example.BuildConfig.VERSION_NAME
+                        val installedCode = pkgInfo?.let {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                                it.longVersionCode
+                            } else {
+                                @Suppress("DEPRECATION")
+                                it.versionCode.toLong()
+                            }
+                        } ?: com.example.BuildConfig.VERSION_CODE.toLong()
+                        val appLabel = remember(context) {
+                            context.getString(com.example.R.string.app_name)
+                        }
+                        Text(
+                            text = "$appLabel • v$installedVersion (build $installedCode) • ${context.packageName}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp, bottom = 8.dp)
+                                .testTag("meer_version_info")
                         )
                     }
                 }
@@ -689,6 +717,29 @@ private fun MeerSettingsView(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("App resetten & Uitloggen", fontWeight = FontWeight.Bold)
                     }
+                    val settingsCtx = LocalContext.current
+                    val pkgInfo = remember(settingsCtx) {
+                        runCatching { settingsCtx.packageManager.getPackageInfo(settingsCtx.packageName, 0) }.getOrNull()
+                    }
+                    val installedVersion = pkgInfo?.versionName?.takeIf { it.isNotBlank() }
+                        ?: com.example.BuildConfig.VERSION_NAME
+                    val installedCode = pkgInfo?.let {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                            it.longVersionCode
+                        } else {
+                            @Suppress("DEPRECATION")
+                            it.versionCode.toLong()
+                        }
+                    } ?: com.example.BuildConfig.VERSION_CODE.toLong()
+                    val appLabel = remember(settingsCtx) {
+                        settingsCtx.getString(com.example.R.string.app_name)
+                    }
+                    Text(
+                        text = "Geïnstalleerde build: $appLabel v$installedVersion ($installedCode) • ${settingsCtx.packageName}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("settings_version_info")
+                    )
                 }
             }
         }

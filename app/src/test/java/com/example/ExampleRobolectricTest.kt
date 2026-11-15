@@ -206,4 +206,29 @@ class ExampleRobolectricTest {
         assertEquals("156", store.getSavedBusLine())
         assertTrue(store.loadMessages().isEmpty())
     }
+
+    @Test
+    fun test_update_checker_semantic_version_comparison() {
+        // Same chosen version should NOT trigger an update prompt
+        assertFalse(com.example.util.UpdateChecker.isVersionNewer("0.1.2-pre-alpha", "v0.1.2-pre-alpha"))
+        assertFalse(com.example.util.UpdateChecker.isVersionNewer("0.1.4-pre-alpha", "v0.1.4-pre-alpha"))
+        assertFalse(com.example.util.UpdateChecker.isVersionNewer(BuildConfig.VERSION_NAME, "v0.1.4-pre-alpha"))
+        assertFalse(com.example.util.UpdateChecker.isVersionNewer("0.1.2", "v0.1.2"))
+
+        // Pre-release progression within same patch version
+        assertTrue(com.example.util.UpdateChecker.isVersionNewer("0.1.2-pre-alpha", "v0.1.2-pre-alpha.2"))
+        assertTrue(com.example.util.UpdateChecker.isVersionNewer("0.1.2-pre-alpha", "v0.1.2-alpha"))
+        assertTrue(com.example.util.UpdateChecker.isVersionNewer("0.1.2-alpha", "v0.1.2-beta"))
+        assertTrue(com.example.util.UpdateChecker.isVersionNewer("0.1.2-beta", "v0.1.2-rc1"))
+        assertTrue(com.example.util.UpdateChecker.isVersionNewer("0.1.2-rc1", "v0.1.2"))
+
+        // Older remote versions should NOT trigger update
+        assertFalse(com.example.util.UpdateChecker.isVersionNewer("0.1.2", "v0.1.2-pre-alpha"))
+        assertFalse(com.example.util.UpdateChecker.isVersionNewer("0.1.3-pre-alpha", "v0.1.2"))
+
+        // Newer patch/minor/major versions should trigger update
+        assertTrue(com.example.util.UpdateChecker.isVersionNewer("0.1.2", "v0.1.3-pre-alpha"))
+        assertTrue(com.example.util.UpdateChecker.isVersionNewer("0.1.2-pre-alpha", "v0.2.0"))
+        assertTrue(com.example.util.UpdateChecker.isVersionNewer("0.9.9", "v1.0.0"))
+    }
 }

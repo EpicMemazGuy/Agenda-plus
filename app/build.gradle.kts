@@ -16,8 +16,18 @@ android {
     applicationId = "nl.agendaplus.axola"
     minSdk = 24
     targetSdk = 36
-    versionCode = 2
-    versionName = "0.1.2"
+    val resolvedVersionCode = providers.gradleProperty("appVersionCode")
+      .orElse(providers.environmentVariable("APP_VERSION_CODE"))
+      .orElse("1041")
+      .get()
+      .toIntOrNull() ?: 1041
+    val resolvedVersionName = providers.gradleProperty("appVersionName")
+      .orElse(providers.environmentVariable("APP_VERSION_NAME"))
+      .orElse("0.1.4-pre-alpha")
+      .get()
+      .ifBlank { "0.1.4-pre-alpha" }
+    versionCode = resolvedVersionCode
+    versionName = resolvedVersionName
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

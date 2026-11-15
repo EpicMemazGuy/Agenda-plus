@@ -7,9 +7,21 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Versie tag (bijv. v1.0.0)'
+        description: 'Versietag (bijv. v0.1.4-pre-alpha of v0.1.5)'
         required: false
-        default: 'v1.0.0'
+        default: 'v0.1.4-pre-alpha'
+      app_name:
+        description: 'App-naam in Android & Release (standaard: Agenda+)'
+        required: false
+        default: 'Agenda+'
+      release_name:
+        description: 'Optionele naam voor de Release & APK (leeg = App-naam + Versietag)'
+        required: false
+        default: ''
+      version_code:
+        description: 'Optionele numerieke versionCode (leeg = automatisch berekend uit versietag)'
+        required: false
+        default: ''
       release_notes:
         description: 'Optionele opmerkingen bij deze release'
         required: false
@@ -42,18 +54,107 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Ensure Debug Keystore Exists
+      - name: Resolve Chosen App Name, Version & APK Filename
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag_name }}
+          INPUT_APP_NAME: ${{ github.event.inputs.app_name }}
+          INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
+          INPUT_VERSION_CODE: ${{ github.event.inputs.version_code }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          echo "=== Debug Keystore Verificatie ==="
-          # 1. Probeer te decoderen uit debug.keystore.base64 als het bestand bestaat
+          python3 - <<'PY'
+          import os, re, xml.sax.saxutils as saxutils
+
+          raw_tag = (os.environ.get("INPUT_TAG") or "").strip()
+          if not raw_tag:
+              ref_name = (os.environ.get("REF_NAME") or "").strip()
+              raw_tag = ref_name if ref_name and ref_name != "main" else "v0.1.4-pre-alpha"
+
+          app_name = (os.environ.get("INPUT_APP_NAME") or "").strip() or "Agenda+"
+          release_name = (os.environ.get("INPUT_RELEASE_NAME") or "").strip() or f"{app_name} {raw_tag}"
+          version_name = re.sub(r"^[vV]+", "", raw_tag).strip() or "0.1.4-pre-alpha"
+
+          manual_vc = (os.environ.get("INPUT_VERSION_CODE") or "").strip()
+          if manual_vc.isdigit() and int(manual_vc) > 0:
+              version_code = int(manual_vc)
+          else:
+              lower = version_name.lower().split("+")[0]
+              core = lower.split("-")[0]
+              pre = lower.split("-", 1)[1] if "-" in lower else ""
+              nums = [int(re.sub(r"\D", "", p) or "0") for p in core.split(".")]
+              major = nums[0] if len(nums) > 0 else 0
+              minor = nums[1] if len(nums) > 1 else 0
+              patch = nums[2] if len(nums) > 2 else 0
+              if not pre:
+                  stage = 9
+              elif "pre-alpha" in pre or "prealpha" in pre:
+                  stage = 1
+              elif "alpha" in pre:
+                  stage = 2
+              elif "beta" in pre:
+                  stage = 3
+              elif "rc" in pre:
+                  stage = 4
+              else:
+                  stage = 0
+              version_code = max(2, major * 100000 + minor * 1000 + patch * 10 + stage)
+
+          def slugify(text: str) -> str:
+              s = text.replace("+", "Plus")
+              s = re.sub(r"[^A-Za-z0-9._-]+", "-", s)
+              s = re.sub(r"-{2,}", "-", s).strip("-")
+              return s or "AgendaPlus"
+
+          apk_base = slugify(release_name)
+          if raw_tag not in release_name and version_name not in release_name:
+              apk_base = f"{apk_base}-{slugify(raw_tag)}"
+          apk_filename = f"{apk_base}.apk"
+
+          # Pas app_name in strings.xml aan als een andere naam is gekozen
+          strings_path = "app/src/main/res/values/strings.xml"
+          with open(strings_path, "r", encoding="utf-8") as f:
+              xml_content = f.read()
+          escaped_name = saxutils.escape(app_name)
+          updated_xml, count = re.subn(
+              r'(<string\s+name="app_name">)([^<]*)(</string>)',
+              lambda m: f"{m.group(1)}{escaped_name}{m.group(3)}",
+              xml_content,
+              count=1,
+          )
+          if count == 1 and updated_xml != xml_content:
+              with open(strings_path, "w", encoding="utf-8") as f:
+                  f.write(updated_xml)
+              print(f"Updated strings.xml app_name -> {app_name}")
+
+          gh_env = os.environ["GITHUB_ENV"]
+          with open(gh_env, "a", encoding="utf-8") as f:
+              f.write(f"RELEASE_TAG={raw_tag}\n")
+              f.write(f"APP_NAME={app_name}\n")
+              f.write(f"RELEASE_TITLE={release_name}\n")
+              f.write(f"APP_VERSION_NAME={version_name}\n")
+              f.write(f"APP_VERSION_CODE={version_code}\n")
+              f.write(f"APK_FILENAME={apk_filename}\n")
+
+          print(f"Resolved RELEASE_TAG={raw_tag}")
+          print(f"Resolved APP_NAME={app_name}")
+          print(f"Resolved RELEASE_TITLE={release_name}")
+          print(f"Resolved APP_VERSION_NAME={version_name}")
+          print(f"Resolved APP_VERSION_CODE={version_code}")
+          print(f"Resolved APK_FILENAME={apk_filename}")
+          PY
+
+      - name: Ensure Signing Keystore Exists
+        run: |
+          echo "=== Keystore Verificatie ==="
           if [ -f debug.keystore.base64 ] && [ -s debug.keystore.base64 ]; then
             echo "debug.keystore herstellen uit debug.keystore.base64..."
             base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || true
           fi
 
-          # 2. Als debug.keystore nog niet bestaat of leeg is, genereer het direct met keytool
           if [ ! -f debug.keystore ] || [ ! -s debug.keystore ]; then
             echo "debug.keystore niet aanwezig. Automatisch genereren met keytool..."
+            SAFE_CN=$(printf '%s' "$APP_NAME" | sed 's/+/Plus/g; s/[^A-Za-z0-9 .-]/ /g' | xargs)
+            SAFE_CN=${SAFE_CN:-AgendaPlus}
             keytool -genkeypair -v \
               -keystore debug.keystore \
               -storepass android \
@@ -62,40 +163,34 @@ jobs:
               -keyalg RSA \
               -keysize 2048 \
               -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
+              -dname "CN=${SAFE_CN},O=Axola,C=NL"
           fi
 
-          # 3. Kopieer naar app/debug.keystore voor maximale zekerheid
           cp debug.keystore app/debug.keystore 2>/dev/null || true
-          ls -la debug.keystore
+          keytool -list -keystore debug.keystore -storepass android -alias androiddebugkey | head -n 10
           echo "=== Keystore is succesvol gereed ==="
 
-      - name: Build Android APK
+      - name: Build Signed Android APK
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          # Zorg dat debug.keystore er gegarandeerd is
-          if [ ! -f debug.keystore ]; then
-            keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-          fi
-
-          TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
-          if [ -z "$TAG" ] || [ "$TAG" = "main" ]; then
-            TAG="v1.0.0"
-          fi
-          echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
-
           if [ -n "$KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
-            echo "Release keystore secrets gevonden. Release APK bouwen..."
+            echo "Release keystore secrets gevonden. Gesigneerde Release APK bouwen..."
             echo "$KEYSTORE_BASE64" | base64 -d > my-upload-key.jks
             export KEYSTORE_PATH="$(pwd)/my-upload-key.jks"
-            ./gradlew assembleRelease --stacktrace
+            ./gradlew assembleRelease \
+              -PappVersionName="$APP_VERSION_NAME" \
+              -PappVersionCode="$APP_VERSION_CODE" \
+              --stacktrace
             APK_SRC="app/build/outputs/apk/release/app-release.apk"
           else
-            echo "Geen release secrets gevonden. Direct installeerbare Debug APK bouwen..."
-            ./gradlew assembleDebug --stacktrace
+            echo "Consistent repository-keystore gebruiken voor direct installeerbare gesigneerde APK..."
+            ./gradlew assembleDebug \
+              -PappVersionName="$APP_VERSION_NAME" \
+              -PappVersionCode="$APP_VERSION_CODE" \
+              --stacktrace
             APK_SRC="app/build/outputs/apk/debug/app-debug.apk"
           fi
 
@@ -106,15 +201,31 @@ jobs:
 
           DEST_DIR="app/build/outputs/apk"
           mkdir -p "$DEST_DIR"
-          FINAL_APK="$DEST_DIR/AgendaPlus-${TAG}.apk"
+          FINAL_APK="$DEST_DIR/$APK_FILENAME"
           cp "$APK_SRC" "$FINAL_APK"
           echo "FINAL_APK_PATH=$FINAL_APK" >> $GITHUB_ENV
           echo "Gereed! APK opgeslagen als $FINAL_APK"
 
+      - name: Verify APK Signature & Embedded Version Metadata
+        run: |
+          BUILD_TOOLS_DIR=$(ls -d "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/* 2>/dev/null | sort -V | tail -n 1)
+          echo "Build tools: $BUILD_TOOLS_DIR"
+          if [ -x "$BUILD_TOOLS_DIR/apksigner" ]; then
+            "$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs "$FINAL_APK_PATH"
+          fi
+          if [ -x "$BUILD_TOOLS_DIR/aapt2" ]; then
+            BADGING=$("$BUILD_TOOLS_DIR/aapt2" dump badging "$FINAL_APK_PATH")
+            echo "$BADGING" | grep -E "^(package:|application-label)"
+            if ! echo "$BADGING" | grep -q "versionName='$APP_VERSION_NAME'"; then
+              echo "Fout: ingebouwde versionName komt niet overeen met '$APP_VERSION_NAME'"
+              exit 1
+            fi
+          fi
+
       - name: Upload APK als GitHub Actions Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AgendaPlus-${{ env.RELEASE_TAG }}-APK
+          name: ${{ env.APK_FILENAME }}
           path: ${{ env.FINAL_APK_PATH }}
           if-no-files-found: error
 
@@ -123,15 +234,20 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: "Agenda+ ${{ env.RELEASE_TAG }}"
+          name: ${{ env.RELEASE_TITLE }}
           body: |
-            ### Agenda+ ${{ env.RELEASE_TAG }} 📱✨
+            ### ${{ env.RELEASE_TITLE }}
 
-            ${{ github.event.inputs.release_notes || 'Automatisch gebouwde APK-release via GitHub Actions.' }}
+            ${{ github.event.inputs.release_notes || 'Automatisch gebouwde en gesigneerde APK-release via GitHub Actions.' }}
+
+            - **App-naam:** `${{ env.APP_NAME }}`
+            - **Versie:** `v${{ env.APP_VERSION_NAME }}` (build `${{ env.APP_VERSION_CODE }}`)
+            - **Package ID:** `nl.agendaplus.axola`
+            - **Bestand:** `${{ env.APK_FILENAME }}`
 
             ---
 
-            #### 🚀 Wat is er nieuw in Agenda+?
+            #### Wat is er nieuw in Agenda+?
             - **10x Sneller dan Magister**: Direct toegang tot je rooster, cijfers en huiswerk zonder laadtijden.
             - **Twee Thema’s**: Volledig Nothing OS-thema (OLED zwart, dot-matrix, rode accenten) en modern Standaard Material You-thema.
             - **Live OV Buskaart**: Realtime bustijden en vertragingen van jouw buslijnen via OVapi data.
@@ -141,11 +257,11 @@ jobs:
 
             ---
 
-            #### 📲 Installatie op je Android telefoon:
-            1. Download het bestand `AgendaPlus-${{ env.RELEASE_TAG }}.apk` hieronder op je telefoon.
+            #### Installatie op je Android telefoon:
+            1. Download het bestand `${{ env.APK_FILENAME }}` hieronder op je telefoon.
             2. Tik op het bestand om te openen.
             3. Geef toestemming voor *Installeren uit onbekende bron* (indien je telefoon hierom vraagt).
-            4. Start **Agenda+** en log direct in via je school!
+            4. Start **${{ env.APP_NAME }}** en log direct in via je school!
           files: ${{ env.FINAL_APK_PATH }}
           draft: false
           prerelease: false

@@ -29,6 +29,11 @@ fun UpdateDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val installedVersion = androidx.compose.runtime.remember(context) {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull()?.takeIf { it.isNotBlank() } ?: com.example.BuildConfig.VERSION_NAME
+    }
     val isNothing = appThemeStyle == AppThemeStyle.NOTHING_OS
 
     val containerColor = if (isNothing) Color(0xFF161616) else MaterialTheme.colorScheme.surfaceContainerHigh
@@ -77,7 +82,7 @@ fun UpdateDialog(
                             color = if (isNothing) Color.White else MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Nieuwe versie van Agenda+ gedetecteerd",
+                            text = "Geïnstalleerd: v$installedVersion • Nieuw: ${updateInfo.tagName}",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (isNothing) Color.Gray else MaterialTheme.colorScheme.onSurfaceVariant
                         )

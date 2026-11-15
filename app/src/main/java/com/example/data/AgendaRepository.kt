@@ -121,6 +121,9 @@ class AgendaRepository(private val context: Context? = null) {
     private val _appThemeStyle = MutableStateFlow(prefs?.getAppThemeStyle() ?: AppThemeStyle.STANDARD)
     val appThemeStyle: StateFlow<AppThemeStyle> = _appThemeStyle.asStateFlow()
 
+    private val _darkModePreference = MutableStateFlow(prefs?.getDarkModePreference() ?: DarkModePreference.SYSTEM)
+    val darkModePreference: StateFlow<DarkModePreference> = _darkModePreference.asStateFlow()
+
     private val _eloUrl = MutableStateFlow(prefs?.getEloUrl() ?: AppPreferencesStore.DEFAULT_ELO_URL)
     val eloUrl: StateFlow<String> = _eloUrl.asStateFlow()
 
@@ -479,6 +482,12 @@ class AgendaRepository(private val context: Context? = null) {
         }
     }
 
+    fun setDarkModePreference(pref: DarkModePreference) {
+        _darkModePreference.value = pref
+        prefs?.setDarkModePreference(pref)
+        context?.let { WidgetUpdater.updateAllWidgets(it) }
+    }
+
     fun setEloUrl(url: String) {
         val trimmed = url.trim()
         if (trimmed.isBlank()) return
@@ -629,6 +638,7 @@ class AgendaRepository(private val context: Context? = null) {
         val result = store.importChoicesBackupJson(rawJson)
         if (result.isSuccess) {
             _appThemeStyle.value = store.getAppThemeStyle()
+            _darkModePreference.value = store.getDarkModePreference()
             _agendaStyle.value = store.getAgendaStyle()
             _uiScale.value = store.getUiScale()
             _eloUrl.value = store.getEloUrl()

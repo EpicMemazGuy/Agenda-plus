@@ -67,6 +67,16 @@ class AppPreferencesStore(context: Context) {
         prefs.edit().putString(KEY_APP_THEME_STYLE, style.name).apply()
     }
 
+    fun getDarkModePreference(): DarkModePreference {
+        val raw = prefs.getString(KEY_DARK_MODE_PREF, DarkModePreference.SYSTEM.name)
+        return runCatching { DarkModePreference.valueOf(raw ?: DarkModePreference.SYSTEM.name) }
+            .getOrDefault(DarkModePreference.SYSTEM)
+    }
+
+    fun setDarkModePreference(pref: DarkModePreference) {
+        prefs.edit().putString(KEY_DARK_MODE_PREF, pref.name).apply()
+    }
+
     fun getEloUrl(): String =
         prefs.getString(KEY_ELO_URL, DEFAULT_ELO_URL)?.takeIf { it.isNotBlank() } ?: DEFAULT_ELO_URL
 
@@ -803,6 +813,7 @@ class AppPreferencesStore(context: Context) {
         val root = JSONObject().apply {
             put("backupVersion", 1)
             put("appThemeStyle", getAppThemeStyle().name)
+            put("darkModePreference", getDarkModePreference().name)
             put("agendaStyle", getAgendaStyle().name)
             put("uiScale", getUiScale().toDouble())
             put("eloUrl", getEloUrl())
@@ -863,6 +874,12 @@ class AppPreferencesStore(context: Context) {
         root.optString("appThemeStyle").takeIf { it.isNotBlank() }?.let { raw ->
             runCatching { AppThemeStyle.valueOf(raw) }.getOrNull()?.let {
                 setAppThemeStyle(it)
+                restoredCount++
+            }
+        }
+        root.optString("darkModePreference").takeIf { it.isNotBlank() }?.let { raw ->
+            runCatching { DarkModePreference.valueOf(raw) }.getOrNull()?.let {
+                setDarkModePreference(it)
                 restoredCount++
             }
         }
@@ -995,6 +1012,7 @@ class AppPreferencesStore(context: Context) {
         private const val KEY_AGENDA_STYLE = "agenda_style"
         private const val KEY_UI_SCALE = "ui_scale"
         private const val KEY_APP_THEME_STYLE = "app_theme_style"
+        private const val KEY_DARK_MODE_PREF = "dark_mode_pref"
         private const val KEY_ELO_URL = "elo_url"
         private const val KEY_WEATHER_CITY = "weather_city"
         private const val KEY_WEATHER_LAT = "weather_lat"

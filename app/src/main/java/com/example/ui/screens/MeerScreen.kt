@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -18,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import android.content.Intent
 import android.net.Uri
@@ -32,7 +34,11 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.model.*
 import com.example.ui.MeerSection
 import com.example.ui.components.NothingAwareDivider
+import com.example.ui.components.OneUiExpandingHeader
+import com.example.ui.components.OneUiPillBadge
+import com.example.ui.components.appCardShape
 import com.example.ui.components.isNothingOs
+import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 
 @Composable
@@ -52,6 +58,7 @@ fun MeerScreen(
     agendaStyle: AgendaStyle,
     uiScale: Float,
     appThemeStyle: AppThemeStyle,
+    darkModePreference: DarkModePreference = DarkModePreference.SYSTEM,
     uitvalNotificationsEnabled: Boolean,
     gradeNotificationsEnabled: Boolean = true,
     testNotificationsEnabled: Boolean = true,
@@ -66,6 +73,7 @@ fun MeerScreen(
     onSetAgendaStyle: (AgendaStyle) -> Unit,
     onSetUiScale: (Float) -> Unit,
     onSetAppThemeStyle: (AppThemeStyle) -> Unit,
+    onSetDarkModePreference: (DarkModePreference) -> Unit = {},
     onSetUitvalNotifications: (Boolean) -> Unit,
     onSetGradeNotifications: (Boolean) -> Unit = {},
     onSetTestNotifications: (Boolean) -> Unit = {},
@@ -85,6 +93,7 @@ fun MeerScreen(
     onCheckForUpdate: () -> Unit = {},
     onExportBackupJson: () -> String = { "{}" },
     onImportBackupJson: (String) -> Result<Int> = { Result.failure(UnsupportedOperationException()) },
+    onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (currentSection != MeerSection.HOME) {
@@ -95,6 +104,18 @@ fun MeerScreen(
 
     val context = LocalContext.current
     val nothingMode = isNothingOs
+    val oneUiMode = isOneUi85
+    val homeListState = rememberLazyListState()
+    val isHomeScrolled by remember {
+        derivedStateOf { homeListState.firstVisibleItemIndex > 0 || homeListState.firstVisibleItemScrollOffset > 70 }
+    }
+    LaunchedEffect(currentSection, isHomeScrolled, oneUiMode) {
+        if (currentSection == MeerSection.HOME) {
+            onHeaderCollapsedChange(oneUiMode && isHomeScrolled)
+        } else if (currentSection != MeerSection.INSTELLINGEN) {
+            onHeaderCollapsedChange(false)
+        }
+    }
     val unreadMessagesCount = messages.count { !it.isRead }
     var showPromoVideoDialog by remember { mutableStateOf(false) }
 
@@ -139,6 +160,7 @@ fun MeerScreen(
         when (currentSection) {
             MeerSection.HOME -> {
                 LazyColumn(
+                    state = homeListState,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 16.dp),
@@ -146,18 +168,26 @@ fun MeerScreen(
                     contentPadding = PaddingValues(top = 12.dp, bottom = 28.dp)
                 ) {
                     item(key = "meer_header") {
-                        Text(
-                            text = "Meer & Instellingen",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        if (oneUiMode) {
+                            OneUiExpandingHeader(
+                                title = "Meer",
+                                subtitle = "Berichten, bronnen & instellingen",
+                                isScrolled = isHomeScrolled
+                            )
+                        } else {
+                            Text(
+                                text = "Meer & Instellingen",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
 
                     // Offline-modus toggle card
                     item(key = "meer_offline_card") {
                         Surface(
-                            shape = RoundedCornerShape(if (nothingMode) 24.dp else 20.dp),
+                            shape = appCardShape(standard = 20.dp, nothing = 24.dp),
                             color = if (isEffectivelyOffline) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerLow,
                             border = nothingCardBorder(isAlert = isEffectivelyOffline),
                             modifier = Modifier
@@ -386,6 +416,7 @@ fun MeerScreen(
                     agendaStyle = agendaStyle,
                     uiScale = uiScale,
                     appThemeStyle = appThemeStyle,
+                    darkModePreference = darkModePreference,
                     uitvalNotificationsEnabled = uitvalNotificationsEnabled,
                     gradeNotificationsEnabled = gradeNotificationsEnabled,
                     testNotificationsEnabled = testNotificationsEnabled,
@@ -394,6 +425,7 @@ fun MeerScreen(
                     onSetAgendaStyle = onSetAgendaStyle,
                     onSetUiScale = onSetUiScale,
                     onSetAppThemeStyle = onSetAppThemeStyle,
+                    onSetDarkModePreference = onSetDarkModePreference,
                     onSetUitvalNotifications = onSetUitvalNotifications,
                     onSetGradeNotifications = onSetGradeNotifications,
                     onSetTestNotifications = onSetTestNotifications,
@@ -407,7 +439,10 @@ fun MeerScreen(
                     manualUpdateMessage = manualUpdateMessage,
                     onCheckForUpdate = onCheckForUpdate,
                     onExportBackupJson = onExportBackupJson,
-                    onImportBackupJson = onImportBackupJson
+                    onImportBackupJson = onImportBackupJson,
+                    onHeaderCollapsedChange = { collapsed ->
+                        onHeaderCollapsedChange(oneUiMode && collapsed)
+                    }
                 )
             }
         }
@@ -464,16 +499,16 @@ private fun MeerMenuTile(
     onClick: () -> Unit,
     tag: String
 ) {
-    val nothingMode = isNothingOs
+    val tileShape = appCardShape(standard = 18.dp, nothing = 22.dp)
     Card(
-        shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),
+        shape = tileShape,
         border = nothingCardBorder(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(if (nothingMode) 22.dp else 18.dp))
+            .clip(tileShape)
             .clickable(onClick = onClick)
             .testTag(tag)
     ) {
@@ -512,17 +547,21 @@ private fun MeerMenuTile(
                 )
             }
             if (badgeText != null) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary
-                ) {
-                    Text(
-                        text = badgeText,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                if (isOneUi85) {
+                    OneUiPillBadge(text = badgeText)
+                } else {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary
+                    ) {
+                        Text(
+                            text = badgeText,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.width(6.dp))
             }
@@ -541,6 +580,7 @@ private fun MeerSettingsView(
     agendaStyle: AgendaStyle,
     uiScale: Float,
     appThemeStyle: AppThemeStyle,
+    darkModePreference: DarkModePreference,
     uitvalNotificationsEnabled: Boolean,
     gradeNotificationsEnabled: Boolean,
     testNotificationsEnabled: Boolean,
@@ -549,6 +589,7 @@ private fun MeerSettingsView(
     onSetAgendaStyle: (AgendaStyle) -> Unit,
     onSetUiScale: (Float) -> Unit,
     onSetAppThemeStyle: (AppThemeStyle) -> Unit,
+    onSetDarkModePreference: (DarkModePreference) -> Unit,
     onSetUitvalNotifications: (Boolean) -> Unit,
     onSetGradeNotifications: (Boolean) -> Unit,
     onSetTestNotifications: (Boolean) -> Unit,
@@ -562,9 +603,17 @@ private fun MeerSettingsView(
     manualUpdateMessage: String? = null,
     onCheckForUpdate: () -> Unit = {},
     onExportBackupJson: () -> String = { "{}" },
-    onImportBackupJson: (String) -> Result<Int> = { Result.failure(UnsupportedOperationException()) }
+    onImportBackupJson: (String) -> Result<Int> = { Result.failure(UnsupportedOperationException()) },
+    onHeaderCollapsedChange: (Boolean) -> Unit = {}
 ) {
-    val nothingMode = isNothingOs
+    val oneUiMode = isOneUi85
+    val settingsListState = rememberLazyListState()
+    val isScrolled by remember {
+        derivedStateOf { settingsListState.firstVisibleItemIndex > 0 || settingsListState.firstVisibleItemScrollOffset > 70 }
+    }
+    LaunchedEffect(isScrolled, oneUiMode) {
+        onHeaderCollapsedChange(oneUiMode && isScrolled)
+    }
     val settingsCtx = LocalContext.current
     val currentPreset = UiScalePreset.entries.minByOrNull { kotlin.math.abs(it.scaleFactor - uiScale) }
         ?: UiScalePreset.NORMAL
@@ -605,6 +654,7 @@ private fun MeerSettingsView(
     }
 
     LazyColumn(
+        state = settingsListState,
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
@@ -612,10 +662,20 @@ private fun MeerSettingsView(
         verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(top = 12.dp, bottom = 28.dp)
     ) {
+        if (oneUiMode) {
+            item(key = "oneui_settings_header") {
+                OneUiExpandingHeader(
+                    title = "Instellingen",
+                    subtitle = "${appThemeStyle.labelDutch} • ${darkModePreference.labelDutch}",
+                    isScrolled = isScrolled
+                )
+            }
+        }
+
         // 1. Thema & Weergave
         item {
             Surface(
-                shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),
+                shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 border = nothingCardBorder(),
                 modifier = Modifier.fillMaxWidth()
@@ -639,11 +699,49 @@ private fun MeerSettingsView(
                             SegmentedButton(
                                 selected = appThemeStyle == style,
                                 onClick = { onSetAppThemeStyle(style) },
-                                shape = SegmentedButtonDefaults.itemShape(idx, AppThemeStyle.entries.size)
+                                shape = SegmentedButtonDefaults.itemShape(idx, AppThemeStyle.entries.size),
+                                modifier = Modifier.testTag("settings_theme_${style.name}")
                             ) {
-                                Text(style.labelDutch)
+                                Text(
+                                    text = style.labelDutch,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "Donkere modus",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        DarkModePreference.entries.forEachIndexed { idx, pref ->
+                            SegmentedButton(
+                                selected = darkModePreference == pref,
+                                onClick = { onSetDarkModePreference(pref) },
+                                enabled = appThemeStyle != AppThemeStyle.NOTHING_OS,
+                                shape = SegmentedButtonDefaults.itemShape(idx, DarkModePreference.entries.size),
+                                modifier = Modifier.testTag("settings_dark_mode_${pref.name}")
+                            ) {
+                                Text(
+                                    text = pref.labelDutch,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                    if (appThemeStyle == AppThemeStyle.NOTHING_OS) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Nothing OS gebruikt altijd OLED zwart.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -690,7 +788,7 @@ private fun MeerSettingsView(
         // 2. Meldingen (Uitval/Wijzigingen, Cijfers, Toetsen)
         item {
             Surface(
-                shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),
+                shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 border = nothingCardBorder(),
                 modifier = Modifier.fillMaxWidth()
@@ -755,7 +853,7 @@ private fun MeerSettingsView(
         // 3. Cijfer Unboxing Minigames
         item {
             Surface(
-                shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),
+                shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 border = nothingCardBorder(),
                 modifier = Modifier.fillMaxWidth()
@@ -824,7 +922,7 @@ private fun MeerSettingsView(
         // 4. Updates & Keuzes-backup
         item {
             Surface(
-                shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),
+                shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 border = nothingCardBorder(),
                 modifier = Modifier.fillMaxWidth()
@@ -918,7 +1016,7 @@ private fun MeerSettingsView(
         // 5. Account, Console & Reset
         item {
             Surface(
-                shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),
+                shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 border = nothingCardBorder(),
                 modifier = Modifier.fillMaxWidth()

@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.example.model.BusTrackingState
+import com.example.ui.theme.LocalDarkThemeActive
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -50,7 +51,8 @@ fun BusLiveMapCard(
 ) {
     val context = LocalContext.current
     val nothingMode = isNothingOs
-    val isDarkMap = nothingMode || isSystemInDarkTheme()
+    val oneUiMode = isOneUi85
+    val isDarkMap = nothingMode || LocalDarkThemeActive.current
     var lineInput by remember(savedBusLine) { mutableStateOf(savedBusLine) }
     var isEditingLine by remember(savedBusLine) { mutableStateOf(savedBusLine.isBlank()) }
     var userLat by remember { mutableStateOf(busTrackingState.userLat) }
@@ -112,7 +114,7 @@ fun BusLiveMapCard(
         modifier = modifier
             .fillMaxWidth()
             .testTag("bus_live_map_card"),
-        shape = RoundedCornerShape(if (nothingMode) 24.dp else 22.dp),
+        shape = appCardShape(standard = 22.dp, nothing = 24.dp),
         border = nothingCardBorder(isAlert = busTrackingState.errorMessage != null),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -481,8 +483,8 @@ fun BusLiveMapCard(
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         upcomingStops.forEach { stop ->
                             Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                shape = RoundedCornerShape(if (oneUiMode) 18.dp else 12.dp),
+                                color = if (oneUiMode) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -529,12 +531,29 @@ fun BusLiveMapCard(
                                             }
                                         }
                                     }
-                                    Text(
-                                        text = stop.expectedArrival ?: stop.scheduledArrival ?: "Gepland",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (stop.isRealtime) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    val etaText = stop.expectedArrival ?: stop.scheduledArrival ?: "Gepland"
+                                    if (oneUiMode) {
+                                        OneUiPillBadge(
+                                            text = etaText,
+                                            containerColor = if (stop.isRealtime) {
+                                                oneUiPillContainerColor(isError = false)
+                                            } else {
+                                                MaterialTheme.colorScheme.surfaceContainerLow
+                                            },
+                                            contentColor = if (stop.isRealtime) {
+                                                oneUiPillContentColor(isError = false)
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            }
+                                        )
+                                    } else {
+                                        Text(
+                                            text = etaText,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (stop.isRealtime) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }

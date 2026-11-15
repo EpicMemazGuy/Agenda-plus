@@ -13,6 +13,7 @@ object LauncherIconManager {
             val pkg = context.packageName
             val defaultComponent = ComponentName(pkg, "$pkg.MainActivityDefault")
             val nothingComponent = ComponentName(pkg, "$pkg.MainActivityNothingOs")
+            val oneUiComponent = ComponentName(pkg, "$pkg.MainActivityOneUi")
 
             val defaultState = if (style == AppThemeStyle.STANDARD) {
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED
@@ -20,6 +21,11 @@ object LauncherIconManager {
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED
             }
             val nothingState = if (style == AppThemeStyle.NOTHING_OS) {
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            } else {
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            }
+            val oneUiState = if (style == AppThemeStyle.ONE_UI) {
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED
             } else {
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED
@@ -36,6 +42,13 @@ object LauncherIconManager {
                 pm.setComponentEnabledSetting(
                     nothingComponent,
                     nothingState,
+                    PackageManager.DONT_KILL_APP
+                )
+            }
+            if (pm.getComponentEnabledSetting(oneUiComponent) != oneUiState) {
+                pm.setComponentEnabledSetting(
+                    oneUiComponent,
+                    oneUiState,
                     PackageManager.DONT_KILL_APP
                 )
             }

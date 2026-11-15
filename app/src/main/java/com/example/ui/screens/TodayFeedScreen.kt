@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -30,9 +31,15 @@ import com.example.network.CitySearchResult
 import com.example.ui.components.BusLiveMapCard
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.NothingDotMatrixSpinner
+import com.example.ui.components.OneUiExpandingHeader
+import com.example.ui.components.OneUiPillBadge
 import com.example.ui.components.ScheduleLoadingSkeleton
+import com.example.ui.components.appCardShape
 import com.example.ui.components.isNothingOs
+import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.oneUiPillContainerColor
+import com.example.ui.components.oneUiPillContentColor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -64,9 +71,18 @@ fun TodayFeedScreen(
     onOpenTodayModifySheet: () -> Unit,
     onSetBusLine: (String, Double?, Double?) -> Unit,
     onRefreshBusTracking: (Double?, Double?) -> Unit,
+    onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val oneUiMode = isOneUi85
+    val listState = rememberLazyListState()
+    val isScrolled by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 70 }
+    }
+    LaunchedEffect(isScrolled, oneUiMode) {
+        onHeaderCollapsedChange(oneUiMode && isScrolled)
+    }
     var showCityPickerDialog by remember { mutableStateOf(false) }
 
     val todayContext = remember(appointments) {
@@ -154,6 +170,7 @@ fun TodayFeedScreen(
     }
 
     LazyColumn(
+        state = listState,
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
@@ -161,6 +178,16 @@ fun TodayFeedScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(top = 12.dp, bottom = 28.dp)
     ) {
+        if (oneUiMode) {
+            item(key = "oneui_today_header") {
+                OneUiExpandingHeader(
+                    title = "Vandaag",
+                    subtitle = "$dayNameDutch • $activeLessonCount ${if (activeLessonCount == 1) "lesuur" else "lesuren"}",
+                    isScrolled = isScrolled
+                )
+            }
+        }
+
         // 0a. Top dismissible Navigation Pop-Up ("Wil je ook navigatie?")
         if (!navPromptDismissed) {
             item(key = "nav_prompt_banner") {
@@ -175,7 +202,7 @@ fun TodayFeedScreen(
         if (isOffline) {
             item(key = "offline_banner") {
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = appCardShape(standard = 16.dp, nothing = 20.dp),
                     color = MaterialTheme.colorScheme.errorContainer,
                     border = nothingCardBorder(isAlert = true),
                     modifier = Modifier
@@ -239,7 +266,7 @@ fun TodayFeedScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .testTag("hero_empty_card"),
-                                    shape = RoundedCornerShape(24.dp),
+                                    shape = appCardShape(standard = 24.dp, nothing = 24.dp),
                                     border = nothingCardBorder(),
                                     colors = CardDefaults.cardColors(
                                         containerColor = MaterialTheme.colorScheme.surfaceContainer
@@ -289,12 +316,12 @@ fun TodayFeedScreen(
                         item(key = "block_kwt_alert") {
                             val openChoices = kwtSlots.count { slot -> slot.options.none { it.isEnrolled } }
                             Surface(
-                                shape = RoundedCornerShape(if (isNothingOs) 24.dp else 20.dp),
+                                shape = appCardShape(standard = 20.dp, nothing = 24.dp),
                                 color = MaterialTheme.colorScheme.primaryContainer,
                                 border = nothingCardBorder(),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(if (isNothingOs) 24.dp else 20.dp))
+                                    .clip(appCardShape(standard = 20.dp, nothing = 24.dp))
                                     .clickable(onClick = onNavigateToKwt)
                                     .testTag("today_kwt_alert_card")
                             ) {
@@ -373,10 +400,10 @@ fun TodayFeedScreen(
                             Card(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .clip(RoundedCornerShape(20.dp))
+                                    .clip(appCardShape(standard = 20.dp, nothing = 24.dp))
                                     .clickable(onClick = onOpenElo)
                                     .testTag("quick_elo_button"),
-                                shape = RoundedCornerShape(20.dp),
+                                shape = appCardShape(standard = 20.dp, nothing = 24.dp),
                                 border = nothingCardBorder(),
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceContainer
@@ -420,10 +447,10 @@ fun TodayFeedScreen(
                             Card(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .clip(RoundedCornerShape(20.dp))
+                                    .clip(appCardShape(standard = 20.dp, nothing = 24.dp))
                                     .clickable(onClick = onNavigateToRooster)
                                     .testTag("quick_view_rooster_button"),
-                                shape = RoundedCornerShape(20.dp),
+                                shape = appCardShape(standard = 20.dp, nothing = 24.dp),
                                 border = nothingCardBorder(),
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceContainer
@@ -506,8 +533,9 @@ fun TodayFeedScreen(
                     if (urgentTasks.isEmpty()) {
                         item(key = "block_homework_empty") {
                             Surface(
-                                shape = RoundedCornerShape(16.dp),
+                                shape = appCardShape(standard = 16.dp, nothing = 20.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                border = nothingCardBorder(),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("empty_urgent_tasks_card")
@@ -526,7 +554,7 @@ fun TodayFeedScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("today_task_item_${task.id}"),
-                                shape = RoundedCornerShape(if (isNothingOs) 22.dp else 18.dp),
+                                shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                                 border = nothingCardBorder(isAlert = task.priority == TaskPriority.HIGH && !task.isCompleted),
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -615,8 +643,9 @@ fun TodayFeedScreen(
         if (todayClasses.isEmpty()) {
             item {
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = appCardShape(standard = 16.dp, nothing = 20.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = nothingCardBorder(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("empty_today_classes_card")
@@ -632,7 +661,7 @@ fun TodayFeedScreen(
         } else if (agendaStyle == AgendaStyle.COMPACT) {
             item {
                 Surface(
-                    shape = RoundedCornerShape(if (isNothingOs) 24.dp else 18.dp),
+                    shape = appCardShape(standard = 18.dp, nothing = 24.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     border = nothingCardBorder(),
                     modifier = Modifier.fillMaxWidth()
@@ -701,7 +730,7 @@ private fun NavigationSetupPromptBanner(
 ) {
     val nothingMode = isNothingOs
     Surface(
-        shape = RoundedCornerShape(if (nothingMode) 24.dp else 20.dp),
+        shape = appCardShape(standard = 20.dp, nothing = 24.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
         border = nothingCardBorder(),
         modifier = Modifier
@@ -784,7 +813,7 @@ private fun SchoolNavigationCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("school_navigation_card"),
-        shape = RoundedCornerShape(if (nothingMode) 24.dp else 22.dp),
+        shape = appCardShape(standard = 22.dp, nothing = 24.dp),
         border = nothingCardBorder(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -888,12 +917,12 @@ private fun LocalWeatherHeaderCard(
     onChangeCity: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(if (isNothingOs) 24.dp else 22.dp),
+        shape = appCardShape(standard = 22.dp, nothing = 24.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = nothingCardBorder(),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(if (isNothingOs) 24.dp else 22.dp))
+            .clip(appCardShape(standard = 22.dp, nothing = 24.dp))
             .clickable(onClick = onChangeCity)
             .testTag("local_weather_header")
     ) {
@@ -1185,9 +1214,18 @@ fun HeroClassCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (cleanRoom != null) {
+                        val roomText = if (appointment.isRelocated && cleanOrigRoom != null) {
+                            "Lokaal $cleanRoom (was $cleanOrigRoom)"
+                        } else {
+                            "Lokaal $cleanRoom"
+                        }
                         Surface(
-                            shape = RoundedCornerShape(percent = 50),
-                            color = if (appointment.isRelocated) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
+                            shape = CircleShape,
+                            color = when {
+                                isOneUi85 -> oneUiPillContainerColor(isError = false)
+                                appointment.isRelocated -> MaterialTheme.colorScheme.primaryContainer
+                                else -> MaterialTheme.colorScheme.surfaceContainerHighest
+                            }
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -1197,18 +1235,14 @@ fun HeroClassCard(
                                     imageVector = Icons.Default.Room,
                                     contentDescription = null,
                                     modifier = Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
+                                    tint = if (isOneUi85) oneUiPillContentColor() else MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = if (appointment.isRelocated && cleanOrigRoom != null) {
-                                        "Lokaal $cleanRoom (was $cleanOrigRoom)"
-                                    } else {
-                                        "Lokaal $cleanRoom"
-                                    },
+                                    text = roomText,
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = if (isOneUi85) oneUiPillContentColor() else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
@@ -1269,11 +1303,12 @@ fun TodayClassRow(
     val cleanTeacher = appointment.teacherName.cleanSchoolText()
     val cleanRoom = appointment.classroom.cleanSchoolText()
 
+    val oneUiMode = isOneUi85
     Card(
         modifier = modifier
             .fillMaxWidth()
             .testTag("today_class_item_${appointment.id}"),
-        shape = RoundedCornerShape(if (isNothingOs) 24.dp else 16.dp),
+        shape = appCardShape(standard = 16.dp, nothing = 24.dp),
         border = nothingCardBorder(isAlert = isCanceled),
         colors = CardDefaults.cardColors(
             containerColor = if (isCanceled) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerLow
@@ -1311,29 +1346,37 @@ fun TodayClassRow(
                     )
                     if (isCanceled) {
                         Spacer(modifier = Modifier.width(6.dp))
-                        Surface(
-                            shape = RoundedCornerShape(percent = 50),
-                            color = MaterialTheme.colorScheme.error
-                        ) {
-                            Text(
-                                text = "UITVAL",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onError,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
+                        if (oneUiMode) {
+                            OneUiPillBadge(text = "UITVAL", isError = true)
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(percent = 50),
+                                color = MaterialTheme.colorScheme.error
+                            ) {
+                                Text(
+                                    text = "UITVAL",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onError,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     } else if (appointment.isRelocated) {
                         Spacer(modifier = Modifier.width(6.dp))
-                        Surface(
-                            shape = RoundedCornerShape(percent = 50),
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
-                            Text(
-                                text = "GEWIJZIGD",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
+                        if (oneUiMode) {
+                            OneUiPillBadge(text = "GEWIJZIGD")
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(percent = 50),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = "GEWIJZIGD",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -1350,12 +1393,16 @@ fun TodayClassRow(
             }
 
             if (cleanRoom != null) {
-                Text(
-                    text = "Lok. $cleanRoom",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isCanceled) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
-                )
+                if (oneUiMode) {
+                    OneUiPillBadge(text = "Lok. $cleanRoom", isError = isCanceled)
+                } else {
+                    Text(
+                        text = "Lok. $cleanRoom",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isCanceled) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
         }
     }

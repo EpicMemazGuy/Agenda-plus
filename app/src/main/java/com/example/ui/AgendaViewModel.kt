@@ -69,6 +69,7 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
     val agendaStyle: StateFlow<AgendaStyle> = repository.agendaStyle
     val uiScale: StateFlow<Float> = repository.uiScale
     val appThemeStyle: StateFlow<AppThemeStyle> = repository.appThemeStyle
+    val darkModePreference: StateFlow<DarkModePreference> = repository.darkModePreference
     val eloUrl: StateFlow<String> = repository.eloUrl
     val studySites: StateFlow<List<StudySite>> = repository.studySites
     val weatherInfo: StateFlow<WeatherInfo?> = repository.weatherInfo
@@ -458,6 +459,10 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setAppThemeStyle(style: AppThemeStyle) {
         repository.setAppThemeStyle(style)
+    }
+
+    fun setDarkModePreference(pref: DarkModePreference) {
+        repository.setDarkModePreference(pref)
     }
 
     fun openInAppBrowser(title: String, url: String) {

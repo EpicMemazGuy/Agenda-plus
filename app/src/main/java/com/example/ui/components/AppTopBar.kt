@@ -20,9 +20,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import com.example.model.AgendaStyle
 import com.example.model.AppThemeStyle
 import com.example.model.AuthSession
+import com.example.model.DarkModePreference
 import com.example.model.GradeUnboxingMode
 import com.example.model.UiScalePreset
 import com.example.model.cleanSchoolText
@@ -38,6 +43,8 @@ fun AppTopBar(
     agendaStyle: AgendaStyle,
     uiScale: Float,
     appThemeStyle: AppThemeStyle = AppThemeStyle.STANDARD,
+    darkModePreference: DarkModePreference = DarkModePreference.SYSTEM,
+    collapsedTitle: String? = null,
     uitvalNotificationsEnabled: Boolean = true,
     gradeNotificationsEnabled: Boolean = true,
     testNotificationsEnabled: Boolean = true,
@@ -49,6 +56,7 @@ fun AppTopBar(
     onSetAgendaStyle: (AgendaStyle) -> Unit = {},
     onSetUiScale: (Float) -> Unit = {},
     onSetAppThemeStyle: (AppThemeStyle) -> Unit = {},
+    onSetDarkModePreference: (DarkModePreference) -> Unit = {},
     onSetUitvalNotifications: (Boolean) -> Unit = {},
     onSetGradeNotifications: (Boolean) -> Unit = {},
     onSetTestNotifications: (Boolean) -> Unit = {},
@@ -62,6 +70,7 @@ fun AppTopBar(
     var showAccountSheet by remember { mutableStateOf(false) }
     var testNotificationFeedback by remember { mutableStateOf<String?>(null) }
     val nothingMode = isNothingOs
+    val oneUiMode = isOneUi85
     val cardBorder: BorderStroke? = nothingCardBorder()
 
     val cleanStudentName = session.studentName.cleanSchoolText() ?: "Account"
@@ -72,79 +81,108 @@ fun AppTopBar(
         modifier = modifier
             .fillMaxWidth()
             .testTag("app_top_bar"),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = if (nothingMode) 0.dp else 2.dp
+        color = when {
+            oneUiMode && !collapsedTitle.isNullOrBlank() -> MaterialTheme.colorScheme.surfaceContainerLow
+            else -> MaterialTheme.colorScheme.surface
+        },
+        tonalElevation = if (nothingMode || oneUiMode) 0.dp else 2.dp
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .padding(horizontal = 16.dp, vertical = if (oneUiMode) 8.dp else 10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // School Tenant & App Title Brand
+                // School Tenant & App Title Brand (or collapsed One UI section title on scroll)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
                 ) {
                     AgendaPlusLogo(
-                        size = 40.dp,
+                        size = if (oneUiMode) 36.dp else 40.dp,
                         modifier = Modifier.testTag("app_logo_badge")
                     )
 
                     Spacer(modifier = Modifier.width(10.dp))
 
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = if (nothingMode) "AGENDA+" else "Agenda+",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(percent = 50),
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                border = cardBorder
-                            ) {
+                    AnimatedContent(
+                        targetState = if (oneUiMode && !collapsedTitle.isNullOrBlank()) collapsedTitle else null,
+                        transitionSpec = { fadeIn() togetherWith fadeOut() },
+                        label = "topbar_collapsed_title"
+                    ) { pinnedTitle ->
+                        if (pinnedTitle != null) {
+                            Column {
                                 Text(
-                                    text = session.provider.displayName.uppercase(),
-                                    style = MaterialTheme.typography.labelSmall,
+                                    text = pinnedTitle,
+                                    style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = if (isOffline) "Offline-cache • $lastSyncTime" else "Sync: $lastSyncTime",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            if (isOffline) {
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(percent = 50),
-                                    color = MaterialTheme.colorScheme.errorContainer,
-                                    modifier = Modifier.testTag("topbar_offline_badge")
-                                ) {
+                        } else {
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = "OFFLINE",
-                                        style = MaterialTheme.typography.labelSmall,
+                                        text = if (nothingMode) "AGENDA+" else "Agenda+",
+                                        style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onErrorContainer,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(percent = 50),
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        border = cardBorder
+                                    ) {
+                                        Text(
+                                            text = session.provider.displayName.uppercase(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                    if (isOffline) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(percent = 50),
+                                            color = MaterialTheme.colorScheme.errorContainer,
+                                            modifier = Modifier.testTag("topbar_offline_badge")
+                                        ) {
+                                            Text(
+                                                text = "OFFLINE",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
                                 }
+
+                                Text(
+                                    text = session.school?.name?.cleanSchoolText() ?: "Geen school geselecteerd",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
-
-                        Text(
-                            text = session.school?.name?.cleanSchoolText() ?: "Geen school geselecteerd",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
                     }
                 }
 
@@ -218,41 +256,46 @@ fun AppTopBar(
                 }
             }
 
-            // Subtitle status row: Offline sync timestamp
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 3.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
+            // Subtitle status row: Offline sync timestamp (hidden when One UI collapsed title already shows sync)
+            if (!(oneUiMode && !collapsedTitle.isNullOrBlank())) {
+                Row(
                     modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                !session.isAuthenticated || isOffline -> MaterialTheme.colorScheme.error
-                                nothingMode -> NothingRed
-                                else -> MaterialTheme.colorScheme.primary
-                            }
-                        )
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = when {
-                        !session.isAuthenticated -> "Niet verbonden"
-                        isOffline -> "Offline-cache actief • $lastSyncTime"
-                        else -> "Laatste sync: $lastSyncTime"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                        .fillMaxWidth()
+                        .padding(top = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(
+                                when {
+                                    !session.isAuthenticated || isOffline -> MaterialTheme.colorScheme.error
+                                    nothingMode -> NothingRed
+                                    else -> MaterialTheme.colorScheme.primary
+                                }
+                            )
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = when {
+                            !session.isAuthenticated -> "Niet verbonden"
+                            isOffline -> "Offline-cache actief • $lastSyncTime"
+                            else -> "Laatste sync: $lastSyncTime"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             if (nothingMode) {
                 Spacer(modifier = Modifier.height(6.dp))
                 NothingDottedDivider()
+            } else if (oneUiMode && !collapsedTitle.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             }
         }
     }
@@ -294,7 +337,7 @@ fun AppTopBar(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 Surface(
-                    shape = RoundedCornerShape(if (nothingMode) 24.dp else 20.dp),
+                    shape = appCardShape(standard = 20.dp, nothing = 24.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     border = cardBorder,
                     modifier = Modifier.fillMaxWidth()
@@ -359,7 +402,7 @@ fun AppTopBar(
 
                 // Weergave & Indeling section
                 Surface(
-                    shape = RoundedCornerShape(if (nothingMode) 24.dp else 20.dp),
+                    shape = appCardShape(standard = 20.dp, nothing = 24.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     border = cardBorder,
                     modifier = Modifier.fillMaxWidth()
@@ -394,7 +437,12 @@ fun AppTopBar(
                                     ),
                                     modifier = Modifier.testTag("settings_theme_${style.name}")
                                 ) {
-                                    Text(style.labelDutch)
+                                    Text(
+                                        text = style.labelDutch,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
                         }
@@ -404,6 +452,48 @@ fun AppTopBar(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Text(
+                            text = "Donkere modus",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        SingleChoiceSegmentedButtonRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("settings_dark_mode_segmented")
+                        ) {
+                            DarkModePreference.entries.forEachIndexed { index, pref ->
+                                SegmentedButton(
+                                    selected = darkModePreference == pref,
+                                    onClick = { onSetDarkModePreference(pref) },
+                                    enabled = appThemeStyle != AppThemeStyle.NOTHING_OS,
+                                    shape = SegmentedButtonDefaults.itemShape(
+                                        index = index,
+                                        count = DarkModePreference.entries.size
+                                    ),
+                                    modifier = Modifier.testTag("settings_dark_mode_${pref.name}")
+                                ) {
+                                    Text(
+                                        text = pref.labelDutch,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                        if (appThemeStyle == AppThemeStyle.NOTHING_OS) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Nothing OS gebruikt altijd OLED zwart.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(14.dp))
 
@@ -488,7 +578,7 @@ fun AppTopBar(
 
                 // Meldingen & Uitval section
                 Surface(
-                    shape = RoundedCornerShape(if (nothingMode) 24.dp else 20.dp),
+                    shape = appCardShape(standard = 20.dp, nothing = 24.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     border = cardBorder,
                     modifier = Modifier.fillMaxWidth()

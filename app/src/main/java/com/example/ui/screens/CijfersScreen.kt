@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -20,8 +22,14 @@ import com.example.model.GradeItem
 import com.example.model.SubjectGradeSummary
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.NothingConcentricGradeRing
+import com.example.ui.components.OneUiExpandingHeader
+import com.example.ui.components.OneUiPillBadge
+import com.example.ui.components.appCardShape
 import com.example.ui.components.isNothingOs
+import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.oneUiPillContainerColor
+import com.example.ui.components.oneUiPillContentColor
 import kotlin.math.round
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,8 +41,17 @@ fun CijfersScreen(
     onOpenWhatIf: (SubjectGradeSummary) -> Unit,
     onOpenExportSheet: () -> Unit = {},
     onPlayGradeUnboxing: (GradeItem) -> Unit = {},
+    onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val oneUiMode = isOneUi85
+    val listState = rememberLazyListState()
+    val isScrolled by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 70 }
+    }
+    LaunchedEffect(isScrolled, oneUiMode) {
+        onHeaderCollapsedChange(oneUiMode && isScrolled)
+    }
     // Overall GPA calculation
     val overallAverage = remember(summaries) {
         if (summaries.isNotEmpty()) {
@@ -55,6 +72,7 @@ fun CijfersScreen(
     val passingSubjects = summaries.count { it.isPassingAverage }
 
     LazyColumn(
+        state = listState,
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
@@ -62,13 +80,23 @@ fun CijfersScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp)
     ) {
+        if (oneUiMode) {
+            item(key = "oneui_cijfers_header") {
+                OneUiExpandingHeader(
+                    title = "Cijfers",
+                    subtitle = "Algemeen gemiddelde: $overallAverage",
+                    isScrolled = isScrolled
+                )
+            }
+        }
+
         // GPA Overview Hero Card
         item {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("gpa_overview_card"),
-                shape = RoundedCornerShape(28.dp),
+                shape = appCardShape(standard = 28.dp, nothing = 28.dp),
                 border = nothingCardBorder(),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainer
@@ -116,8 +144,8 @@ fun CijfersScreen(
                         }
 
                         Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = if (oneUiMode) CircleShape else RoundedCornerShape(20.dp),
+                            color = if (oneUiMode) oneUiPillContainerColor(isError = failingSubjects > 0) else MaterialTheme.colorScheme.primaryContainer,
                             modifier = Modifier.padding(8.dp)
                         ) {
                             Column(
@@ -127,13 +155,13 @@ fun CijfersScreen(
                                 Text(
                                     text = "Overgangsnorm",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    color = if (oneUiMode) oneUiPillContentColor(isError = failingSubjects > 0) else MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                                 Text(
                                     text = if (failingSubjects == 0) "Voldoende" else "$failingSubjects onvoldoende(s)",
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    color = if (oneUiMode) oneUiPillContentColor(isError = failingSubjects > 0) else MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                             }
                         }
@@ -252,8 +280,9 @@ fun CijfersScreen(
         if (summaries.isEmpty()) {
             item {
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
+                    shape = appCardShape(standard = 20.dp, nothing = 20.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = nothingCardBorder(),
                     modifier = Modifier.fillMaxWidth().testTag("empty_grades_card")
                 ) {
                     Column(
@@ -310,7 +339,7 @@ fun SubjectGradeCard(
         modifier = modifier
             .fillMaxWidth()
             .testTag("subject_card_${summary.subjectCode}"),
-        shape = RoundedCornerShape(if (isNothingOs) 24.dp else 22.dp),
+        shape = appCardShape(standard = 22.dp, nothing = 24.dp),
         border = nothingCardBorder(isAlert = !summary.isPassingAverage),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -343,13 +372,21 @@ fun SubjectGradeCard(
                     // Average Pill
                     Surface(
                         shape = RoundedCornerShape(percent = 50),
-                        color = if (summary.isPassingAverage) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
+                        color = when {
+                            isOneUi85 -> oneUiPillContainerColor(isError = !summary.isPassingAverage)
+                            summary.isPassingAverage -> MaterialTheme.colorScheme.primaryContainer
+                            else -> MaterialTheme.colorScheme.errorContainer
+                        }
                     ) {
                         Text(
                             text = "${summary.weightedAverage}",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (summary.isPassingAverage) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                            color = when {
+                                isOneUi85 -> oneUiPillContentColor(isError = !summary.isPassingAverage)
+                                summary.isPassingAverage -> MaterialTheme.colorScheme.onPrimaryContainer
+                                else -> MaterialTheme.colorScheme.onErrorContainer
+                            },
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                         )
                     }
@@ -407,9 +444,11 @@ fun SubjectGradeCard(
                             }
 
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
+                                shape = if (isOneUi85) CircleShape else RoundedCornerShape(8.dp),
                                 color = when {
                                     isUnrevealed -> MaterialTheme.colorScheme.primary
+                                    isOneUi85 && !grade.isPassing -> oneUiPillContainerColor(isError = true)
+                                    isOneUi85 && grade.isPassing -> oneUiPillContainerColor(isError = false)
                                     grade.isPassing -> MaterialTheme.colorScheme.surfaceContainerHigh
                                     else -> MaterialTheme.colorScheme.errorContainer
                                 }
@@ -420,6 +459,7 @@ fun SubjectGradeCard(
                                     fontWeight = FontWeight.Bold,
                                     color = when {
                                         isUnrevealed -> MaterialTheme.colorScheme.onPrimary
+                                        isOneUi85 -> oneUiPillContentColor(isError = !grade.isPassing)
                                         grade.isPassing -> MaterialTheme.colorScheme.onSurface
                                         else -> MaterialTheme.colorScheme.onErrorContainer
                                     },

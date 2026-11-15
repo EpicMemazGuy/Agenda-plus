@@ -90,3 +90,17 @@ val NothingRed = Color(0xFFD71921)           // Surgical accent (alerts, active 
 val NothingRedContainer = Color(0xFF2B090B)  // Dark error/uitval container
 val NothingOnRedContainer = Color(0xFFFFDAD8)
 
+// ============================================================================
+// One UI 8.5 Signature Fallback & Surface Hierarchy Tokens
+// ============================================================================
+val OneUiBlueLight = Color(0xFF0381FE)
+val OneUiBlueDark = Color(0xFF3E91FF)
+val OneUiDarkCardBase = Color(0xFF17171A)
+val OneUiDarkElevatedBase = Color(0xFF202025)
+val OneUiDarkHighestBase = Color(0xFF2B2B31)
+val OneUiLightCanvasBase = Color(0xFFF6F6F8)
+val OneUiLightElevatedTintBase = Color(0xFFEBEBF0)
+val OneUiLightHighestTintBase = Color(0xFFE1E1E8)
+val OneUiErrorRedLight = Color(0xFFD93025)
+val OneUiErrorRedDark = Color(0xFFFF5E57)
+

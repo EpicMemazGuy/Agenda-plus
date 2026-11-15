@@ -5,12 +5,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -21,7 +22,10 @@ import androidx.compose.ui.unit.dp
 import com.example.model.HomeworkTask
 import com.example.model.TaskCategory
 import com.example.model.TaskPriority
-import com.example.ui.components.isNothingOs
+import com.example.ui.components.OneUiExpandingHeader
+import com.example.ui.components.OneUiPillBadge
+import com.example.ui.components.appCardShape
+import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,8 +36,18 @@ fun HuiswerkScreen(
     onSelectCategory: (TaskCategory?) -> Unit,
     onToggleTask: (String) -> Unit,
     onAddTaskClick: () -> Unit,
+    onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val oneUiMode = isOneUi85
+    val listState = rememberLazyListState()
+    val isScrolled by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 70 }
+    }
+    LaunchedEffect(isScrolled, oneUiMode) {
+        onHeaderCollapsedChange(oneUiMode && isScrolled)
+    }
+
     val filteredTasks = if (selectedCategory == null) {
         tasks
     } else {
@@ -58,6 +72,7 @@ fun HuiswerkScreen(
         }
     ) { innerPadding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -65,13 +80,23 @@ fun HuiswerkScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(top = 12.dp, bottom = 80.dp)
         ) {
+            if (oneUiMode) {
+                item(key = "oneui_huiswerk_header") {
+                    OneUiExpandingHeader(
+                        title = "Huiswerk",
+                        subtitle = "$completedCount van $totalCount voltooid",
+                        isScrolled = isScrolled
+                    )
+                }
+            }
+
             // Header & Progress Card
             item {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("homework_progress_card"),
-                    shape = RoundedCornerShape(24.dp),
+                    shape = appCardShape(standard = 24.dp, nothing = 24.dp),
                     border = nothingCardBorder(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer
@@ -89,17 +114,21 @@ fun HuiswerkScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            Surface(
-                                shape = RoundedCornerShape(percent = 50),
-                                color = MaterialTheme.colorScheme.primaryContainer
-                            ) {
-                                Text(
-                                    text = "$completedCount van $totalCount voltooid",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                )
+                            if (oneUiMode) {
+                                OneUiPillBadge(text = "$completedCount / $totalCount")
+                            } else {
+                                Surface(
+                                    shape = RoundedCornerShape(percent = 50),
+                                    color = MaterialTheme.colorScheme.primaryContainer
+                                ) {
+                                    Text(
+                                        text = "$completedCount van $totalCount voltooid",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
                             }
                         }
 
@@ -150,8 +179,9 @@ fun HuiswerkScreen(
             if (filteredTasks.isEmpty()) {
                 item {
                     Surface(
-                        shape = RoundedCornerShape(20.dp),
+                        shape = appCardShape(standard = 20.dp, nothing = 20.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        border = nothingCardBorder(),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -197,7 +227,7 @@ fun TaskCard(
         modifier = modifier
             .fillMaxWidth()
             .testTag("task_card_${task.id}"),
-        shape = RoundedCornerShape(if (isNothingOs) 24.dp else 22.dp),
+        shape = appCardShape(standard = 22.dp, nothing = 24.dp),
         border = nothingCardBorder(isAlert = task.priority == TaskPriority.HIGH && !task.isCompleted),
         colors = CardDefaults.cardColors(
             containerColor = if (task.isCompleted) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerLow
@@ -227,43 +257,55 @@ fun TaskCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(percent = 50),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Text(
-                            text = task.subject,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                        )
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(percent = 50),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh
-                    ) {
-                        Text(
+                    if (isOneUi85) {
+                        OneUiPillBadge(text = task.subject)
+                        OneUiPillBadge(
                             text = task.category.labelDutch,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface
                         )
-                    }
-
-                    if (task.priority == TaskPriority.HIGH) {
+                        if (task.priority == TaskPriority.HIGH) {
+                            OneUiPillBadge(text = "Urgent", isError = true)
+                        }
+                    } else {
                         Surface(
                             shape = RoundedCornerShape(percent = 50),
-                            color = MaterialTheme.colorScheme.errorContainer
+                            color = MaterialTheme.colorScheme.primaryContainer
                         ) {
                             Text(
-                                text = "Urgent",
+                                text = task.subject,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                             )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(percent = 50),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh
+                        ) {
+                            Text(
+                                text = task.category.labelDutch,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        if (task.priority == TaskPriority.HIGH) {
+                            Surface(
+                                shape = RoundedCornerShape(percent = 50),
+                                color = MaterialTheme.colorScheme.errorContainer
+                            ) {
+                                Text(
+                                    text = "Urgent",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     }
                 }

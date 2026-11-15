@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,9 +33,15 @@ import com.example.model.TaskCategory
 import com.example.model.cleanSchoolText
 import com.example.model.isTestKeywordMatch
 import com.example.ui.components.NothingAwareDivider
+import com.example.ui.components.OneUiExpandingHeader
+import com.example.ui.components.OneUiPillBadge
 import com.example.ui.components.ScheduleLoadingSkeleton
+import com.example.ui.components.appCardShape
 import com.example.ui.components.isNothingOs
+import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.oneUiPillContainerColor
+import com.example.ui.components.oneUiPillContentColor
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -74,8 +81,17 @@ fun RoosterScreen(
     onSelectDay: (Int) -> Unit,
     onSelectViewMode: (Int) -> Unit,
     onOpenKwtSlot: (Appointment) -> Unit = {},
+    onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val oneUiMode = isOneUi85
+    val listState = rememberLazyListState()
+    val isScrolled by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 70 }
+    }
+    LaunchedEffect(isScrolled, oneUiMode) {
+        onHeaderCollapsedChange(oneUiMode && isScrolled)
+    }
     var weekOffset by remember { mutableIntStateOf(0) }
 
     val (weekNumber, days) = remember(weekOffset, appointments) {
@@ -155,6 +171,7 @@ fun RoosterScreen(
     }
 
     LazyColumn(
+        state = listState,
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = if (agendaStyle == AgendaStyle.COMPACT) 12.dp else 16.dp)
@@ -164,29 +181,7 @@ fun RoosterScreen(
     ) {
         // 1. Live Week Banner & Week Navigation
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = if (viewMode == 3) "Toetsen & Deadlines" else "Lesrooster",
-                        style = if (agendaStyle == AgendaStyle.COMPACT) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = if (viewMode == 3) {
-                            "${upcomingTests.size} aankomende toets(en) • PW, SO, MO"
-                        } else {
-                            "Week $weekNumber • ${days.first().dateString} - ${days.last().dateString}"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
+            val weekNavControls: @Composable () -> Unit = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
                         onClick = { weekOffset-- },
@@ -201,7 +196,7 @@ fun RoosterScreen(
                     }
                     Surface(
                         shape = RoundedCornerShape(percent = 50),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        color = if (oneUiMode) oneUiPillContainerColor() else MaterialTheme.colorScheme.surfaceContainerHigh,
                         modifier = Modifier
                             .clip(RoundedCornerShape(percent = 50))
                             .clickable { weekOffset = 0 }
@@ -210,7 +205,7 @@ fun RoosterScreen(
                             text = if (weekOffset == 0) "Actueel" else "W$weekNumber",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = if (oneUiMode) oneUiPillContentColor() else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         )
                     }
@@ -225,6 +220,44 @@ fun RoosterScreen(
                             contentDescription = "Volgende week"
                         )
                     }
+                }
+            }
+
+            if (oneUiMode) {
+                OneUiExpandingHeader(
+                    title = if (viewMode == 3) "Toetsen" else "Lesrooster",
+                    subtitle = if (viewMode == 3) {
+                        "${upcomingTests.size} aankomende toets(en) • PW, SO, MO"
+                    } else {
+                        "Week $weekNumber • ${days.first().dateString} - ${days.last().dateString}"
+                    },
+                    isScrolled = isScrolled,
+                    trailingContent = if (viewMode != 3) weekNavControls else null
+                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = if (viewMode == 3) "Toetsen & Deadlines" else "Lesrooster",
+                            style = if (agendaStyle == AgendaStyle.COMPACT) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (viewMode == 3) {
+                                "${upcomingTests.size} aankomende toets(en) • PW, SO, MO"
+                            } else {
+                                "Week $weekNumber • ${days.first().dateString} - ${days.last().dateString}"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    weekNavControls()
                 }
             }
         }
@@ -337,7 +370,7 @@ fun RoosterScreen(
             if (upcomingTests.isEmpty()) {
                 item {
                     Surface(
-                        shape = RoundedCornerShape(20.dp),
+                        shape = appCardShape(standard = 20.dp, nothing = 20.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
                         border = nothingCardBorder(),
                         modifier = Modifier
@@ -387,8 +420,9 @@ fun RoosterScreen(
         } else if (currentAppointments.isEmpty()) {
             item {
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
+                    shape = appCardShape(standard = 20.dp, nothing = 20.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = nothingCardBorder(),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -443,7 +477,7 @@ fun RoosterScreen(
 
                 item(key = "compact_group_$dayHeader") {
                     Surface(
-                        shape = RoundedCornerShape(if (isNothingOs) 24.dp else 18.dp),
+                        shape = appCardShape(standard = 18.dp, nothing = 24.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
                         border = nothingCardBorder(),
                         modifier = Modifier
@@ -601,43 +635,55 @@ fun CompactRoosterRow(
                         modifier = Modifier.weight(1f, fill = false)
                     )
                     if (isCanceled) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = MaterialTheme.colorScheme.error
-                        ) {
-                            Text(
-                                text = "UITVAL",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onError,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                            )
+                        if (isOneUi85) {
+                            OneUiPillBadge(text = "UITVAL", isError = true)
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.error
+                            ) {
+                                Text(
+                                    text = "UITVAL",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onError,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                )
+                            }
                         }
                     } else if (appointment.isSubstitution) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = MaterialTheme.colorScheme.secondaryContainer
-                        ) {
-                            Text(
-                                text = "VERV",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                            )
+                        if (isOneUi85) {
+                            OneUiPillBadge(text = "VERV")
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Text(
+                                    text = "VERV",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                )
+                            }
                         }
                     } else if (isKwtSelectable) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
-                            Text(
-                                text = "KWT",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                            )
+                        if (isOneUi85) {
+                            OneUiPillBadge(text = "KWT")
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = "KWT",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -679,18 +725,27 @@ fun CompactRoosterRow(
 
             if (cleanRoom != null) {
                 Spacer(modifier = Modifier.width(6.dp))
-                Surface(
-                    shape = RoundedCornerShape(percent = 50),
-                    color = if (appointment.isRelocated) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Text(
-                        text = if (appointment.isRelocated) "$cleanRoom!" else cleanRoom,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (appointment.isRelocated) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                val roomLabel = if (appointment.isRelocated) "$cleanRoom!" else cleanRoom
+                if (isOneUi85) {
+                    OneUiPillBadge(
+                        text = roomLabel,
+                        containerColor = if (appointment.isRelocated) oneUiPillContainerColor() else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = if (appointment.isRelocated) oneUiPillContentColor() else MaterialTheme.colorScheme.onSurface
                     )
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(percent = 50),
+                        color = if (appointment.isRelocated) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+                    ) {
+                        Text(
+                            text = roomLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (appointment.isRelocated) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                        )
+                    }
                 }
             }
         }
@@ -731,7 +786,7 @@ fun RoosterPeriodCard(
         modifier = modifier
             .fillMaxWidth()
             .testTag("rooster_period_card_${appointment.id}"),
-        shape = RoundedCornerShape(24.dp),
+        shape = appCardShape(standard = 24.dp, nothing = 24.dp),
         border = nothingCardBorder(isAlert = isCanceled),
         colors = CardDefaults.cardColors(
             containerColor = when {
@@ -775,30 +830,38 @@ fun RoosterPeriodCard(
 
                         if (isCanceled) {
                             Spacer(modifier = Modifier.width(8.dp))
-                            Surface(
-                                shape = RoundedCornerShape(percent = 50),
-                                color = MaterialTheme.colorScheme.error
-                            ) {
-                                Text(
-                                    text = "VERVALLEN",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onError,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                )
+                            if (isOneUi85) {
+                                OneUiPillBadge(text = "VERVALLEN", isError = true)
+                            } else {
+                                Surface(
+                                    shape = RoundedCornerShape(percent = 50),
+                                    color = MaterialTheme.colorScheme.error
+                                ) {
+                                    Text(
+                                        text = "VERVALLEN",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onError,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                    )
+                                }
                             }
                         } else if (appointment.isSubstitution) {
                             Spacer(modifier = Modifier.width(8.dp))
-                            Surface(
-                                shape = RoundedCornerShape(percent = 50),
-                                color = MaterialTheme.colorScheme.secondaryContainer
-                            ) {
-                                Text(
-                                    text = "VERVANGING",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                )
+                            if (isOneUi85) {
+                                OneUiPillBadge(text = "VERVANGING")
+                            } else {
+                                Surface(
+                                    shape = RoundedCornerShape(percent = 50),
+                                    color = MaterialTheme.colorScheme.secondaryContainer
+                                ) {
+                                    Text(
+                                        text = "VERVANGING",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -816,17 +879,26 @@ fun RoosterPeriodCard(
                 }
 
                 if (cleanRoom != null) {
-                    Surface(
-                        shape = RoundedCornerShape(percent = 50),
-                        color = if (appointment.isRelocated) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
-                    ) {
-                        Text(
-                            text = if (appointment.isRelocated) "Lok. $cleanRoom!" else "Lok. $cleanRoom",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (appointment.isRelocated) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    val roomText = if (appointment.isRelocated) "Lok. $cleanRoom!" else "Lok. $cleanRoom"
+                    if (isOneUi85) {
+                        OneUiPillBadge(
+                            text = roomText,
+                            containerColor = if (appointment.isRelocated) oneUiPillContainerColor() else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = if (appointment.isRelocated) oneUiPillContentColor() else MaterialTheme.colorScheme.onSurface
                         )
+                    } else {
+                        Surface(
+                            shape = RoundedCornerShape(percent = 50),
+                            color = if (appointment.isRelocated) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+                        ) {
+                            Text(
+                                text = roomText,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (appointment.isRelocated) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -888,7 +960,7 @@ private fun UpcomingTestCard(
 ) {
     val isUrgent = test.daysRemaining != null && test.daysRemaining <= 2
     Card(
-        shape = RoundedCornerShape(if (isNothingOs) 22.dp else 18.dp),
+        shape = appCardShape(standard = 18.dp, nothing = 22.dp),
         border = nothingCardBorder(isAlert = isUrgent),
         colors = CardDefaults.cardColors(
             containerColor = if (isUrgent) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceContainerLow
@@ -908,17 +980,21 @@ private fun UpcomingTestCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Text(
-                            text = test.typeBadge,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
+                    if (isOneUi85) {
+                        OneUiPillBadge(text = test.typeBadge)
+                    } else {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = test.typeBadge,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
                     }
                     Text(
                         text = test.subject,
@@ -930,17 +1006,24 @@ private fun UpcomingTestCard(
                     )
                 }
 
-                Surface(
-                    shape = RoundedCornerShape(percent = 50),
-                    color = if (isUrgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Text(
+                if (isOneUi85) {
+                    OneUiPillBadge(
                         text = test.countdownLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isUrgent) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        isError = isUrgent
                     )
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(percent = 50),
+                        color = if (isUrgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceContainerHigh
+                    ) {
+                        Text(
+                            text = test.countdownLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isUrgent) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
                 }
             }
 

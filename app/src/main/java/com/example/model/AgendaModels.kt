@@ -50,8 +50,15 @@ enum class UiScalePreset(val labelDutch: String, val scaleFactor: Float) {
 }
 
 enum class AppThemeStyle(val labelDutch: String, val subtitleDutch: String) {
-    STANDARD("Standaard", "Huidige Material You stijl"),
-    NOTHING_OS("Nothing OS", "OLED zwart, Ndot matrix & Nothing Red")
+    STANDARD("Material You", "Huidige Material You stijl (standaard)"),
+    NOTHING_OS("Nothing OS", "OLED zwart, Ndot matrix & Nothing Red"),
+    ONE_UI("One UI 8.5", "Samsung 26dp squircles, wallpaper-kleuren & AMOLED")
+}
+
+enum class DarkModePreference(val labelDutch: String) {
+    SYSTEM("Systeem"),
+    LIGHT("Licht"),
+    DARK("Donker")
 }
 
 enum class GradeUnboxingMode(val labelDutch: String, val subtitleDutch: String) {

@@ -3,17 +3,26 @@ package com.example.ui.components
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,12 +32,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.model.AppThemeStyle
 import com.example.ui.theme.DotMatrixFontFamily
 import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.LocalDarkThemeActive
 import com.example.ui.theme.NothingAsh
 import com.example.ui.theme.NothingOutline
 import com.example.ui.theme.NothingRed
@@ -38,17 +50,141 @@ import kotlin.math.abs
 val isNothingOs: Boolean
     @Composable get() = LocalAppThemeStyle.current == AppThemeStyle.NOTHING_OS
 
+val isOneUi85: Boolean
+    @Composable get() = LocalAppThemeStyle.current == AppThemeStyle.ONE_UI
+
+@Composable
+fun appCardCornerRadius(
+    standard: Dp = 18.dp,
+    nothing: Dp = 24.dp
+): Dp {
+    return when (LocalAppThemeStyle.current) {
+        AppThemeStyle.ONE_UI -> 26.dp
+        AppThemeStyle.NOTHING_OS -> nothing
+        AppThemeStyle.STANDARD -> standard
+    }
+}
+
+@Composable
+fun appCardShape(
+    standard: Dp = 18.dp,
+    nothing: Dp = 24.dp
+): RoundedCornerShape = RoundedCornerShape(appCardCornerRadius(standard = standard, nothing = nothing))
+
 @Composable
 fun nothingCardBorder(
     isAlert: Boolean = false
 ): BorderStroke? {
-    return if (isNothingOs) {
-        BorderStroke(
+    return when (LocalAppThemeStyle.current) {
+        AppThemeStyle.NOTHING_OS -> BorderStroke(
             width = 1.dp,
             color = if (isAlert) NothingRed else NothingOutline
         )
+        AppThemeStyle.ONE_UI -> BorderStroke(
+            width = 1.dp,
+            color = if (isAlert) MaterialTheme.colorScheme.error.copy(alpha = 0.65f) else MaterialTheme.colorScheme.outline
+        )
+        AppThemeStyle.STANDARD -> null
+    }
+}
+
+@Composable
+fun oneUiPillContainerColor(isError: Boolean = false): Color {
+    val isDark = LocalDarkThemeActive.current
+    return if (isError) {
+        MaterialTheme.colorScheme.error.copy(alpha = if (isDark) 0.24f else 0.14f)
     } else {
-        null
+        MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.22f else 0.13f)
+    }
+}
+
+@Composable
+fun oneUiPillContentColor(isError: Boolean = false): Color {
+    return if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+}
+
+@Composable
+fun OneUiPillBadge(
+    text: String,
+    modifier: Modifier = Modifier,
+    isError: Boolean = false,
+    containerColor: Color? = null,
+    contentColor: Color? = null
+) {
+    val resolvedContainer = containerColor ?: oneUiPillContainerColor(isError = isError)
+    val resolvedContent = contentColor ?: oneUiPillContentColor(isError = isError)
+    Surface(
+        shape = CircleShape,
+        color = resolvedContainer,
+        modifier = modifier
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = resolvedContent,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+        )
+    }
+}
+
+/**
+ * One UI 8.5 Reachability Expanding Header placed in the upper viewing area
+ * that smoothly collapses into the pinned top bar when scrolling.
+ */
+@Composable
+fun OneUiExpandingHeader(
+    title: String,
+    subtitle: String? = null,
+    isScrolled: Boolean = false,
+    modifier: Modifier = Modifier,
+    trailingContent: (@Composable () -> Unit)? = null
+) {
+    val collapseFraction by animateFloatAsState(
+        targetValue = if (isScrolled) 1f else 0f,
+        animationSpec = tween(durationMillis = 220),
+        label = "oneui_header_collapse"
+    )
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 20.dp, bottom = 10.dp)
+            .graphicsLayer {
+                alpha = 1f - (collapseFraction * 0.85f)
+                translationY = -collapseFraction * 18f
+            }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.displayMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (!subtitle.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            if (trailingContent != null) {
+                trailingContent()
+            }
+        }
     }
 }
 

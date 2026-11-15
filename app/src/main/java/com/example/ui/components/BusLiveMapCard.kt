@@ -17,6 +17,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,6 +50,7 @@ fun BusLiveMapCard(
 ) {
     val context = LocalContext.current
     val nothingMode = isNothingOs
+    val isDarkMap = nothingMode || isSystemInDarkTheme()
     var lineInput by remember(savedBusLine) { mutableStateOf(savedBusLine) }
     var isEditingLine by remember(savedBusLine) { mutableStateOf(savedBusLine.isBlank()) }
     var userLat by remember { mutableStateOf(busTrackingState.userLat) }
@@ -385,13 +387,15 @@ fun BusLiveMapCard(
                     busTrackingState.nearestStop,
                     userLat,
                     userLon,
-                    nothingMode
+                    nothingMode,
+                    isDarkMap
                 ) {
                     buildLeafletMapHtml(
                         state = busTrackingState,
                         userLat = userLat,
                         userLon = userLon,
-                        isNothingOs = nothingMode
+                        isNothingOs = nothingMode,
+                        isDarkMap = isDarkMap
                     )
                 }
 
@@ -625,7 +629,8 @@ private fun buildLeafletMapHtml(
     state: BusTrackingState,
     userLat: Double?,
     userLon: Double?,
-    isNothingOs: Boolean
+    isNothingOs: Boolean,
+    isDarkMap: Boolean
 ): String {
     val stopsJson = JSONArray()
     state.stops.forEach { stop ->
@@ -671,12 +676,24 @@ private fun buildLeafletMapHtml(
         }.toString()
     } ?: "null"
 
-    val tileFilterCss = if (isNothingOs) {
-        ".leaflet-tile-pane { filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(95%) grayscale(100%); }"
+    val tileFilterCss = if (isDarkMap) {
+        """
+            .leaflet-tile-pane { filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%); }
+            .leaflet-control-attribution { background: rgba(15, 15, 18, 0.72) !important; color: #B4B8C2 !important; }
+            .leaflet-control-attribution a { color: #E2E8F0 !important; }
+        """.trimIndent()
     } else ""
 
-    val bgCss = if (isNothingOs) "#000000" else "#ECEFF4"
-    val lineColor = if (isNothingOs) "#FFFFFF" else "#1D4ED8"
+    val bgCss = when {
+        isNothingOs -> "#000000"
+        isDarkMap -> "#111318"
+        else -> "#ECEFF4"
+    }
+    val lineColor = when {
+        isNothingOs -> "#FFFFFF"
+        isDarkMap -> "#60A5FA"
+        else -> "#1D4ED8"
+    }
     val busColor = if (isNothingOs) "#D71921" else "#DC2626"
 
     return """
@@ -690,12 +707,12 @@ private fun buildLeafletMapHtml(
             html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: $bgCss; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
             #map { width: 100%; height: 100%; min-height: 240px; background: $bgCss; }
             .leaflet-container { background: $bgCss !important; }
+            $tileFilterCss
           </style>
         </head>
         <body>
           <div id="map"></div>
           <script>
-            var isNothing = $isNothingOs;
             var stops = $stopsJson;
             var buses = $busesJson;
             var userPos = $userJson;
@@ -705,18 +722,10 @@ private fun buildLeafletMapHtml(
             var centerLon = userPos ? userPos.lon : (buses.length > 0 ? buses[0].lon : (stops.length > 0 ? stops[0].lon : 5.1214));
 
             var map = L.map('map', { zoomControl: false }).setView([centerLat, centerLon], 13);
-            
-            var tileUrl = isNothing ?
-              'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' :
-              'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-            var tileAttrib = isNothing ?
-              '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' :
-              '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
-            L.tileLayer(tileUrl, {
+            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
               maxZoom: 19,
-              subdomains: 'abcd',
-              attribution: tileAttrib
+              attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             }).addTo(map);
 
             // Invalidate size immediately, and at intervals to ensure complete render without black box

@@ -42,15 +42,33 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Restore Debug Keystore
+      - name: Ensure Debug Keystore Exists
         run: |
-          if [ -f debug.keystore.base64 ]; then
-            echo "Restoring debug.keystore from debug.keystore.base64..."
-            base64 -d debug.keystore.base64 > debug.keystore
-            echo "debug.keystore successfully restored."
-          else
-            echo "debug.keystore.base64 not found, proceeding with local build environment."
+          echo "=== Debug Keystore Verificatie ==="
+          # 1. Probeer te decoderen uit debug.keystore.base64 als het bestand bestaat
+          if [ -f debug.keystore.base64 ] && [ -s debug.keystore.base64 ]; then
+            echo "debug.keystore herstellen uit debug.keystore.base64..."
+            base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || true
           fi
+
+          # 2. Als debug.keystore nog niet bestaat of leeg is, genereer het direct met keytool
+          if [ ! -f debug.keystore ] || [ ! -s debug.keystore ]; then
+            echo "debug.keystore niet aanwezig. Automatisch genereren met keytool..."
+            keytool -genkeypair -v \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+          # 3. Zorg voor kopieën in zowel rootDir als submodules voor maximale zekerheid
+          cp debug.keystore app/debug.keystore 2>/dev/null || true
+          ls -la debug.keystore
+          echo "=== Keystore is succesvol geverifieerd ==="
 
       - name: Build Android APK
         env:
@@ -58,6 +76,11 @@ jobs:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          # Zorg dat debug.keystore er gegarandeerd is
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
           # Bepaal het tag-/versielabel
           TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
           if [ -z "$TAG" ] || [ "$TAG" = "main" ]; then
@@ -65,7 +88,7 @@ jobs:
           fi
           echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
 
-          # Controleer of de gebruiker release signing secrets heeft ingesteld
+          # Controleer of release signing secrets zijn geconfigureerd
           if [ -n "$KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
             echo "Release keystore secrets gevonden. Release APK bouwen..."
             echo "$KEYSTORE_BASE64" | base64 -d > my-upload-key.jks
@@ -73,7 +96,7 @@ jobs:
             ./gradlew assembleRelease --stacktrace
             APK_SRC="app/build/outputs/apk/release/app-release.apk"
           else
-            echo "Geen release signing secrets gevonden. Direct installeerbare Debug APK bouwen..."
+            echo "Geen release secrets gevonden. Direct installeerbare Debug APK bouwen..."
             ./gradlew assembleDebug --stacktrace
             APK_SRC="app/build/outputs/apk/debug/app-debug.apk"
           fi

@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
 import com.example.model.MagisterMessage
 import com.example.model.MessageFolder
@@ -480,50 +481,78 @@ private fun ComposeMessageDialog(
                     }
                 }
 
-                OutlinedTextField(
-                    value = recipientQuery,
-                    onValueChange = { q ->
-                        recipientQuery = q
-                        if (q.trim().length >= 2 && !isOffline) {
-                            scope.launch { searchResults = onSearchRecipients(q) }
-                        } else {
-                            searchResults = emptyList()
-                        }
-                    },
-                    enabled = !isOffline,
-                    label = { Text("Zoek ontvanger (docent of leerling)") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("compose_recipient_input")
-                )
+                var debouncedQuery by remember { mutableStateOf("") }
+                LaunchedEffect(recipientQuery) {
+                    kotlinx.coroutines.delay(300)
+                    debouncedQuery = recipientQuery
+                }
+                LaunchedEffect(debouncedQuery) {
+                    if (debouncedQuery.trim().length >= 2 && !isOffline) {
+                        searchResults = onSearchRecipients(debouncedQuery)
+                    } else {
+                        searchResults = emptyList()
+                    }
+                }
 
-                searchResults.take(4).forEach { rec ->
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainer,
+                Box(modifier = Modifier.fillMaxWidth().zIndex(10f)) {
+                    OutlinedTextField(
+                        value = recipientQuery,
+                        onValueChange = { recipientQuery = it },
+                        enabled = !isOffline,
+                        label = { Text("Zoek ontvanger (docent of leerling)") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                if (selectedRecipients.none { it.id == rec.id }) {
-                                    selectedRecipients = selectedRecipients + rec
-                                }
-                                recipientQuery = ""
-                                searchResults = emptyList()
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            .testTag("compose_recipient_input")
+                    )
+
+                    if (searchResults.isNotEmpty()) {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            tonalElevation = 8.dp,
+                            shadowElevation = 12.dp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 64.dp)
                         ) {
-                            Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(rec.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                if (rec.roleLabel.isNotBlank()) {
-                                    Text(rec.roleLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                searchResults.take(6).forEach { rec ->
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainer,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable {
+                                                if (selectedRecipients.none { it.id == rec.id }) {
+                                                    selectedRecipients = selectedRecipients + rec
+                                                }
+                                                recipientQuery = ""
+                                                debouncedQuery = ""
+                                                searchResults = emptyList()
+                                            }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Text(rec.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                                                if (rec.roleLabel.isNotBlank()) {
+                                                    Text(rec.roleLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

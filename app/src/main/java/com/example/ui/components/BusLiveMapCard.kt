@@ -400,17 +400,33 @@ fun BusLiveMapCard(
                     border = nothingCardBorder(),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(230.dp)
+                        .height(240.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .testTag("bus_osm_webview_container")
                 ) {
                     AndroidView(
                         factory = { ctx ->
                             WebView(ctx).apply {
+                                layoutParams = android.view.ViewGroup.LayoutParams(
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                                )
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
+                                settings.databaseEnabled = true
+                                settings.userAgentString = "AgendaPlus-Android/1.0 (contact@agendaplus.nl)"
                                 settings.cacheMode = WebSettings.LOAD_DEFAULT
-                                webViewClient = WebViewClient()
+                                webViewClient = object : WebViewClient() {
+                                    override fun onPageFinished(view: WebView?, url: String?) {
+                                        super.onPageFinished(view, url)
+                                        view?.postDelayed({
+                                            view.evaluateJavascript("if (typeof map !== 'undefined' && map) { map.invalidateSize(true); }", null)
+                                        }, 100)
+                                        view?.postDelayed({
+                                            view.evaluateJavascript("if (typeof map !== 'undefined' && map) { map.invalidateSize(true); }", null)
+                                        }, 400)
+                                    }
+                                }
                                 setOnTouchListener { view, event ->
                                     when (event.action) {
                                         MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
@@ -432,6 +448,9 @@ fun BusLiveMapCard(
                                 "UTF-8",
                                 null
                             )
+                            webView.postDelayed({
+                                webView.evaluateJavascript("if (typeof map !== 'undefined' && map) { map.invalidateSize(true); }", null)
+                            }, 200)
                         },
                         modifier = Modifier.fillMaxSize()
                     )
@@ -492,9 +511,14 @@ fun BusLiveMapCard(
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
-                                            if (stop.town.isNotBlank()) {
+                                            val displayTown = stop.town.trim()
+                                            if (displayTown.isNotBlank() &&
+                                                !displayTown.equals("unknown", ignoreCase = true) &&
+                                                !displayTown.equals("null", ignoreCase = true) &&
+                                                !displayTown.equals("onbekend", ignoreCase = true)
+                                            ) {
                                                 Text(
-                                                    text = stop.town,
+                                                    text = displayTown,
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -663,13 +687,15 @@ private fun buildLeafletMapHtml(
           <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
           <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
           <style>
-            html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: $bgCss; font-family: sans-serif; }
-            $tileFilterCss
+            html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: $bgCss; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+            #map { width: 100%; height: 100%; min-height: 240px; background: $bgCss; }
+            .leaflet-container { background: $bgCss !important; }
           </style>
         </head>
         <body>
           <div id="map"></div>
           <script>
+            var isNothing = $isNothingOs;
             var stops = $stopsJson;
             var buses = $busesJson;
             var userPos = $userJson;
@@ -679,10 +705,25 @@ private fun buildLeafletMapHtml(
             var centerLon = userPos ? userPos.lon : (buses.length > 0 ? buses[0].lon : (stops.length > 0 ? stops[0].lon : 5.1214));
 
             var map = L.map('map', { zoomControl: false }).setView([centerLat, centerLon], 13);
-            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            
+            var tileUrl = isNothing ?
+              'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' :
+              'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+            var tileAttrib = isNothing ?
+              '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' :
+              '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+
+            L.tileLayer(tileUrl, {
               maxZoom: 19,
-              attribution: '© OpenStreetMap'
+              subdomains: 'abcd',
+              attribution: tileAttrib
             }).addTo(map);
+
+            // Invalidate size immediately, and at intervals to ensure complete render without black box
+            setTimeout(function() { if (map) map.invalidateSize(true); }, 50);
+            setTimeout(function() { if (map) map.invalidateSize(true); }, 200);
+            setTimeout(function() { if (map) map.invalidateSize(true); }, 500);
+            window.addEventListener('resize', function() { if (map) map.invalidateSize(true); });
 
             var bounds = [];
             var routeCoords = [];

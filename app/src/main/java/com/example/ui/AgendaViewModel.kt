@@ -81,6 +81,22 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
     private val _currentMeerSection = MutableStateFlow(MeerSection.HOME)
     val currentMeerSection: StateFlow<MeerSection> = _currentMeerSection.asStateFlow()
 
+    private val _updateInfo = MutableStateFlow<com.example.util.GithubReleaseInfo?>(null)
+    val updateInfo: StateFlow<com.example.util.GithubReleaseInfo?> = _updateInfo.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val info = com.example.util.UpdateChecker.checkForUpdate(application.applicationContext)
+            if (info != null) {
+                _updateInfo.value = info
+            }
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        _updateInfo.value = null
+    }
+
     private val _showTutorialDialog = MutableStateFlow(false)
     val showTutorialDialog: StateFlow<Boolean> = _showTutorialDialog.asStateFlow()
 

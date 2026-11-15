@@ -19,8 +19,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import android.content.Intent
+import android.net.Uri
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.viewinterop.AndroidView
@@ -79,6 +82,7 @@ fun MeerScreen(
         }
     }
 
+    val context = LocalContext.current
     val nothingMode = isNothingOs
     val unreadMessagesCount = messages.count { !it.isRead }
     var showPromoVideoDialog by remember { mutableStateOf(false) }
@@ -255,6 +259,31 @@ fun MeerScreen(
                             badgeText = null,
                             onClick = onOpenTutorial,
                             tag = "meer_tile_tutorial"
+                        )
+                    }
+
+                    item(key = "meer_support") {
+                        MeerMenuTile(
+                            title = "Contact & Support",
+                            subtitle = "Vragen, feedback of hulp nodig? Mail support@agendaplus.nl",
+                            icon = Icons.Default.SupportAgent,
+                            badgeText = null,
+                            onClick = {
+                                val ctx = context
+                                val versionName = runCatching {
+                                    ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+                                }.getOrDefault("0.1.2")
+                                val intent = Intent(Intent.ACTION_SENDTO).apply {
+                                    data = Uri.parse("mailto:support@agendaplus.nl?subject=${Uri.encode("Agenda+ Support (v$versionName)")}")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                runCatching {
+                                    ctx.startActivity(intent)
+                                }.onFailure {
+                                    android.widget.Toast.makeText(ctx, "Geen e-mailapp gevonden", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            tag = "meer_tile_support"
                         )
                     }
 

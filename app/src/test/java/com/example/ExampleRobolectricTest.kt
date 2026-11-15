@@ -97,8 +97,8 @@ class ExampleRobolectricTest {
 
         com.example.util.LauncherIconManager.applyThemeIcon(context, com.example.model.AppThemeStyle.NOTHING_OS)
         val pm = context.packageManager
-        val defaultComp = android.content.ComponentName(context.packageName, "com.example.MainActivityDefault")
-        val nothingComp = android.content.ComponentName(context.packageName, "com.example.MainActivityNothingOs")
+        val defaultComp = android.content.ComponentName(context.packageName, "${context.packageName}.MainActivityDefault")
+        val nothingComp = android.content.ComponentName(context.packageName, "${context.packageName}.MainActivityNothingOs")
         assertEquals(
             android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
             pm.getComponentEnabledSetting(defaultComp)

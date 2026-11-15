@@ -230,14 +230,22 @@ internal class MagisterExtendedApi(
         if (clean.length < 2) return emptyList()
         val encoded = URLEncoder.encode(clean, "UTF-8")
         val urls = listOf(
+            "${tenant.apiBaseUrl}/contactpersonen?q=$encoded&top=25",
+            "${tenant.apiBaseUrl}/berichten/contactpersonen?q=$encoded&top=25",
             "${tenant.apiBaseUrl}/contactpersonen?q=$encoded",
             "${tenant.apiBaseUrl}/berichten/contactpersonen?q=$encoded"
         )
         for (url in urls) {
             try {
-                val resp = client.newCall(requestBuilder(url, token)).execute()
+                val req = requestBuilder(url, token)
+                val resp = client.newCall(req).execute()
+                val code = resp.code
                 val body = resp.body?.string() ?: "{}"
-                if (!resp.isSuccessful) continue
+                com.example.util.RawConsoleLogger.http("Magister-Berichten", "GET searchRecipients ($url) -> $code (${body.length}b)")
+                if (!resp.isSuccessful) {
+                    com.example.util.RawConsoleLogger.error("Magister-Berichten", "Search recipients HTTP $code: ${body.take(150)}")
+                    continue
+                }
                 val json = JSONObject(body)
                 val items = json.optJSONArray("items") ?: json.optJSONArray("Items") ?: JSONArray()
                 val list = buildList {
@@ -248,16 +256,19 @@ internal class MagisterExtendedApi(
                         val voornaam = o.optClean("voornaam", "Voornaam", "roepnaam", "Roepnaam") ?: ""
                         val tussenv = o.optClean("tussenvoegsel", "Tussenvoegsel") ?: ""
                         val achternaam = o.optClean("achternaam", "Achternaam") ?: ""
+                        val klas = o.optClean("klas", "Klas") ?: ""
                         val fullName = listOf(voornaam, tussenv, achternaam)
                             .filter { it.isNotBlank() }
                             .joinToString(" ")
                             .ifBlank { o.optClean("naam", "Naam") ?: "Gebruiker $id" }
-                        val role = o.optClean("type", "Type", "klas", "Klas") ?: "Magister"
+                        val rawType = o.optClean("type", "Type") ?: ""
+                        val role = if (klas.isNotBlank()) "Klas $klas" else if (rawType.isNotBlank()) rawType else "Magister"
                         add(MessageRecipient(id = id, name = fullName, roleLabel = role))
                     }
                 }
                 if (list.isNotEmpty()) return list
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                com.example.util.RawConsoleLogger.error("Magister-Berichten", "Search recipients exception: ${e.message}")
             }
         }
         return emptyList()

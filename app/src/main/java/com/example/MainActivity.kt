@@ -142,6 +142,7 @@ fun AgendaPlusApp(
     val showTutorialDialog by viewModel.showTutorialDialog.collectAsStateWithLifecycle()
     val showTodayModifySheet by viewModel.showTodayModifySheet.collectAsStateWithLifecycle()
     val activeKwtSlotForSheet by viewModel.activeKwtSlotForSheet.collectAsStateWithLifecycle()
+    val updateInfo by viewModel.updateInfo.collectAsStateWithLifecycle()
 
     val currentTab by viewModel.currentTab.collectAsStateWithLifecycle()
     val appointments by viewModel.appointments.collectAsStateWithLifecycle()
@@ -460,6 +461,14 @@ fun AgendaPlusApp(
                 isOffline = isEffectivelyOffline,
                 onEnrollOption = { apptId, optId -> viewModel.enrollKwtOption(apptId, optId) },
                 onDismiss = { viewModel.closeKwtSlotSheet() }
+            )
+        }
+
+        updateInfo?.let { info ->
+            com.example.ui.dialogs.UpdateDialog(
+                updateInfo = info,
+                appThemeStyle = appThemeStyle,
+                onDismiss = { viewModel.dismissUpdateDialog() }
             )
         }
     }

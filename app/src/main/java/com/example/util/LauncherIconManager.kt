@@ -7,14 +7,12 @@ import com.example.model.AppThemeStyle
 
 object LauncherIconManager {
 
-    private const val ALIAS_DEFAULT = "com.example.MainActivityDefault"
-    private const val ALIAS_NOTHING_OS = "com.example.MainActivityNothingOs"
-
     fun applyThemeIcon(context: Context, style: AppThemeStyle) {
         runCatching {
             val pm = context.packageManager
-            val defaultComponent = ComponentName(context.packageName, ALIAS_DEFAULT)
-            val nothingComponent = ComponentName(context.packageName, ALIAS_NOTHING_OS)
+            val pkg = context.packageName
+            val defaultComponent = ComponentName(pkg, "$pkg.MainActivityDefault")
+            val nothingComponent = ComponentName(pkg, "$pkg.MainActivityNothingOs")
 
             val defaultState = if (style == AppThemeStyle.STANDARD) {
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED

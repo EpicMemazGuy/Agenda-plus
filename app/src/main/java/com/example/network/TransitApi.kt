@@ -366,11 +366,19 @@ class TransitClient(private val prefs: AppPreferencesStore? = null) {
                             if (tpc != null && !actualsByTpc.containsKey(tpc)) {
                                 actualsByTpc[tpc] = pass
                             }
-                            val vLat = pass.optDouble("Latitude", Double.NaN)
-                            val vLon = pass.optDouble("Longitude", Double.NaN)
-                            if (!vLat.isNaN() && !vLon.isNaN() && vLat != 0.0 && vLon != 0.0) {
+                            val vLat = pass.optDouble("Latitude").takeIf { !it.isNaN() && it != 0.0 }
+                                ?: pass.optDouble("GPSLatitude").takeIf { !it.isNaN() && it != 0.0 }
+                                ?: pass.optString("Latitude").toDoubleOrNull()?.takeIf { it != 0.0 }
+                                ?: pass.optString("GPSLatitude").toDoubleOrNull()?.takeIf { it != 0.0 }
+                            val vLon = pass.optDouble("Longitude").takeIf { !it.isNaN() && it != 0.0 }
+                                ?: pass.optDouble("GPSLongitude").takeIf { !it.isNaN() && it != 0.0 }
+                                ?: pass.optString("Longitude").toDoubleOrNull()?.takeIf { it != 0.0 }
+                                ?: pass.optString("GPSLongitude").toDoubleOrNull()?.takeIf { it != 0.0 }
+                            if (vLat != null && vLon != null) {
                                 val expectedRaw = pass.optString("ExpectedDepartureTime")
                                     .ifBlank { pass.optString("ExpectedArrivalTime") }
+                                    .ifBlank { pass.optString("TargetDepartureTime") }
+                                    .ifBlank { pass.optString("TargetArrivalTime") }
                                 val hhmm = extractTimeHHmm(expectedRaw) ?: "--:--"
                                 vehicles.add(
                                     BusVehiclePoint(
@@ -402,9 +410,15 @@ class TransitClient(private val prefs: AppPreferencesStore? = null) {
                                 stopGroup.keys().asSequence().mapNotNull { stopGroup.optJSONObject(it) }.toList()
                             }
                             for (so in candidateStops) {
-                                val lat = so.optDouble("Latitude", Double.NaN)
-                                val lon = so.optDouble("Longitude", Double.NaN)
-                                if (lat.isNaN() || lon.isNaN() || lat == 0.0) continue
+                                val lat = so.optDouble("Latitude").takeIf { !it.isNaN() && it != 0.0 }
+                                    ?: so.optDouble("GPSLatitude").takeIf { !it.isNaN() && it != 0.0 }
+                                    ?: so.optString("Latitude").toDoubleOrNull()?.takeIf { it != 0.0 }
+                                    ?: continue
+                                val lon = so.optDouble("Longitude").takeIf { !it.isNaN() && it != 0.0 }
+                                    ?: so.optDouble("GPSLongitude").takeIf { !it.isNaN() && it != 0.0 }
+                                    ?: so.optString("Longitude").toDoubleOrNull()?.takeIf { it != 0.0 }
+                                    ?: continue
+
                                 val tpc = so.optString("TimingPointCode").cleanSchoolText() ?: nk
                                 val order = so.optInt("UserStopOrderNumber", dirStops.size + 1)
                                 val pass = actualsByTpc[tpc]
@@ -416,11 +430,27 @@ class TransitClient(private val prefs: AppPreferencesStore? = null) {
                                     pass?.optString("TargetDepartureTime")
                                         ?: pass?.optString("TargetArrivalTime")
                                 )
+
+                                val rawName = so.optString("TimingPointName").cleanSchoolText() ?: "Halte $tpc"
+                                val rawTown = so.optString("TimingPointTown").cleanSchoolText()?.takeIf {
+                                    it.isNotBlank() &&
+                                        !it.equals("unknown", ignoreCase = true) &&
+                                        !it.equals("null", ignoreCase = true) &&
+                                        !it.equals("onbekend", ignoreCase = true)
+                                }
+
+                                // When TimingPointTown is null, empty or "unknown", extract the town name before the comma in TimingPointName (e.g. "Uden, Busstation (C)" -> "Uden")
+                                val resolvedTown = rawTown ?: if (rawName.contains(",")) {
+                                    rawName.substringBefore(",").trim().takeIf { it.isNotBlank() } ?: ""
+                                } else {
+                                    ""
+                                }
+
                                 dirStops.add(
                                     order to BusStopInfo(
                                         timingPointCode = tpc,
-                                        name = so.optString("TimingPointName").cleanSchoolText() ?: "Halte $tpc",
-                                        town = so.optString("TimingPointTown").cleanSchoolText() ?: "",
+                                        name = rawName,
+                                        town = resolvedTown,
                                         latitude = lat,
                                         longitude = lon,
                                         expectedArrival = expTime,

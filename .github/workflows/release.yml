@@ -65,10 +65,10 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
 
-          # 3. Zorg voor kopieën in zowel rootDir als submodules voor maximale zekerheid
+          # 3. Kopieer naar app/debug.keystore voor maximale zekerheid
           cp debug.keystore app/debug.keystore 2>/dev/null || true
           ls -la debug.keystore
-          echo "=== Keystore is succesvol geverifieerd ==="
+          echo "=== Keystore is succesvol gereed ==="
 
       - name: Build Android APK
         env:
@@ -81,14 +81,12 @@ jobs:
             keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
 
-          # Bepaal het tag-/versielabel
           TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
           if [ -z "$TAG" ] || [ "$TAG" = "main" ]; then
             TAG="v1.0.0"
           fi
           echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
 
-          # Controleer of release signing secrets zijn geconfigureerd
           if [ -n "$KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
             echo "Release keystore secrets gevonden. Release APK bouwen..."
             echo "$KEYSTORE_BASE64" | base64 -d > my-upload-key.jks

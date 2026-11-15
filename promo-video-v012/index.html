@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Agenda+ v0.1.2-pre-alpha • 140 BPM Motion Promo</title>
+  
+  <!-- Material 3 & Display Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="mode-9-16">
+
+  <!-- Main Viewport Wrap with Auto-Centering & Scale -->
+  <div id="app">
+    
+    <div id="stage-wrapper">
+      <main id="stage" class="stage-9-16">
+        
+        <!-- Background Ambient Mesh & Dynamic Canvas -->
+        <div class="ambient-mesh">
+          <div class="mesh-orb orb-1"></div>
+          <div class="mesh-orb orb-2"></div>
+          <div class="mesh-orb orb-3"></div>
+          <div class="m3-grid-overlay"></div>
+        </div>
+
+        <!-- Canvas for M3 Geometric Particles & Confetti -->
+        <canvas id="particle-canvas"></canvas>
+
+        <!-- Stage Header: Brand Chip Left (Top Right BPM Counter Removed) -->
+        <header class="stage-header">
+          <div class="brand-chip">
+            <svg class="brand-icon" viewBox="0 0 32 32" fill="none">
+              <rect width="32" height="32" rx="8" fill="#A8C7FA"/>
+              <path d="M16 6L23 23H19.5L18 19H14L12.5 23H9L16 6ZM16 11.5L14.7 16.5H17.3L16 11.5Z" fill="#00315B"/>
+              <circle cx="23" cy="9" r="3" fill="#FFB4AB"/>
+            </svg>
+            <span class="brand-text">AGENDA+</span>
+            <span class="brand-tag">AXOLA</span>
+          </div>
+        </header>
+
+        <!-- ============================================== -->
+        <!-- SCENE 1: DE HOOK (Maten 1–2 / Beats 1–8)       -->
+        <!-- ============================================== -->
+        <section class="scene" id="scene-hook">
+          <div class="scene-inner hook-layout">
+            <div class="hook-badge m3-pill" id="hook-release-pill">
+              <svg class="pill-icon" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+              </svg>
+              <span>GITHUB RELEASE • PUBLIEK</span>
+            </div>
+
+            <div class="kinetic-words-stack">
+              <div class="kinetic-word word-its" id="word-its">HET IS</div>
+              <div class="kinetic-word word-finally" id="word-finally">EINDELIJK</div>
+              <div class="kinetic-word word-here" id="word-here">
+                <span class="gradient-text">ZOVER.</span>
+              </div>
+            </div>
+
+            <!-- Expanding M3 Ripple Rings -->
+            <div class="m3-ripple-ring ring-1"></div>
+            <div class="m3-ripple-ring ring-2"></div>
+            
+            <div class="hook-sub-chip m3-tonal-chip" id="hook-sub-chip">
+              <svg class="sub-icon" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+              </svg>
+              <span>VOOR SCHOLIEREN • 100% ONAFHANKELIJK</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SCENE 2: VERSIE DROP (Maten 3–4 / Beats 9–16) -->
+        <!-- ============================================== -->
+        <section class="scene" id="scene-drop">
+          <div class="scene-inner drop-layout">
+            
+            <!-- Morphing M3 8-Scallop Badge -->
+            <div class="m3-burst-container">
+              <div class="m3-burst-badge" id="burst-badge">
+                <svg class="burst-icon" viewBox="0 0 48 48" fill="none">
+                  <path d="M24 4L28.5 14.5L39 12L36.5 22.5L46 27L36.5 31.5L39 42L28.5 39.5L24 50L19.5 39.5L9 42L11.5 31.5L2 27L11.5 22.5L9 12L19.5 14.5L24 4Z" fill="url(#burst-grad)" stroke="#A8C7FA" stroke-width="2"/>
+                  <defs>
+                    <linearGradient id="burst-grad" x1="2" y1="4" x2="46" y2="50" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#004A77"/>
+                      <stop offset="1" stop-color="#1D2230"/>
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div class="burst-inner-tag">OFFICIËLE DROP</div>
+              </div>
+            </div>
+
+            <div class="version-hero-card m3-card elevation-3" id="version-card">
+              <div class="card-glow-halo"></div>
+              
+              <div class="card-chips-row">
+                <span class="m3-chip chip-cyan">AGENDA+</span>
+                <span class="m3-chip chip-lavender">MAGISTER-CLIENT</span>
+              </div>
+
+              <div class="version-title-block">
+                <span class="version-prefix">VERSIE</span>
+                <h1 class="version-number" id="version-text">v0.1.2</h1>
+                <div class="version-suffix-badge">pre-alpha</div>
+              </div>
+
+              <div class="version-meta-bar">
+                <div class="meta-item">
+                  <svg class="meta-svg" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/>
+                  </svg>
+                  <span>github.com/EpicMemazGuy</span>
+                </div>
+                <div class="meta-badge-live">
+                  <span class="live-dot"></span> NU LIVE
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SCENE 3: VIERING (Maten 5–8 / Beats 17–32)     -->
+        <!-- ============================================== -->
+        <section class="scene" id="scene-celebrate">
+          <div class="scene-inner celebrate-layout">
+            <div class="celebrate-heading">
+              <span class="sub-eyebrow">MIJLPAAL BEREIKT</span>
+              <h2 class="hype-title">WE ZIJN GEHYPED.</h2>
+            </div>
+
+            <div class="cards-deck">
+              <!-- Card 1: HET IS GELUKT (Beats 17-20) -->
+              <div class="deck-card card-mint" id="deck-card-1">
+                <div class="deck-icon-wrap">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M13.13 22.19L11.5 18.36L13.13 14.53C14.76 14.88 16.27 15.65 17.5 16.73L16.27 19.64L17.5 22.55C16.27 21.47 14.76 20.7 13.13 22.19M12 2C6.5 2 2 6.5 2 12C2 17.5 6.5 22 12 22C17.5 22 22 17.5 22 12C22 6.5 17.5 2 12 2M12 4C14.07 4 15.95 4.79 17.38 6.09L15.96 7.5C14.88 6.57 13.5 6 12 6C8.69 6 6 8.69 6 12C6 13.5 6.57 14.88 7.5 15.96L6.09 17.38C4.79 15.95 4 14.07 4 12C4 7.58 7.58 4 12 4Z"/>
+                  </svg>
+                </div>
+                <div class="deck-content">
+                  <span class="deck-tag">STATUS: ONLINE</span>
+                  <h3>HET IS GELUKT.</h3>
+                  <p>Eerste publieke build staat officieel live op GitHub.</p>
+                </div>
+                <div class="card-sparkle-icon">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z"/>
+                  </svg>
+                </div>
+              </div>
+
+              <!-- Card 2: EERSTE PUBLIEKE BUILD (Beats 21-24) -->
+              <div class="deck-card card-coral" id="deck-card-2">
+                <div class="deck-icon-wrap">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                  </svg>
+                </div>
+                <div class="deck-content">
+                  <span class="deck-tag">DIRECTE APK-DOWNLOAD</span>
+                  <h3>EERSTE PUBLIEKE BUILD</h3>
+                  <p>Direct installeerbare APK klaar voor elk Android-toestel.</p>
+                </div>
+                <div class="card-sparkle-icon">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z"/>
+                  </svg>
+                </div>
+              </div>
+
+              <!-- Card 3: VOOR ALTIJD GRATIS (Beats 25-28) -->
+              <div class="deck-card card-lavender" id="deck-card-3">
+                <div class="deck-icon-wrap">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                  </svg>
+                </div>
+                <div class="deck-content">
+                  <span class="deck-tag">COMMUNITY GESTUURD</span>
+                  <h3>VOOR ALTIJD GRATIS</h3>
+                  <p>Nul trackers. 100% open source en volledige privacy.</p>
+                </div>
+                <div class="card-sparkle-icon">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z"/>
+                  </svg>
+                </div>
+              </div>
+
+              <!-- Card 4: GEWOON ANDERS (Beats 29-32) -->
+              <div class="deck-card card-periwinkle" id="deck-card-4">
+                <div class="deck-icon-wrap">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M13 2.05v3.03c3.39.49 6 3.39 6 6.92 0 .9-.18 1.75-.48 2.54l2.6 1.53c.56-1.24.88-2.62.88-4.07 0-5.18-3.95-9.45-9-9.95zM12 19c-3.87 0-7-3.13-7-7 0-3.53 2.61-6.43 6-6.92V2.05c-5.06.5-9 4.76-9 9.95 0 5.52 4.47 10 9.99 10 3.31 0 6.24-1.61 8.04-4.09l-2.48-1.46C16.14 17.81 14.23 19 12 19z"/>
+                  </svg>
+                </div>
+                <div class="deck-content">
+                  <span class="deck-tag">MAXIMALE SNELHEID</span>
+                  <h3>GEWOON ANDERS</h3>
+                  <p>Nothing OS & Material You-thema's, live OV-buskaart en widgets.</p>
+                </div>
+                <div class="card-sparkle-icon">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SCENE 4: SNELLE MONTAGE (Maten 9–12 / 33–48)   -->
+        <!-- ============================================== -->
+        <section class="scene" id="scene-montage">
+          <div class="scene-inner montage-layout">
+            
+            <div class="montage-cut cut-1" id="montage-1">
+              <div class="cut-bg-pill"></div>
+              <span class="cut-eyebrow">GEGARANDEERD</span>
+              <h2 class="cut-text">GEEN RECLAME.</h2>
+              <div class="cut-subpill">100% SCHONE ERVARING</div>
+            </div>
+
+            <div class="montage-cut cut-2" id="montage-2">
+              <div class="cut-bg-pill"></div>
+              <span class="cut-eyebrow">LICHTGEWICHT</span>
+              <h2 class="cut-text">GEEN BLOAT.</h2>
+              <div class="cut-subpill">NUL OVERBODIGE ROMMEL</div>
+            </div>
+
+            <div class="montage-cut cut-3" id="montage-3">
+              <div class="cut-bg-pill"></div>
+              <span class="cut-eyebrow">ALTIJD TOEGANKELIJK</span>
+              <h2 class="cut-text">GEEN PAYWALLS.</h2>
+              <div class="cut-subpill">GRATIS VOOR ELKE SCHOLIER</div>
+            </div>
+
+            <div class="montage-cut cut-4" id="montage-4">
+              <div class="cut-bg-pill"></div>
+              <span class="cut-eyebrow">GEOPTIMALISEERD</span>
+              <h2 class="cut-text">PUUR SNELHEID.</h2>
+              <div class="cut-subpill">10X SNELLER DAN MAGISTER</div>
+            </div>
+
+            <div class="montage-cut cut-5" id="montage-5">
+              <div class="cut-bg-pill"></div>
+              <span class="cut-eyebrow">GA ERVOOR</span>
+              <h2 class="cut-text">APK NU KLAAR.</h2>
+              <div class="cut-subpill">GITHUB RELEASES</div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SCENE 5: OUTRO & CTA (Maten 13–16 / Beats 49–64)-->
+        <!-- ============================================== -->
+        <section class="scene" id="scene-outro">
+          <div class="scene-inner outro-layout">
+            
+            <div class="hero-outro-card m3-card elevation-4" id="outro-card">
+              <!-- Radial Glow Accent -->
+              <div class="card-glow-aurora"></div>
+
+              <!-- Brand Monogram -->
+              <div class="outro-logo-wrap">
+                <div class="outro-logo-ring">
+                  <svg class="outro-logo-svg" viewBox="0 0 64 64" fill="none">
+                    <rect width="64" height="64" rx="20" fill="#A8C7FA"/>
+                    <path d="M32 12L46 46H39L36 38H28L25 46H18L32 12ZM32 23L29.4 33H34.6L32 23Z" fill="#00315B"/>
+                    <circle cx="46" cy="18" r="6" fill="#FFB4AB"/>
+                  </svg>
+                </div>
+              </div>
+
+              <!-- Title & Version -->
+              <div class="outro-text-block">
+                <h1 class="outro-title">Agenda+</h1>
+                <div class="outro-pill-row">
+                  <span class="m3-badge badge-version">v0.1.2-pre-alpha</span>
+                  <span class="m3-badge badge-tag">PUBLIEKE RELEASE</span>
+                </div>
+                <p class="outro-subtitle">De snellere, onafhankelijke Magister-agenda.</p>
+              </div>
+
+              <!-- CTA Button with Simulated Tap Ripple -->
+              <a href="https://github.com/EpicMemazGuy" target="_blank" rel="noopener noreferrer" class="m3-btn-download" id="outro-cta-btn">
+                <svg class="cta-icon" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+                </svg>
+                <span>DOWNLOAD OP GITHUB</span>
+                <span class="btn-ripple-wave"></span>
+              </a>
+
+              <!-- Links & Author -->
+              <div class="outro-links-footer">
+                <div class="footer-url-chip">
+                  <svg class="github-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/>
+                  </svg>
+                  <span>github.com/EpicMemazGuy</span>
+                </div>
+                <div class="footer-domain-row">
+                  <span class="web-domain">agendaplus.nl</span>
+                  <span class="dot-sep">•</span>
+                  <span class="axola-brand">DOOR AXOLA</span>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Floating Badges -->
+            <div class="outro-floating-badges">
+              <div class="m3-mini-pill pill-offline">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                </svg>
+                <span>OFFLINE-MODUS</span>
+              </div>
+              <div class="m3-mini-pill pill-widgets">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M4 11h6V5H4v6zm0 8h6v-6H4v6zm8 0h6v-6h-6v6zm0-14v6h6V5h-6z"/>
+                </svg>
+                <span>3 WIDGETS</span>
+              </div>
+              <div class="m3-mini-pill pill-themes">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+                </svg>
+                <span>NOTHING OS + M3</span>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- SUBTIELE ZWEVENDE HUD (Schakelen met 'H')      -->
+    <!-- ============================================== -->
+    <aside class="hud-panel" id="hud-panel">
+      
+      <!-- Timeline Progress Bar -->
+      <div class="timeline-container" id="timeline-bar" title="Klik om te spoelen door de 16 maten">
+        <div class="timeline-track">
+          <div class="timeline-fill" id="timeline-fill"></div>
+          <div class="timeline-scrubber" id="timeline-scrubber"></div>
+        </div>
+        <div class="timeline-markers">
+          <span class="marker" style="left: 0%">M1</span>
+          <span class="marker" style="left: 12.5%">M3</span>
+          <span class="marker" style="left: 25%">M5</span>
+          <span class="marker" style="left: 37.5%">M7</span>
+          <span class="marker" style="left: 50%">M9</span>
+          <span class="marker" style="left: 62.5%">M11</span>
+          <span class="marker" style="left: 75%">M13</span>
+          <span class="marker" style="left: 87.5%">M15</span>
+          <span class="marker" style="left: 100%">EINDE</span>
+        </div>
+      </div>
+
+      <!-- Controls Row -->
+      <div class="hud-row">
+        <!-- Links: Afspeelbediening -->
+        <div class="hud-group left">
+          <button class="hud-btn" id="btn-play-pause" title="Afspelen / Pauzeren (Spatie)">
+            <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+            </svg>
+            <span class="btn-text" id="play-btn-text">Pauzeer</span>
+          </button>
+
+          <button class="hud-btn" id="btn-restart" title="Opnieuw starten (R)">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+            </svg>
+            <span class="btn-text">Opnieuw</span>
+          </button>
+        </div>
+
+        <!-- Midden: 140 BPM Maat/Tel Indicatie -->
+        <div class="hud-group center">
+          <div class="beat-clock-readout" id="beat-clock">
+            <span class="beat-led" id="beat-led"></span>
+            <span class="beat-readout-text" id="beat-readout">MAAT 01 : TEL 1</span>
+            <span class="bpm-tag">140 BPM</span>
+          </div>
+        </div>
+
+        <!-- Rechts: Audio Metronoom, Beeldverhouding & Schone Modus -->
+        <div class="hud-group right">
+          <button class="hud-btn" id="btn-audio" title="140 BPM Klik / Sub-Kick (M)">
+            <svg class="icon-audio-off" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+            </svg>
+            <svg class="icon-audio-on" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+            </svg>
+            <span class="btn-text" id="audio-btn-text">140 BPM Klik (Gedempt)</span>
+          </button>
+
+          <button class="hud-btn" id="btn-aspect" title="Schakelen tussen 9:16 en 16:9 (A)">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 12h-2v3h-3v2h5v-5zM7 9h3V7H5v5h2V9zm14-6H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16.01H3V4.99h18v14.02z"/>
+            </svg>
+            <span class="btn-text" id="aspect-btn-text">9:16 Verticaal</span>
+          </button>
+
+          <button class="hud-btn btn-clean" id="btn-clean" title="Schone Opnamemodus - Verbergt HUD (H)">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+            </svg>
+            <span class="btn-text">Schone Modus (H)</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Zwevende Herstelknop (Zichtbaar als HUD verborgen is) -->
+    <button id="btn-unhide-hud" class="unhide-btn" title="Toon Besturing (H)">
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+      </svg>
+      <span>Toon Besturing (H)</span>
+    </button>
+
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

@@ -148,6 +148,8 @@ fun AgendaPlusApp(
     val showTodayModifySheet by viewModel.showTodayModifySheet.collectAsStateWithLifecycle()
     val activeKwtSlotForSheet by viewModel.activeKwtSlotForSheet.collectAsStateWithLifecycle()
     val updateInfo by viewModel.updateInfo.collectAsStateWithLifecycle()
+    val isCheckingUpdate by viewModel.isCheckingUpdate.collectAsStateWithLifecycle()
+    val manualUpdateMessage by viewModel.manualUpdateMessage.collectAsStateWithLifecycle()
 
     val currentTab by viewModel.currentTab.collectAsStateWithLifecycle()
     val appointments by viewModel.appointments.collectAsStateWithLifecycle()
@@ -447,6 +449,11 @@ fun AgendaPlusApp(
                             onAddStudySite = { name, url, cat -> viewModel.addStudySite(name, url, cat) },
                             onRemoveStudySite = { viewModel.removeStudySite(it) },
                             onEnrollKwtOption = { apptId, optId -> viewModel.enrollKwtOption(apptId, optId) },
+                            isCheckingUpdate = isCheckingUpdate,
+                            manualUpdateMessage = manualUpdateMessage,
+                            onCheckForUpdate = { viewModel.checkForUpdateManually() },
+                            onExportBackupJson = { viewModel.exportChoicesBackupJson() },
+                            onImportBackupJson = { raw -> viewModel.importChoicesBackupJson(raw) },
                             modifier = contentModifier
                         )
                     }

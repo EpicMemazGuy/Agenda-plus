@@ -367,5 +367,68 @@ class ExampleRobolectricTest {
         )
         assertTrue(png.exists() && png.length() > 1000L)
     }
+
+    @Test
+    fun test_release_notes_dialog_extracts_new_features_cleanly() {
+        val rawBody = """
+            ### Agenda+ v0.1.5-pre-alpha
+
+            - **App-naam:** `Agenda+`
+            - **Versie:** `v0.1.5-pre-alpha` (build `10510`)
+
+            ---
+
+            #### Wat is er nieuw in Agenda+?
+            - **In-app APK Updater**: Direct installeren vanuit het dialoog
+            - Snellere live bustijden
+
+            ---
+
+            #### Installatie & Updaten op Android:
+            1. Open het gedownloade bestand.
+        """.trimIndent()
+
+        val formatted = com.example.util.UpdateChecker.formatReleaseNotesForDialog(rawBody)
+        assertTrue(formatted.contains("In-app APK Updater: Direct installeren vanuit het dialoog"))
+        assertTrue(formatted.contains("- Snellere live bustijden"))
+        assertFalse(formatted.contains("Installatie & Updaten"))
+        assertFalse(formatted.contains("**"))
+    }
+
+    @Test
+    fun test_choices_backup_export_and_import_round_trip() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val store = com.example.data.AppPreferencesStore(context)
+
+        store.setAppThemeStyle(com.example.model.AppThemeStyle.NOTHING_OS)
+        store.setSavedBusLine("401")
+        store.setGradeUnboxingMode(com.example.model.GradeUnboxingMode.PENALTIES)
+        store.setUitvalNotificationsEnabled(false)
+        store.saveSchoolAddress(
+            com.example.model.SchoolAddress("Stedelijk Gymnasium", "Nassauplein 2, Haarlem", 52.38, 4.63)
+        )
+
+        val backupJson = store.exportChoicesBackupJson()
+        assertTrue(backupJson.contains("NOTHING_OS"))
+        assertTrue(backupJson.contains("401"))
+
+        // Reset values and restore from backup
+        store.setAppThemeStyle(com.example.model.AppThemeStyle.STANDARD)
+        store.setSavedBusLine("")
+        store.setGradeUnboxingMode(com.example.model.GradeUnboxingMode.CASE_OPENING)
+        store.setUitvalNotificationsEnabled(true)
+        store.saveSchoolAddress(null)
+
+        val restoredResult = store.importChoicesBackupJson(backupJson)
+        assertTrue(restoredResult.isSuccess)
+        assertEquals(com.example.model.AppThemeStyle.NOTHING_OS, store.getAppThemeStyle())
+        assertEquals("401", store.getSavedBusLine())
+        assertEquals(com.example.model.GradeUnboxingMode.PENALTIES, store.getGradeUnboxingMode())
+        assertFalse(store.isUitvalNotificationsEnabled())
+        assertEquals("Stedelijk Gymnasium", store.loadSchoolAddress()?.displayName)
+
+        // Invalid JSON fails cleanly
+        assertTrue(store.importChoicesBackupJson("{}").isFailure)
+    }
 }
 

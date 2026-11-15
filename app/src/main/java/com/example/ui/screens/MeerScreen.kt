@@ -80,6 +80,11 @@ fun MeerScreen(
     onAddStudySite: (String, String, String) -> Unit,
     onRemoveStudySite: (String) -> Unit,
     onEnrollKwtOption: suspend (Long, Long) -> Result<Unit>,
+    isCheckingUpdate: Boolean = false,
+    manualUpdateMessage: String? = null,
+    onCheckForUpdate: () -> Unit = {},
+    onExportBackupJson: () -> String = { "{}" },
+    onImportBackupJson: (String) -> Result<Int> = { Result.failure(UnsupportedOperationException()) },
     modifier: Modifier = Modifier
 ) {
     if (currentSection != MeerSection.HOME) {
@@ -397,7 +402,12 @@ fun MeerScreen(
                     onTestUitvalNotification = onTestUitvalNotification,
                     onOpenRawConsole = onOpenRawConsole,
                     onOpenSetupWizard = onOpenSetupWizard,
-                    onResetAndLogout = onResetAndLogout
+                    onResetAndLogout = onResetAndLogout,
+                    isCheckingUpdate = isCheckingUpdate,
+                    manualUpdateMessage = manualUpdateMessage,
+                    onCheckForUpdate = onCheckForUpdate,
+                    onExportBackupJson = onExportBackupJson,
+                    onImportBackupJson = onImportBackupJson
                 )
             }
         }
@@ -547,12 +557,52 @@ private fun MeerSettingsView(
     onTestUitvalNotification: () -> Boolean,
     onOpenRawConsole: () -> Unit,
     onOpenSetupWizard: () -> Unit,
-    onResetAndLogout: () -> Unit
+    onResetAndLogout: () -> Unit,
+    isCheckingUpdate: Boolean = false,
+    manualUpdateMessage: String? = null,
+    onCheckForUpdate: () -> Unit = {},
+    onExportBackupJson: () -> String = { "{}" },
+    onImportBackupJson: (String) -> Result<Int> = { Result.failure(UnsupportedOperationException()) }
 ) {
     val nothingMode = isNothingOs
+    val settingsCtx = LocalContext.current
     val currentPreset = UiScalePreset.entries.minByOrNull { kotlin.math.abs(it.scaleFactor - uiScale) }
         ?: UiScalePreset.NORMAL
     var testMsg by remember { mutableStateOf<String?>(null) }
+    var backupMsg by remember { mutableStateOf<String?>(null) }
+
+    val exportBackupLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                settingsCtx.contentResolver.openOutputStream(uri)?.use { stream ->
+                    stream.write(onExportBackupJson().toByteArray(Charsets.UTF_8))
+                } ?: error("Kon bestand niet openen voor opslaan.")
+            }.onSuccess {
+                backupMsg = "Keuzes-backup succesvol opgeslagen."
+            }.onFailure { err ->
+                backupMsg = err.localizedMessage ?: "Opslaan van backup mislukt."
+            }
+        }
+    }
+
+    val importBackupLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                val raw = settingsCtx.contentResolver.openInputStream(uri)?.use { stream ->
+                    stream.bufferedReader(Charsets.UTF_8).readText()
+                } ?: error("Kon backupbestand niet lezen.")
+                onImportBackupJson(raw).getOrThrow()
+            }.onSuccess { count ->
+                backupMsg = "$count instellingen & keuzes hersteld."
+            }.onFailure { err ->
+                backupMsg = err.localizedMessage ?: "Herstellen van backup mislukt."
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -771,7 +821,101 @@ private fun MeerSettingsView(
             }
         }
 
-        // 3. Account, Console & Reset
+        // 4. Updates & Keuzes-backup
+        item {
+            Surface(
+                shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = nothingCardBorder(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Updates & Keuzes-backup",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Werk bij zonder dataverlies of bewaar je thema, Vandaag-indeling, bustijd en studiewebsites als JSON-backup.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(
+                        onClick = onCheckForUpdate,
+                        enabled = !isCheckingUpdate,
+                        shape = RoundedCornerShape(percent = 50),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .minimumInteractiveComponentSize()
+                            .testTag("settings_check_updates_button")
+                    ) {
+                        if (isCheckingUpdate) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Controleren op updates...")
+                        } else {
+                            Icon(Icons.Default.SystemUpdate, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Controleer op updates", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    manualUpdateMessage?.let { msg ->
+                        Text(
+                            text = msg,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.testTag("settings_update_status_text")
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { exportBackupLauncher.launch("agendaplus_keuzes_backup.json") },
+                            shape = RoundedCornerShape(percent = 50),
+                            modifier = Modifier
+                                .weight(1f)
+                                .minimumInteractiveComponentSize()
+                                .testTag("settings_export_backup_button")
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Exporteer", maxLines = 1)
+                        }
+                        OutlinedButton(
+                            onClick = { importBackupLauncher.launch(arrayOf("application/json", "*/*")) },
+                            shape = RoundedCornerShape(percent = 50),
+                            modifier = Modifier
+                                .weight(1f)
+                                .minimumInteractiveComponentSize()
+                                .testTag("settings_import_backup_button")
+                        ) {
+                            Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Herstel", maxLines = 1)
+                        }
+                    }
+                    backupMsg?.let { msg ->
+                        Text(
+                            text = msg,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.testTag("settings_backup_status_text")
+                        )
+                    }
+                }
+            }
+        }
+
+        // 5. Account, Console & Reset
         item {
             Surface(
                 shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),

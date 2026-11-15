@@ -89,6 +89,12 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
     private val _updateInfo = MutableStateFlow<com.example.util.GithubReleaseInfo?>(null)
     val updateInfo: StateFlow<com.example.util.GithubReleaseInfo?> = _updateInfo.asStateFlow()
 
+    private val _isCheckingUpdate = MutableStateFlow(false)
+    val isCheckingUpdate: StateFlow<Boolean> = _isCheckingUpdate.asStateFlow()
+
+    private val _manualUpdateMessage = MutableStateFlow<String?>(null)
+    val manualUpdateMessage: StateFlow<String?> = _manualUpdateMessage.asStateFlow()
+
     init {
         viewModelScope.launch {
             val info = com.example.util.UpdateChecker.checkForUpdate(application.applicationContext)
@@ -97,6 +103,31 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
     }
+
+    fun checkForUpdateManually() {
+        if (_isCheckingUpdate.value) return
+        viewModelScope.launch {
+            _isCheckingUpdate.value = true
+            _manualUpdateMessage.value = null
+            when (val result = com.example.util.UpdateChecker.checkForUpdateDetailed(getApplication<Application>().applicationContext)) {
+                is com.example.util.UpdateCheckResult.UpdateAvailable -> {
+                    _updateInfo.value = result.release
+                    _manualUpdateMessage.value = null
+                }
+                is com.example.util.UpdateCheckResult.UpToDate -> {
+                    _manualUpdateMessage.value = "Je gebruikt al de nieuwste versie (v${result.currentVersion})."
+                }
+                is com.example.util.UpdateCheckResult.Error -> {
+                    _manualUpdateMessage.value = result.message
+                }
+            }
+            _isCheckingUpdate.value = false
+        }
+    }
+
+    fun exportChoicesBackupJson(): String = repository.exportChoicesBackupJson()
+
+    fun importChoicesBackupJson(rawJson: String): Result<Int> = repository.importChoicesBackupJson(rawJson)
 
     fun dismissUpdateDialog() {
         _updateInfo.value = null

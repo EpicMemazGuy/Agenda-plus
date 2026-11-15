@@ -799,6 +799,193 @@ class AppPreferencesStore(context: Context) {
         }
     }
 
+    fun exportChoicesBackupJson(): String {
+        val root = JSONObject().apply {
+            put("backupVersion", 1)
+            put("appThemeStyle", getAppThemeStyle().name)
+            put("agendaStyle", getAgendaStyle().name)
+            put("uiScale", getUiScale().toDouble())
+            put("eloUrl", getEloUrl())
+            put("savedBusLine", getSavedBusLine())
+            put("navPromptDismissed", isNavPromptDismissed())
+            put("tutorialSeen", hasSeenTutorial())
+            put("offlineModeEnabled", isOfflineModeEnabled())
+            put("uitvalNotificationsEnabled", isUitvalNotificationsEnabled())
+            put("gradeNotificationsEnabled", isGradeNotificationsEnabled())
+            put("testNotificationsEnabled", isTestNotificationsEnabled())
+            put("gradeUnboxingEnabled", isGradeUnboxingEnabled())
+            put("gradeUnboxingMode", getGradeUnboxingMode().name)
+
+            val weather = getWeatherLocation()
+            put("weatherLocation", JSONObject().apply {
+                put("cityName", weather.cityName)
+                put("latitude", weather.latitude)
+                put("longitude", weather.longitude)
+            })
+
+            loadSchoolAddress()?.let { addr ->
+                put("schoolAddress", JSONObject().apply {
+                    put("displayName", addr.displayName)
+                    put("streetAndCity", addr.streetAndCity)
+                    put("latitude", addr.latitude)
+                    put("longitude", addr.longitude)
+                })
+            }
+
+            val blocksArr = JSONArray()
+            loadTodayBlocksConfig().forEach { block ->
+                blocksArr.put(JSONObject().apply {
+                    put("type", block.type.name)
+                    put("enabled", block.enabled)
+                })
+            }
+            put("todayBlocks", blocksArr)
+
+            val sitesArr = JSONArray()
+            loadStudySites().forEach { s ->
+                sitesArr.put(JSONObject().apply {
+                    put("id", s.id)
+                    put("name", s.name)
+                    put("url", s.url)
+                    put("category", s.category)
+                    put("isDefault", s.isDefault)
+                })
+            }
+            put("studySites", sitesArr)
+        }
+        return root.toString(2)
+    }
+
+    fun importChoicesBackupJson(rawJson: String): Result<Int> = runCatching {
+        val root = JSONObject(rawJson)
+        var restoredCount = 0
+
+        root.optString("appThemeStyle").takeIf { it.isNotBlank() }?.let { raw ->
+            runCatching { AppThemeStyle.valueOf(raw) }.getOrNull()?.let {
+                setAppThemeStyle(it)
+                restoredCount++
+            }
+        }
+        root.optString("agendaStyle").takeIf { it.isNotBlank() }?.let { raw ->
+            runCatching { AgendaStyle.valueOf(raw) }.getOrNull()?.let {
+                setAgendaStyle(it)
+                restoredCount++
+            }
+        }
+        if (root.has("uiScale")) {
+            setUiScale(root.optDouble("uiScale", 1.0).toFloat())
+            restoredCount++
+        }
+        root.optString("eloUrl").takeIf { it.isNotBlank() }?.let {
+            setEloUrl(it)
+            restoredCount++
+        }
+        if (root.has("savedBusLine")) {
+            setSavedBusLine(root.optString("savedBusLine", ""))
+            restoredCount++
+        }
+        if (root.has("navPromptDismissed")) {
+            setNavPromptDismissed(root.optBoolean("navPromptDismissed", false))
+            restoredCount++
+        }
+        if (root.has("tutorialSeen")) {
+            setTutorialSeen(root.optBoolean("tutorialSeen", false))
+            restoredCount++
+        }
+        if (root.has("offlineModeEnabled")) {
+            setOfflineModeEnabled(root.optBoolean("offlineModeEnabled", false))
+            restoredCount++
+        }
+        if (root.has("uitvalNotificationsEnabled")) {
+            setUitvalNotificationsEnabled(root.optBoolean("uitvalNotificationsEnabled", true))
+            restoredCount++
+        }
+        if (root.has("gradeNotificationsEnabled")) {
+            setGradeNotificationsEnabled(root.optBoolean("gradeNotificationsEnabled", true))
+            restoredCount++
+        }
+        if (root.has("testNotificationsEnabled")) {
+            setTestNotificationsEnabled(root.optBoolean("testNotificationsEnabled", true))
+            restoredCount++
+        }
+        if (root.has("gradeUnboxingEnabled")) {
+            setGradeUnboxingEnabled(root.optBoolean("gradeUnboxingEnabled", true))
+            restoredCount++
+        }
+        root.optString("gradeUnboxingMode").takeIf { it.isNotBlank() }?.let { raw ->
+            runCatching { GradeUnboxingMode.valueOf(raw) }.getOrNull()?.let {
+                setGradeUnboxingMode(it)
+                restoredCount++
+            }
+        }
+
+        root.optJSONObject("weatherLocation")?.let { w ->
+            val city = w.optString("cityName")
+            if (city.isNotBlank()) {
+                setWeatherLocation(city, w.optDouble("latitude", 52.0907), w.optDouble("longitude", 5.1214))
+                restoredCount++
+            }
+        }
+
+        root.optJSONObject("schoolAddress")?.let { a ->
+            val displayName = a.optString("displayName")
+            if (displayName.isNotBlank()) {
+                saveSchoolAddress(
+                    SchoolAddress(
+                        displayName = displayName,
+                        streetAndCity = a.optString("streetAndCity", displayName),
+                        latitude = a.optDouble("latitude", 0.0),
+                        longitude = a.optDouble("longitude", 0.0)
+                    )
+                )
+                restoredCount++
+            }
+        }
+
+        root.optJSONArray("todayBlocks")?.let { arr ->
+            val blocks = buildList {
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val type = runCatching { TodayBlockType.valueOf(obj.optString("type")) }.getOrNull() ?: continue
+                    add(TodayBlockConfig(type = type, enabled = obj.optBoolean("enabled", true)))
+                }
+            }
+            if (blocks.isNotEmpty()) {
+                saveTodayBlocksConfig(blocks)
+                restoredCount++
+            }
+        }
+
+        root.optJSONArray("studySites")?.let { arr ->
+            val sites = buildList {
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val url = obj.optString("url")
+                    if (url.isNotBlank()) {
+                        add(
+                            StudySite(
+                                id = obj.optString("id", "site_$i"),
+                                name = obj.optString("name", "Studie"),
+                                url = url,
+                                category = obj.optString("category", "Oefenen"),
+                                isDefault = obj.optBoolean("isDefault", false)
+                            )
+                        )
+                    }
+                }
+            }
+            if (sites.isNotEmpty()) {
+                saveStudySites(sites)
+                restoredCount++
+            }
+        }
+
+        if (restoredCount == 0) {
+            error("Geen geldige Agenda+-instellingen gevonden in dit bestand.")
+        }
+        restoredCount
+    }
+
     companion object {
         private const val PREFS_NAME = "agenda_plus_prefs"
         private const val KEY_ONBOARDING_DONE = "onboarding_done"

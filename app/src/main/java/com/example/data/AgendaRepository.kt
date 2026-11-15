@@ -622,6 +622,34 @@ class AgendaRepository(private val context: Context? = null) {
         return UitvalNotificationHelper.sendTestUitvalNotification(ctx)
     }
 
+    fun exportChoicesBackupJson(): String = prefs?.exportChoicesBackupJson() ?: "{}"
+
+    fun importChoicesBackupJson(rawJson: String): Result<Int> {
+        val store = prefs ?: return Result.failure(IllegalStateException("Geen opslag beschikbaar."))
+        val result = store.importChoicesBackupJson(rawJson)
+        if (result.isSuccess) {
+            _appThemeStyle.value = store.getAppThemeStyle()
+            _agendaStyle.value = store.getAgendaStyle()
+            _uiScale.value = store.getUiScale()
+            _eloUrl.value = store.getEloUrl()
+            _savedBusLine.value = store.getSavedBusLine()
+            _navPromptDismissed.value = store.isNavPromptDismissed()
+            _hasSeenTutorial.value = store.hasSeenTutorial()
+            _offlineModeEnabled.value = store.isOfflineModeEnabled()
+            _uitvalNotificationsEnabled.value = store.isUitvalNotificationsEnabled()
+            _gradeNotificationsEnabled.value = store.isGradeNotificationsEnabled()
+            _testNotificationsEnabled.value = store.isTestNotificationsEnabled()
+            _gradeUnboxingEnabled.value = store.isGradeUnboxingEnabled()
+            _gradeUnboxingMode.value = store.getGradeUnboxingMode()
+            _schoolAddress.value = store.loadSchoolAddress()
+            _todayBlocks.value = store.loadTodayBlocksConfig()
+            _studySites.value = store.loadStudySites()
+            updateMonitorSchedule()
+            context?.let { WidgetUpdater.updateAllWidgets(it) }
+        }
+        return result
+    }
+
     fun resetAppAndLogout() {
         _currentSession.value = AuthSession()
         _appointments.value = emptyList()

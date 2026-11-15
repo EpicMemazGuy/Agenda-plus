@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Versietag (bijv. v0.1.4-pre-alpha of v0.1.5)'
+        description: 'Versietag (bijv. v0.1.5-pre-alpha of v0.1.5)'
         required: false
         default: 'v0.1.4-pre-alpha'
       app_name:
@@ -19,13 +19,17 @@ on:
         required: false
         default: ''
       version_code:
-        description: 'Optionele numerieke versionCode (leeg = automatisch berekend uit versietag)'
+        description: 'Optionele numerieke versionCode (leeg = automatisch oplopend uit versietag)'
+        required: false
+        default: ''
+      new_features:
+        description: 'New Features (typ nieuwe functies; scheid met ; of | of nieuwe regel)'
         required: false
         default: ''
       release_notes:
-        description: 'Optionele opmerkingen bij deze release'
+        description: 'Optionele korte toelichting bovenaan deze release'
         required: false
-        default: 'Nieuwste automatische APK-build van Agenda+.'
+        default: ''
 
 permissions:
   contents: write
@@ -54,16 +58,25 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Resolve Chosen App Name, Version & APK Filename
+      - name: Resolve Version, App Name & Release Notes
         env:
           INPUT_TAG: ${{ github.event.inputs.tag_name }}
           INPUT_APP_NAME: ${{ github.event.inputs.app_name }}
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           INPUT_VERSION_CODE: ${{ github.event.inputs.version_code }}
+          INPUT_NEW_FEATURES: ${{ github.event.inputs.new_features }}
+          INPUT_RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
           REF_NAME: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 - <<'PY'
-          import os, re, xml.sax.saxutils as saxutils
+          import json
+          import os
+          import re
+          import subprocess
+          import urllib.request
+          import xml.sax.saxutils as saxutils
 
           raw_tag = (os.environ.get("INPUT_TAG") or "").strip()
           if not raw_tag:
@@ -74,6 +87,9 @@ jobs:
           release_name = (os.environ.get("INPUT_RELEASE_NAME") or "").strip() or f"{app_name} {raw_tag}"
           version_name = re.sub(r"^[vV]+", "", raw_tag).strip() or "0.1.4-pre-alpha"
 
+          # Monotone versionCode berekening:
+          # Houdt >= 10410 aan zodat elke build altijd hoger ligt dan oudere builds (1041..1049)
+          # en neemt zowel sub-nummers (bijv. -pre-alpha.2) als bestaande GitHub releases mee.
           manual_vc = (os.environ.get("INPUT_VERSION_CODE") or "").strip()
           if manual_vc.isdigit() and int(manual_vc) > 0:
               version_code = int(manual_vc)
@@ -85,19 +101,53 @@ jobs:
               major = nums[0] if len(nums) > 0 else 0
               minor = nums[1] if len(nums) > 1 else 0
               patch = nums[2] if len(nums) > 2 else 0
+              extra = nums[3] if len(nums) > 3 else 0
               if not pre:
                   stage = 9
-              elif "pre-alpha" in pre or "prealpha" in pre:
-                  stage = 1
-              elif "alpha" in pre:
-                  stage = 2
-              elif "beta" in pre:
-                  stage = 3
-              elif "rc" in pre:
-                  stage = 4
+                  pre_num = min(extra, 9)
               else:
-                  stage = 0
-              version_code = max(2, major * 100000 + minor * 1000 + patch * 10 + stage)
+                  if "pre-alpha" in pre or "prealpha" in pre:
+                      stage = 1
+                  elif "alpha" in pre:
+                      stage = 2
+                  elif "beta" in pre:
+                      stage = 3
+                  elif "rc" in pre:
+                      stage = 4
+                  else:
+                      stage = 0
+                  m_pre = re.search(r"(\d+)\s*$", pre)
+                  pre_num = min(int(m_pre.group(1)), 9) if m_pre else 0
+
+              version_code = max(
+                  10410,
+                  major * 1_000_000 + minor * 10_000 + patch * 100 + stage * 10 + pre_num,
+              )
+
+              # Controleer hoogste bestaande buildnummer in gepubliceerde GitHub Releases om downgrade te voorkomen
+              repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
+              token = os.environ.get("GITHUB_TOKEN", "").strip()
+              if repo and token:
+                  try:
+                      req = urllib.request.Request(
+                          f"https://api.github.com/repos/{repo}/releases?per_page=30",
+                          headers={
+                              "Accept": "application/vnd.github+json",
+                              "Authorization": f"Bearer {token}",
+                              "User-Agent": "AgendaPlus-Release-Builder",
+                          },
+                      )
+                      with urllib.request.urlopen(req, timeout=8) as resp:
+                          releases = json.loads(resp.read().decode("utf-8"))
+                      max_existing_code = 0
+                      for rel in releases:
+                          body_text = rel.get("body") or ""
+                          for m in re.finditer(r"build\s*`?(\d+)`?", body_text, re.IGNORECASE):
+                              max_existing_code = max(max_existing_code, int(m.group(1)))
+                      if version_code <= max_existing_code:
+                          version_code = max_existing_code + 1
+                  except Exception as exc:
+                      print(f"Waarschuwing: kon eerdere releases niet ophalen voor versionCode-check: {exc}")
 
           def slugify(text: str) -> str:
               s = text.replace("+", "Plus")
@@ -126,6 +176,73 @@ jobs:
                   f.write(updated_xml)
               print(f"Updated strings.xml app_name -> {app_name}")
 
+          # Parse getypte "New Features" voor de release notes
+          raw_features = (os.environ.get("INPUT_NEW_FEATURES") or "").strip()
+          feature_items = []
+          if raw_features:
+              lines = [ln.strip() for ln in re.split(r"\r?\n", raw_features) if ln.strip()]
+              if len(lines) == 1 and (";" in lines[0] or "|" in lines[0]):
+                  sep = ";" if ";" in lines[0] else "|"
+                  lines = [part.strip() for part in lines[0].split(sep) if part.strip()]
+              for item in lines:
+                  cleaned = re.sub(r"^[-*•]\s+", "", item).strip()
+                  if cleaned:
+                      feature_items.append(cleaned)
+          else:
+              # Automatische fallback bij tag-push: recente commits sinds de vorige tag
+              try:
+                  prev_tag = subprocess.check_output(
+                      ["git", "describe", "--tags", "--abbrev=0", f"{raw_tag}^"],
+                      stderr=subprocess.DEVNULL,
+                      text=True,
+                  ).strip()
+                  log_range = f"{prev_tag}..HEAD"
+              except Exception:
+                  log_range = "-n 5"
+              try:
+                  cmd = ["git", "log", "--no-merges", "--pretty=format:%s"]
+                  if log_range == "-n 5":
+                      cmd.extend(["-n", "5"])
+                  else:
+                      cmd.append(log_range)
+                  commits = subprocess.check_output(cmd, text=True).splitlines()
+                  feature_items = [c.strip() for c in commits if c.strip()][:8]
+              except Exception:
+                  feature_items = []
+
+          if not feature_items:
+              feature_items = ["Algemene verbeteringen en stabiliteitsfixes."]
+
+          raw_notes = (os.environ.get("INPUT_RELEASE_NOTES") or "").strip()
+          body_lines = [f"### {release_name}", ""]
+          if raw_notes:
+              body_lines.extend([raw_notes, ""])
+          body_lines.extend([
+              f"- **App-naam:** `{app_name}`",
+              f"- **Versie:** `v{version_name}` (build `{version_code}`)",
+              "- **Package ID:** `nl.agendaplus.axola`",
+              f"- **Bestand:** `{apk_filename}`",
+              "",
+              "---",
+              "",
+              f"#### Wat is er nieuw in {app_name}?",
+          ])
+          for feat in feature_items:
+              body_lines.append(f"- {feat}")
+          body_lines.extend([
+              "",
+              "---",
+              "",
+              "#### Installatie & Updaten op Android:",
+              f"1. Open het gedownloade bestand `{apk_filename}` (of update direct in {app_name}).",
+              "2. Kies **Updaten** om je gegevens, login en instellingen te behouden.",
+              "3. Geef indien gevraagd eenmalig toestemming voor *Installeren uit onbekende bron*.",
+              "",
+          ])
+
+          with open(".release_body.md", "w", encoding="utf-8") as f:
+              f.write("\n".join(body_lines))
+
           gh_env = os.environ["GITHUB_ENV"]
           with open(gh_env, "a", encoding="utf-8") as f:
               f.write(f"RELEASE_TAG={raw_tag}\n")
@@ -141,59 +258,46 @@ jobs:
           print(f"Resolved APP_VERSION_NAME={version_name}")
           print(f"Resolved APP_VERSION_CODE={version_code}")
           print(f"Resolved APK_FILENAME={apk_filename}")
+          print("New Features count:", len(feature_items))
           PY
 
-      - name: Ensure Signing Keystore Exists
+      - name: Restore & Verify Persistent Repository Keystore
         run: |
+          set -euo pipefail
+          EXPECTED_SHA256="91:19:B0:E3:E4:BD:21:A7:9D:B7:8A:DA:DD:3A:5F:E1:CB:90:F2:32:D5:0F:B0:4F:3A:C7:11:5E:75:F7:AD:73"
           echo "=== Keystore Verificatie ==="
-          if [ -f debug.keystore.base64 ] && [ -s debug.keystore.base64 ]; then
-            echo "debug.keystore herstellen uit debug.keystore.base64..."
-            base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || true
+          if [ ! -f debug.keystore.base64 ] || [ ! -s debug.keystore.base64 ]; then
+            echo "Fout: debug.keystore.base64 ontbreekt in repository! Kan geen compatibele update-APK bouwen."
+            exit 1
           fi
 
-          if [ ! -f debug.keystore ] || [ ! -s debug.keystore ]; then
-            echo "debug.keystore niet aanwezig. Automatisch genereren met keytool..."
-            SAFE_CN=$(printf '%s' "$APP_NAME" | sed 's/+/Plus/g; s/[^A-Za-z0-9 .-]/ /g' | xargs)
-            SAFE_CN=${SAFE_CN:-AgendaPlus}
-            keytool -genkeypair -v \
-              -keystore debug.keystore \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=${SAFE_CN},O=Axola,C=NL"
+          if ! base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null; then
+            tr -d '\r\n ' < debug.keystore.base64 | base64 -d > debug.keystore
           fi
 
-          cp debug.keystore app/debug.keystore 2>/dev/null || true
-          keytool -list -keystore debug.keystore -storepass android -alias androiddebugkey | head -n 10
-          echo "=== Keystore is succesvol gereed ==="
+          if [ ! -s debug.keystore ]; then
+            echo "Fout: gedecodeerde debug.keystore is leeg."
+            exit 1
+          fi
 
-      - name: Build Signed Android APK
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          CERT_INFO=$(keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey)
+          echo "$CERT_INFO" | grep -E "Alias name:|SHA1:|SHA256:"
+          ACTUAL_SHA256=$(echo "$CERT_INFO" | awk '/SHA256:/{print $2; exit}')
+          if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+            echo "Fout: keystore SHA-256 ($ACTUAL_SHA256) komt niet overeen met verwachte repository-sleutel ($EXPECTED_SHA256)!"
+            exit 1
+          fi
+          echo "=== Vaste repository-keystore geverifieerd ==="
+
+      - name: Build Consistently Signed Android APK
         run: |
-          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ]; then
-            echo "Release keystore secrets gevonden. Gesigneerde Release APK bouwen..."
-            echo "$KEYSTORE_BASE64" | base64 -d > my-upload-key.jks
-            export KEYSTORE_PATH="$(pwd)/my-upload-key.jks"
-            ./gradlew assembleRelease \
-              -PappVersionName="$APP_VERSION_NAME" \
-              -PappVersionCode="$APP_VERSION_CODE" \
-              --stacktrace
-            APK_SRC="app/build/outputs/apk/release/app-release.apk"
-          else
-            echo "Consistent repository-keystore gebruiken voor direct installeerbare gesigneerde APK..."
-            ./gradlew assembleDebug \
-              -PappVersionName="$APP_VERSION_NAME" \
-              -PappVersionCode="$APP_VERSION_CODE" \
-              --stacktrace
-            APK_SRC="app/build/outputs/apk/debug/app-debug.apk"
-          fi
+          set -euo pipefail
+          ./gradlew assembleDebug \
+            -PappVersionName="$APP_VERSION_NAME" \
+            -PappVersionCode="$APP_VERSION_CODE" \
+            --stacktrace
 
+          APK_SRC="app/build/outputs/apk/debug/app-debug.apk"
           if [ ! -f "$APK_SRC" ]; then
             echo "Fout: APK niet gevonden op $APK_SRC"
             exit 1
@@ -208,16 +312,31 @@ jobs:
 
       - name: Verify APK Signature & Embedded Version Metadata
         run: |
+          set -euo pipefail
+          EXPECTED_DIGEST="9119b0e3e4bd21a79db78adadd3a5fe1cb90f232d50fb04f3ac7115e75f7ad73"
           BUILD_TOOLS_DIR=$(ls -d "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/* 2>/dev/null | sort -V | tail -n 1)
           echo "Build tools: $BUILD_TOOLS_DIR"
           if [ -x "$BUILD_TOOLS_DIR/apksigner" ]; then
-            "$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs "$FINAL_APK_PATH"
+            SIGN_OUT=$("$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs "$FINAL_APK_PATH")
+            echo "$SIGN_OUT"
+            if ! echo "$SIGN_OUT" | tr -d ':' | grep -qi "$EXPECTED_DIGEST"; then
+              echo "Fout: APK-handtekening komt niet overeen met de vaste repository-sleutel!"
+              exit 1
+            fi
           fi
           if [ -x "$BUILD_TOOLS_DIR/aapt2" ]; then
             BADGING=$("$BUILD_TOOLS_DIR/aapt2" dump badging "$FINAL_APK_PATH")
             echo "$BADGING" | grep -E "^(package:|application-label)"
+            if ! echo "$BADGING" | grep -q "name='nl.agendaplus.axola'"; then
+              echo "Fout: package name wijkt af van nl.agendaplus.axola"
+              exit 1
+            fi
             if ! echo "$BADGING" | grep -q "versionName='$APP_VERSION_NAME'"; then
               echo "Fout: ingebouwde versionName komt niet overeen met '$APP_VERSION_NAME'"
+              exit 1
+            fi
+            if ! echo "$BADGING" | grep -q "versionCode='$APP_VERSION_CODE'"; then
+              echo "Fout: ingebouwde versionCode komt niet overeen met '$APP_VERSION_CODE'"
               exit 1
             fi
           fi
@@ -235,33 +354,7 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TITLE }}
-          body: |
-            ### ${{ env.RELEASE_TITLE }}
-
-            ${{ github.event.inputs.release_notes || 'Automatisch gebouwde en gesigneerde APK-release via GitHub Actions.' }}
-
-            - **App-naam:** `${{ env.APP_NAME }}`
-            - **Versie:** `v${{ env.APP_VERSION_NAME }}` (build `${{ env.APP_VERSION_CODE }}`)
-            - **Package ID:** `nl.agendaplus.axola`
-            - **Bestand:** `${{ env.APK_FILENAME }}`
-
-            ---
-
-            #### Wat is er nieuw in Agenda+?
-            - **10x Sneller dan Magister**: Direct toegang tot je rooster, cijfers en huiswerk zonder laadtijden.
-            - **Twee Thema’s**: Volledig Nothing OS-thema (OLED zwart, dot-matrix, rode accenten) en modern Standaard Material You-thema.
-            - **Live OV Buskaart**: Realtime bustijden en vertragingen van jouw buslijnen via OVapi data.
-            - **What-If Cijfercalculator**: Bereken exact welk cijfer je nodig hebt om je gemiddelde te behalen.
-            - **Interactieve Home Screen Widgets**: 3 Android widgets (Volgende Les, Gemiddelde, Huiswerk).
-            - **100% Offline-modus**: Werkt ook in schoolkelders zonder wifi of bereik.
-
-            ---
-
-            #### Installatie op je Android telefoon:
-            1. Download het bestand `${{ env.APK_FILENAME }}` hieronder op je telefoon.
-            2. Tik op het bestand om te openen.
-            3. Geef toestemming voor *Installeren uit onbekende bron* (indien je telefoon hierom vraagt).
-            4. Start **${{ env.APP_NAME }}** en log direct in via je school!
+          body_path: .release_body.md
           files: ${{ env.FINAL_APK_PATH }}
           draft: false
           prerelease: false

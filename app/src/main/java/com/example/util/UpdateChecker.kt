@@ -13,13 +13,21 @@ import java.util.concurrent.TimeUnit
 data class GithubReleaseInfo(
     val tagName: String,
     val releaseNotes: String,
-    val downloadUrl: String
+    val downloadUrl: String,
+    val assetSizeBytes: Long = -1L,
+    val isApkAsset: Boolean = false
 )
+
+sealed interface UpdateCheckResult {
+    data class UpdateAvailable(val release: GithubReleaseInfo) : UpdateCheckResult
+    data class UpToDate(val currentVersion: String, val latestTag: String?) : UpdateCheckResult
+    data class Error(val message: String) : UpdateCheckResult
+}
 
 object UpdateChecker {
     private val client = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
         .build()
 
     internal data class SemanticVersion(
@@ -38,16 +46,32 @@ object UpdateChecker {
         }
     }
 
-    suspend fun checkForUpdate(context: Context): GithubReleaseInfo? = withContext(Dispatchers.IO) {
+    suspend fun checkForUpdate(context: Context): GithubReleaseInfo? {
+        return when (val result = checkForUpdateDetailed(context)) {
+            is UpdateCheckResult.UpdateAvailable -> result.release
+            else -> null
+        }
+    }
+
+    suspend fun checkForUpdateDetailed(context: Context): UpdateCheckResult = withContext(Dispatchers.IO) {
+        val installedVersionName = runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull()?.takeIf { it.isNotBlank() } ?: BuildConfig.VERSION_NAME
+
         runCatching {
-            val latestJson = fetchLatestReleaseJson() ?: return@runCatching null
+            val latestJson = fetchLatestReleaseJson()
+                ?: return@runCatching UpdateCheckResult.Error("Kon GitHub Releases niet bereiken.")
 
             val tagName = latestJson.optString("tag_name").ifBlank { latestJson.optString("tagName", "") }
-            if (tagName.isBlank()) return@runCatching null
+            if (tagName.isBlank()) {
+                return@runCatching UpdateCheckResult.UpToDate(installedVersionName, null)
+            }
 
-            val releaseNotes = latestJson.optString("body").ifBlank { "Geen opmerkingen beschikbaar." }
+            val rawBody = latestJson.optString("body", "")
+            val formattedNotes = formatReleaseNotesForDialog(rawBody)
 
             var apkUrl: String? = null
+            var apkSize = -1L
             val assets = latestJson.optJSONArray("assets") ?: latestJson.optJSONArray("Assets")
             if (assets != null) {
                 for (i in 0 until assets.length()) {
@@ -55,6 +79,7 @@ object UpdateChecker {
                     val name = asset.optString("name", "").lowercase()
                     if (name.endsWith(".apk")) {
                         apkUrl = asset.optString("browser_download_url").ifBlank { asset.optString("url") }
+                        apkSize = asset.optLong("size", -1L)
                         break
                     }
                 }
@@ -64,16 +89,51 @@ object UpdateChecker {
                 .ifBlank { "https://github.com/EpicMemazGuy/Agenda-plus/releases" }
             val downloadUrl = apkUrl ?: fallbackUrl
 
-            val installedVersionName = runCatching {
-                context.packageManager.getPackageInfo(context.packageName, 0).versionName
-            }.getOrNull()?.takeIf { it.isNotBlank() } ?: BuildConfig.VERSION_NAME
-
             if (isVersionNewer(installedVersionName, tagName)) {
-                GithubReleaseInfo(tagName = tagName, releaseNotes = releaseNotes, downloadUrl = downloadUrl)
+                UpdateCheckResult.UpdateAvailable(
+                    GithubReleaseInfo(
+                        tagName = tagName,
+                        releaseNotes = formattedNotes,
+                        downloadUrl = downloadUrl,
+                        assetSizeBytes = apkSize,
+                        isApkAsset = !apkUrl.isNullOrBlank()
+                    )
+                )
             } else {
-                null
+                UpdateCheckResult.UpToDate(installedVersionName, tagName)
             }
-        }.getOrNull()
+        }.getOrElse { err ->
+            UpdateCheckResult.Error(err.localizedMessage ?: "Update-controle mislukt.")
+        }
+    }
+
+    internal fun formatReleaseNotesForDialog(rawBody: String): String {
+        val trimmed = rawBody.trim()
+        if (trimmed.isBlank()) return "Geen opmerkingen beschikbaar."
+
+        val lines = trimmed.lines()
+        val featuresIdx = lines.indexOfFirst {
+            it.trim().lowercase().contains("wat is er nieuw")
+        }
+        if (featuresIdx >= 0) {
+            val featureLines = mutableListOf<String>()
+            for (i in (featuresIdx + 1) until lines.size) {
+                val line = lines[i].trim()
+                if (line == "---" || line.lowercase().startsWith("#### installatie")) break
+                if (line.isNotBlank()) {
+                    featureLines.add(line.replace("**", "").replace("`", ""))
+                }
+            }
+            if (featureLines.isNotEmpty()) {
+                return featureLines.joinToString("\n")
+            }
+        }
+
+        return trimmed
+            .lines()
+            .filterNot { it.trim() == "---" }
+            .joinToString("\n") { it.trimStart('#').trim().replace("**", "").replace("`", "") }
+            .ifBlank { "Geen opmerkingen beschikbaar." }
     }
 
     private fun fetchLatestReleaseJson(): JSONObject? {

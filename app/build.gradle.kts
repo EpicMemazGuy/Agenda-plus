@@ -18,9 +18,9 @@ android {
     targetSdk = 36
     val resolvedVersionCode = providers.gradleProperty("appVersionCode")
       .orElse(providers.environmentVariable("APP_VERSION_CODE"))
-      .orElse("1041")
+      .orElse("10410")
       .get()
-      .toIntOrNull() ?: 1041
+      .toIntOrNull() ?: 10410
     val resolvedVersionName = providers.gradleProperty("appVersionName")
       .orElse(providers.environmentVariable("APP_VERSION_NAME"))
       .orElse("0.1.4-pre-alpha")

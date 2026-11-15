@@ -26,15 +26,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.AgendaStyle
 import com.example.model.Appointment
+import com.example.model.HomeworkTask
 import com.example.model.KwtSlot
+import com.example.model.TaskCategory
 import com.example.model.cleanSchoolText
+import com.example.model.isTestKeywordMatch
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.ScheduleLoadingSkeleton
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.nothingCardBorder
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 data class DayItem(
     val dayNumber: Int,
@@ -44,10 +49,23 @@ data class DayItem(
     val hasDisruption: Boolean
 )
 
+data class UpcomingTestEntry(
+    val id: String,
+    val subject: String,
+    val typeBadge: String,
+    val dateIso: String,
+    val dateDisplay: String,
+    val timeAndPeriod: String,
+    val description: String,
+    val countdownLabel: String,
+    val daysRemaining: Int?
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoosterScreen(
     appointments: List<Appointment>,
+    tasks: List<HomeworkTask> = emptyList(),
     selectedDay: Int,
     viewMode: Int,
     agendaStyle: AgendaStyle,
@@ -132,6 +150,10 @@ fun RoosterScreen(
         }
     }
 
+    val upcomingTests = remember(appointments, tasks) {
+        buildUpcomingTestsList(appointments, tasks)
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -149,13 +171,17 @@ fun RoosterScreen(
             ) {
                 Column {
                     Text(
-                        text = "Lesrooster",
+                        text = if (viewMode == 3) "Toetsen & Deadlines" else "Lesrooster",
                         style = if (agendaStyle == AgendaStyle.COMPACT) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Week $weekNumber • ${days.first().dateString} - ${days.last().dateString}",
+                        text = if (viewMode == 3) {
+                            "${upcomingTests.size} aankomende toets(en) • PW, SO, MO"
+                        } else {
+                            "Week $weekNumber • ${days.first().dateString} - ${days.last().dateString}"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -203,7 +229,7 @@ fun RoosterScreen(
             }
         }
 
-        // 2. View Mode Switcher: Dag, 3-Dagen, Week
+        // 2. View Mode Switcher: Dag, 3-Dagen, Week, Toetsen
         item {
             SingleChoiceSegmentedButtonRow(
                 modifier = Modifier
@@ -213,79 +239,92 @@ fun RoosterScreen(
                 SegmentedButton(
                     selected = viewMode == 0,
                     onClick = { onSelectViewMode(0) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 4),
+                    modifier = Modifier.testTag("rooster_mode_dag")
                 ) {
-                    Text("Dag")
+                    Text("Dag", maxLines = 1)
                 }
                 SegmentedButton(
                     selected = viewMode == 1,
                     onClick = { onSelectViewMode(1) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 4),
+                    modifier = Modifier.testTag("rooster_mode_3dagen")
                 ) {
-                    Text("3-Dagen")
+                    Text("3-Dagen", maxLines = 1)
                 }
                 SegmentedButton(
                     selected = viewMode == 2,
                     onClick = { onSelectViewMode(2) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+                    shape = SegmentedButtonDefaults.itemShape(index = 2, count = 4),
+                    modifier = Modifier.testTag("rooster_mode_week")
                 ) {
-                    Text("Week")
+                    Text("Week", maxLines = 1)
+                }
+                SegmentedButton(
+                    selected = viewMode == 3,
+                    onClick = { onSelectViewMode(3) },
+                    shape = SegmentedButtonDefaults.itemShape(index = 3, count = 4),
+                    modifier = Modifier.testTag("rooster_mode_toetsen")
+                ) {
+                    Text("Toetsen", maxLines = 1)
                 }
             }
         }
 
-        // 3. Interactive Horizontal Day Selector Strip
-        item {
-            LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("day_strip_selector"),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(days) { day ->
-                    val isSelected = selectedDay == day.dayNumber
-                    Surface(
-                        modifier = Modifier
-                            .width(if (agendaStyle == AgendaStyle.COMPACT) 62.dp else 68.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable { onSelectDay(day.dayNumber) }
-                            .testTag("day_selector_${day.dayNumber}"),
-                        shape = RoundedCornerShape(16.dp),
-                        border = nothingCardBorder(isAlert = day.hasDisruption && !isSelected),
-                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
-                        contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(vertical = if (agendaStyle == AgendaStyle.COMPACT) 8.dp else 12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+        // 3. Interactive Horizontal Day Selector Strip (hidden in Toetsen mode)
+        if (viewMode != 3) {
+            item {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("day_strip_selector"),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(days) { day ->
+                        val isSelected = selectedDay == day.dayNumber
+                        Surface(
+                            modifier = Modifier
+                                .width(if (agendaStyle == AgendaStyle.COMPACT) 62.dp else 68.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { onSelectDay(day.dayNumber) }
+                                .testTag("day_selector_${day.dayNumber}"),
+                            shape = RoundedCornerShape(16.dp),
+                            border = nothingCardBorder(isAlert = day.hasDisruption && !isSelected),
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+                            contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
                         ) {
-                            Text(
-                                text = day.nameDutch,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = day.dateString.split(" ").first(),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                            )
-
-                            Spacer(modifier = Modifier.height(3.dp))
-                            if (day.hasDisruption) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(5.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            if (isSelected) MaterialTheme.colorScheme.primary
-                                            else MaterialTheme.colorScheme.error
-                                        )
+                            Column(
+                                modifier = Modifier.padding(vertical = if (agendaStyle == AgendaStyle.COMPACT) 8.dp else 12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = day.nameDutch,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
                                 )
-                            } else {
-                                Spacer(modifier = Modifier.size(5.dp))
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = day.dateString.split(" ").first(),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                )
+
+                                Spacer(modifier = Modifier.height(3.dp))
+                                if (day.hasDisruption) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (isSelected) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.error
+                                            )
+                                    )
+                                } else {
+                                    Spacer(modifier = Modifier.size(5.dp))
+                                }
                             }
                         }
                     }
@@ -293,8 +332,52 @@ fun RoosterScreen(
             }
         }
 
-        // 4. Schedule Skeleton / Empty / Dense or Spacious List
-        if (isRefreshing && appointments.isEmpty()) {
+        // 4. Toetsen View OR Schedule Skeleton / Empty / Dense or Spacious List
+        if (viewMode == 3) {
+            if (upcomingTests.isEmpty()) {
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        border = nothingCardBorder(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("toetsen_empty_card")
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(28.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.School,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(44.dp)
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Geen geplande toetsen gevonden",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Aankomende proefwerken, SO's, MO's en deadlines uit Magister verschijnen hier chronologisch.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(upcomingTests, key = { it.id }) { test ->
+                    UpcomingTestCard(test = test)
+                }
+            }
+        } else if (isRefreshing && appointments.isEmpty()) {
             item {
                 ScheduleLoadingSkeleton(
                     agendaStyle = agendaStyle,
@@ -797,3 +880,227 @@ fun RoosterPeriodCard(
         }
     }
 }
+
+@Composable
+private fun UpcomingTestCard(
+    test: UpcomingTestEntry,
+    modifier: Modifier = Modifier
+) {
+    val isUrgent = test.daysRemaining != null && test.daysRemaining <= 2
+    Card(
+        shape = RoundedCornerShape(if (isNothingOs) 22.dp else 18.dp),
+        border = nothingCardBorder(isAlert = isUrgent),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isUrgent) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("upcoming_test_card_${test.id}")
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = test.typeBadge,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                    Text(
+                        text = test.subject,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(percent = 50),
+                    color = if (isUrgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Text(
+                        text = test.countdownLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isUrgent) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "${test.dateDisplay} • ${test.timeAndPeriod}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (test.description.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = test.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+internal fun buildUpcomingTestsList(
+    appointments: List<Appointment>,
+    tasks: List<HomeworkTask>,
+    todayIsoOverride: String? = null
+): List<UpcomingTestEntry> {
+    val isoFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    val displayFmt = SimpleDateFormat("EEE d MMM", Locale("nl", "NL"))
+    val todayIso = todayIsoOverride ?: isoFmt.format(Date())
+    val entries = mutableListOf<UpcomingTestEntry>()
+    val seenSignature = mutableSetOf<String>()
+    val fromApptIds = mutableSetOf<Long>()
+
+    appointments
+        .filter { !it.isCanceled && it.isTestOrExam && (it.dateIso.isBlank() || it.dateIso >= todayIso) }
+        .sortedWith(compareBy({ it.dateIso.ifBlank { "9999-99-99" } }, { it.periodIndex }, { it.startTime }))
+        .forEach { appt ->
+            fromApptIds.add(appt.id)
+            val subject = appt.subjectName.cleanSchoolText() ?: appt.title.cleanSchoolText() ?: "Toets"
+            val desc = appt.homework.cleanSchoolText() ?: appt.title.cleanSchoolText() ?: ""
+            val sig = "${subject.lowercase()}_${appt.dateIso}_${desc.take(24).lowercase()}"
+            if (seenSignature.add(sig)) {
+                val badge = resolveTestTypeBadge(appt.infoType, "${appt.title} $desc")
+                val dateDisp = formatTestDateDisplay(appt.dateIso, isoFmt, displayFmt)
+                val (countdown, daysRem) = computeTestCountdown(appt.dateIso, todayIso, isoFmt)
+                val roomText = appt.classroom.cleanSchoolText()?.let { " • Lok. $it" } ?: ""
+                entries.add(
+                    UpcomingTestEntry(
+                        id = "appt_${appt.id}",
+                        subject = subject,
+                        typeBadge = badge,
+                        dateIso = appt.dateIso.ifBlank { "9999-99-99" },
+                        dateDisplay = dateDisp,
+                        timeAndPeriod = "${appt.periodIndex}e uur (${appt.startTime})$roomText",
+                        description = desc,
+                        countdownLabel = countdown,
+                        daysRemaining = daysRem
+                    )
+                )
+            }
+        }
+
+    tasks
+        .filter { task ->
+            if (task.isCompleted) return@filter false
+            val isApptBacked = task.id.startsWith("hw_") && fromApptIds.any { task.id.startsWith("hw_${it}_") }
+            if (isApptBacked) return@filter false
+            val isTest = task.category == TaskCategory.EXAM ||
+                task.category == TaskCategory.MAJOR_TEST ||
+                isTestKeywordMatch(task.title) ||
+                isTestKeywordMatch(task.description)
+            val isNotPast = task.dueDay.length != 10 || task.dueDay >= todayIso
+            isTest && isNotPast
+        }
+        .sortedBy { if (it.dueDay.length == 10) it.dueDay else "9999-99-99" }
+        .forEach { task ->
+            val iso = if (task.dueDay.length == 10) task.dueDay else ""
+            val subject = task.subject.cleanSchoolText() ?: "Toets"
+            val desc = buildString {
+                append(task.title)
+                val extra = task.description.cleanSchoolText()
+                if (extra != null && !extra.equals(task.title, ignoreCase = true)) {
+                    append("\n").append(extra)
+                }
+            }
+            val sig = "${subject.lowercase()}_${iso}_${task.title.take(24).lowercase()}"
+            if (seenSignature.add(sig)) {
+                val badge = resolveTestTypeBadge(0, "${task.title} ${task.description}")
+                val dateDisp = if (iso.isNotBlank()) formatTestDateDisplay(iso, isoFmt, displayFmt) else task.dueDay
+                val (countdown, daysRem) = computeTestCountdown(iso, todayIso, isoFmt)
+                entries.add(
+                    UpcomingTestEntry(
+                        id = "task_${task.id}",
+                        subject = subject,
+                        typeBadge = badge,
+                        dateIso = iso.ifBlank { "9999-99-99" },
+                        dateDisplay = dateDisp,
+                        timeAndPeriod = task.dueDate,
+                        description = desc,
+                        countdownLabel = countdown,
+                        daysRemaining = daysRem
+                    )
+                )
+            }
+        }
+
+    return entries.sortedBy { it.dateIso }
+}
+
+private fun resolveTestTypeBadge(infoType: Int, text: String): String {
+    val lower = text.lowercase()
+    return when {
+        infoType == 2 || Regex("""\b(pw|proefwerk)\b""").containsMatchIn(lower) -> "PW"
+        infoType == 4 || Regex("""\b(so|schriftelijke overhoring)\b""").containsMatchIn(lower) -> "SO"
+        infoType == 5 || Regex("""\b(mo|mondeling|spreekbeurt)\b""").containsMatchIn(lower) -> "MO"
+        infoType == 3 || lower.contains("tentamen") || lower.contains("examen") -> "Tentamen"
+        else -> "Toets"
+    }
+}
+
+private fun formatTestDateDisplay(
+    dateIso: String,
+    isoFmt: SimpleDateFormat,
+    displayFmt: SimpleDateFormat
+): String {
+    if (dateIso.isBlank()) return "Binnenkort"
+    return try {
+        val date = isoFmt.parse(dateIso) ?: return dateIso
+        displayFmt.format(date).replaceFirstChar { it.uppercase() }
+    } catch (_: Exception) {
+        dateIso
+    }
+}
+
+private fun computeTestCountdown(
+    dateIso: String,
+    todayIso: String,
+    isoFmt: SimpleDateFormat
+): Pair<String, Int?> {
+    if (dateIso.isBlank()) return "Gepland" to null
+    return try {
+        val target = isoFmt.parse(dateIso) ?: return "Gepland" to null
+        val today = isoFmt.parse(todayIso) ?: return "Gepland" to null
+        val diffDays = TimeUnit.MILLISECONDS.toDays(target.time - today.time).toInt()
+        val label = when {
+            diffDays <= 0 -> "Vandaag"
+            diffDays == 1 -> "Morgen"
+            else -> "Over $diffDays dagen"
+        }
+        label to diffDays
+    } catch (_: Exception) {
+        "Gepland" to null
+    }
+}
+

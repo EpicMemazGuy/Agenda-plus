@@ -136,8 +136,23 @@ class AgendaRepository(private val context: Context? = null) {
     private val _uitvalNotificationsEnabled = MutableStateFlow(prefs?.isUitvalNotificationsEnabled() ?: true)
     val uitvalNotificationsEnabled: StateFlow<Boolean> = _uitvalNotificationsEnabled.asStateFlow()
 
+    private val _gradeNotificationsEnabled = MutableStateFlow(prefs?.isGradeNotificationsEnabled() ?: true)
+    val gradeNotificationsEnabled: StateFlow<Boolean> = _gradeNotificationsEnabled.asStateFlow()
+
+    private val _testNotificationsEnabled = MutableStateFlow(prefs?.isTestNotificationsEnabled() ?: true)
+    val testNotificationsEnabled: StateFlow<Boolean> = _testNotificationsEnabled.asStateFlow()
+
+    private val _gradeUnboxingEnabled = MutableStateFlow(prefs?.isGradeUnboxingEnabled() ?: true)
+    val gradeUnboxingEnabled: StateFlow<Boolean> = _gradeUnboxingEnabled.asStateFlow()
+
+    private val _gradeUnboxingMode = MutableStateFlow(prefs?.getGradeUnboxingMode() ?: GradeUnboxingMode.CASE_OPENING)
+    val gradeUnboxingMode: StateFlow<GradeUnboxingMode> = _gradeUnboxingMode.asStateFlow()
+
+    private val _unboxedGradeIds = MutableStateFlow(prefs?.getUnboxedGradeIds() ?: emptySet())
+    val unboxedGradeIds: StateFlow<Set<String>> = _unboxedGradeIds.asStateFlow()
+
     init {
-        if (initialSession.isAuthenticated) {
+        if (initialSession.isAuthenticated && isAnyNotificationEnabled()) {
             context?.let { ScheduleMonitorJobService.schedule(it) }
         }
     }
@@ -220,6 +235,7 @@ class AgendaRepository(private val context: Context? = null) {
 
         _isRefreshing.value = true
         try {
+            val prevAppointments = _appointments.value
             val bundle = magisterClient.fetchAllMagisterData(tenant, token, personId)
 
             val cleanedAppointments = bundle.appointments.map { appt ->
@@ -245,6 +261,14 @@ class AgendaRepository(private val context: Context? = null) {
             _studyGuides.value = bundle.studyGuides
             _kwtSlots.value = bundle.kwtSlots
 
+            if (prefs != null && !prefs.hasUnboxedBaseline()) {
+                val allGradeIds = bundle.grades.flatMap { it.grades }.map { it.id }.toSet()
+                if (allGradeIds.isNotEmpty()) {
+                    _unboxedGradeIds.value = allGradeIds
+                    prefs.setUnboxedGradeIds(allGradeIds)
+                }
+            }
+
             val timeStr = SimpleDateFormat("HH:mm", Locale.US).format(Date())
             val syncLabel = "Magister gesynchroniseerd ($timeStr)"
             _lastSyncTime.value = syncLabel
@@ -258,7 +282,13 @@ class AgendaRepository(private val context: Context? = null) {
             prefs?.saveLastSyncTime(syncLabel)
 
             context?.let { ctx ->
-                UitvalNotificationHelper.evaluateAndNotifyCancellations(ctx, cleanedAppointments)
+                UitvalNotificationHelper.evaluateAllNotifications(
+                    context = ctx,
+                    previousAppointments = prevAppointments,
+                    newAppointments = cleanedAppointments,
+                    newGrades = bundle.grades,
+                    newTasks = bundle.tasks
+                )
                 WidgetUpdater.updateAllWidgets(ctx)
             }
         } catch (e: Exception) {
@@ -390,41 +420,6 @@ class AgendaRepository(private val context: Context? = null) {
                 magisterClient.markMessageAsRead(tenant, token, messageId)
             }
         }
-    }
-
-    suspend fun searchMessageRecipients(query: String): List<MessageRecipient> {
-        if (isEffectivelyOffline()) return emptyList()
-        val session = _currentSession.value
-        val tenant = session.school ?: return emptyList()
-        val token = session.accessToken ?: return emptyList()
-        return magisterClient.searchMessageRecipients(tenant, token, query)
-    }
-
-    suspend fun sendMessage(recipients: List<MessageRecipient>, subject: String, body: String): Result<Unit> {
-        if (isEffectivelyOffline()) {
-            return Result.failure(IllegalStateException("Berichten verzenden is niet mogelijk in offline-modus."))
-        }
-        val session = _currentSession.value
-        val tenant = session.school ?: return Result.failure(IllegalStateException("Niet ingelogd."))
-        val token = session.accessToken ?: return Result.failure(IllegalStateException("Geen geldige sessie."))
-        val res = magisterClient.sendMessage(tenant, token, recipients, subject, body)
-        if (res.isSuccess) {
-            val sentMsg = MagisterMessage(
-                id = "sent_${System.currentTimeMillis()}",
-                subject = subject.trim().ifBlank { "(Geen onderwerp)" },
-                senderName = "Aan: ${recipients.joinToString(", ") { it.name }}",
-                dateSent = SimpleDateFormat("d MMM HH:mm", Locale("nl", "NL")).format(Date()),
-                body = body.trim(),
-                isRead = true,
-                folder = MessageFolder.SENT,
-                folderId = 2L,
-                folderName = "Verzonden"
-            )
-            val updated = listOf(sentMsg) + _messages.value
-            _messages.value = updated
-            prefs?.saveMessages(updated)
-        }
-        return res
     }
 
     suspend fun enrollKwtOption(appointmentId: Long, optionId: Long): Result<Unit> {
@@ -574,16 +569,52 @@ class AgendaRepository(private val context: Context? = null) {
         context?.let { WidgetUpdater.updateAllWidgets(it) }
     }
 
-    fun setUitvalNotificationsEnabled(enabled: Boolean) {
-        _uitvalNotificationsEnabled.value = enabled
-        prefs?.setUitvalNotificationsEnabled(enabled)
+    fun isAnyNotificationEnabled(): Boolean =
+        _uitvalNotificationsEnabled.value || _gradeNotificationsEnabled.value || _testNotificationsEnabled.value
+
+    private fun updateMonitorSchedule() {
         context?.let { ctx ->
-            if (enabled && _currentSession.value.isAuthenticated) {
+            if (isAnyNotificationEnabled() && _currentSession.value.isAuthenticated) {
                 ScheduleMonitorJobService.schedule(ctx)
-            } else if (!enabled) {
+            } else {
                 ScheduleMonitorJobService.cancel(ctx)
             }
         }
+    }
+
+    fun setUitvalNotificationsEnabled(enabled: Boolean) {
+        _uitvalNotificationsEnabled.value = enabled
+        prefs?.setUitvalNotificationsEnabled(enabled)
+        updateMonitorSchedule()
+    }
+
+    fun setGradeNotificationsEnabled(enabled: Boolean) {
+        _gradeNotificationsEnabled.value = enabled
+        prefs?.setGradeNotificationsEnabled(enabled)
+        updateMonitorSchedule()
+    }
+
+    fun setTestNotificationsEnabled(enabled: Boolean) {
+        _testNotificationsEnabled.value = enabled
+        prefs?.setTestNotificationsEnabled(enabled)
+        updateMonitorSchedule()
+    }
+
+    fun setGradeUnboxingEnabled(enabled: Boolean) {
+        _gradeUnboxingEnabled.value = enabled
+        prefs?.setGradeUnboxingEnabled(enabled)
+    }
+
+    fun setGradeUnboxingMode(mode: GradeUnboxingMode) {
+        _gradeUnboxingMode.value = mode
+        prefs?.setGradeUnboxingMode(mode)
+    }
+
+    fun markGradeUnboxed(gradeId: String) {
+        if (gradeId in _unboxedGradeIds.value) return
+        val updated = _unboxedGradeIds.value + gradeId
+        _unboxedGradeIds.value = updated
+        prefs?.setUnboxedGradeIds(updated)
     }
 
     fun sendTestUitvalNotification(): Boolean {
@@ -600,6 +631,7 @@ class AgendaRepository(private val context: Context? = null) {
         _messages.value = emptyList()
         _studyGuides.value = emptyList()
         _kwtSlots.value = emptyList()
+        _unboxedGradeIds.value = emptySet()
         _lastSyncTime.value = "Uitgelogd"
         prefs?.clearSession()
         context?.let { ctx ->

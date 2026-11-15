@@ -22,6 +22,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.notifications.UitvalNotificationHelper
@@ -31,6 +33,8 @@ import com.example.ui.MeerSection
 import com.example.ui.components.AppBottomNavigationBar
 import com.example.ui.components.AppTopBar
 import com.example.ui.dialogs.AddTaskDialog
+import com.example.ui.dialogs.GradeExportSheet
+import com.example.ui.dialogs.GradeUnboxingDialog
 import com.example.ui.dialogs.InAppWebViewDialog
 import com.example.ui.dialogs.LoginDialog
 import com.example.ui.dialogs.MagisterOAuthWebViewDialog
@@ -39,6 +43,7 @@ import com.example.ui.dialogs.TutorialDialog
 import com.example.ui.screens.*
 import com.example.ui.theme.AgendaPlusTheme
 import com.example.widget.WidgetUpdater
+import kotlin.math.round
 
 class MainActivity : ComponentActivity() {
 
@@ -148,6 +153,11 @@ fun AgendaPlusApp(
     val appointments by viewModel.appointments.collectAsStateWithLifecycle()
     val tasks by viewModel.tasks.collectAsStateWithLifecycle()
     val uitvalNotificationsEnabled by viewModel.uitvalNotificationsEnabled.collectAsStateWithLifecycle()
+    val gradeNotificationsEnabled by viewModel.gradeNotificationsEnabled.collectAsStateWithLifecycle()
+    val testNotificationsEnabled by viewModel.testNotificationsEnabled.collectAsStateWithLifecycle()
+    val gradeUnboxingEnabled by viewModel.gradeUnboxingEnabled.collectAsStateWithLifecycle()
+    val gradeUnboxingMode by viewModel.gradeUnboxingMode.collectAsStateWithLifecycle()
+    val unboxedGradeIds by viewModel.unboxedGradeIds.collectAsStateWithLifecycle()
     val gradeSummaries by viewModel.gradeSummaries.collectAsStateWithLifecycle()
     val selectedDay by viewModel.selectedDay.collectAsStateWithLifecycle()
     val roosterViewMode by viewModel.roosterViewMode.collectAsStateWithLifecycle()
@@ -164,6 +174,8 @@ fun AgendaPlusApp(
 
     val showAddTaskDialog by viewModel.showAddTaskDialog.collectAsStateWithLifecycle()
     val selectedSubjectForWhatIf by viewModel.selectedSubjectForWhatIf.collectAsStateWithLifecycle()
+    val showGradeExportSheet by viewModel.showGradeExportSheet.collectAsStateWithLifecycle()
+    val unboxingTargetGrade by viewModel.unboxingTargetGrade.collectAsStateWithLifecycle()
     val isAuthenticating by viewModel.isAuthenticating.collectAsStateWithLifecycle()
     val authError by viewModel.authError.collectAsStateWithLifecycle()
 
@@ -201,10 +213,27 @@ fun AgendaPlusApp(
                 contract = ActivityResultContracts.RequestPermission()
             ) { /* User response handled gracefully by UitvalNotificationHelper */ }
 
-            LaunchedEffect(session.isAuthenticated, uitvalNotificationsEnabled) {
+            val anyNotificationEnabled = uitvalNotificationsEnabled || gradeNotificationsEnabled || testNotificationsEnabled
+
+            fun requestNotifPermissionIfNeeded() {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+
+            LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+                viewModel.onAppResumed()
+            }
+
+            LaunchedEffect(session.isAuthenticated, anyNotificationEnabled) {
                 UitvalNotificationHelper.ensureChannel(context)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                    uitvalNotificationsEnabled &&
+                    anyNotificationEnabled &&
                     !requestedNotificationPermission &&
                     ContextCompat.checkSelfPermission(
                         context,
@@ -233,6 +262,10 @@ fun AgendaPlusApp(
                         uiScale = uiScale,
                         appThemeStyle = appThemeStyle,
                         uitvalNotificationsEnabled = uitvalNotificationsEnabled,
+                        gradeNotificationsEnabled = gradeNotificationsEnabled,
+                        testNotificationsEnabled = testNotificationsEnabled,
+                        gradeUnboxingEnabled = gradeUnboxingEnabled,
+                        gradeUnboxingMode = gradeUnboxingMode,
                         isOffline = isEffectivelyOffline,
                         onRefreshClick = { viewModel.refreshAll() },
                         onOpenRawConsole = { viewModel.openRawConsole() },
@@ -241,15 +274,18 @@ fun AgendaPlusApp(
                         onSetAppThemeStyle = { viewModel.setAppThemeStyle(it) },
                         onSetUitvalNotifications = { enabled ->
                             viewModel.setUitvalNotificationsEnabled(enabled)
-                            if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                ContextCompat.checkSelfPermission(
-                                    context,
-                                    Manifest.permission.POST_NOTIFICATIONS
-                                ) != PackageManager.PERMISSION_GRANTED
-                            ) {
-                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            }
+                            if (enabled) requestNotifPermissionIfNeeded()
                         },
+                        onSetGradeNotifications = { enabled ->
+                            viewModel.setGradeNotificationsEnabled(enabled)
+                            if (enabled) requestNotifPermissionIfNeeded()
+                        },
+                        onSetTestNotifications = { enabled ->
+                            viewModel.setTestNotificationsEnabled(enabled)
+                            if (enabled) requestNotifPermissionIfNeeded()
+                        },
+                        onSetGradeUnboxingEnabled = { viewModel.setGradeUnboxingEnabled(it) },
+                        onSetGradeUnboxingMode = { viewModel.setGradeUnboxingMode(it) },
                         onTestUitvalNotification = { viewModel.sendTestUitvalNotification() },
                         onOpenSetupWizard = { viewModel.reopenOnboarding() },
                         onResetAndLogout = { viewModel.resetAppAndLogout() }
@@ -303,6 +339,7 @@ fun AgendaPlusApp(
                     AppTab.ROOSTER -> {
                         RoosterScreen(
                             appointments = appointments,
+                            tasks = tasks,
                             selectedDay = selectedDay,
                             viewMode = roosterViewMode,
                             agendaStyle = agendaStyle,
@@ -327,7 +364,11 @@ fun AgendaPlusApp(
                     AppTab.CIJFERS -> {
                         CijfersScreen(
                             summaries = gradeSummaries,
+                            gradeUnboxingEnabled = gradeUnboxingEnabled,
+                            unboxedGradeIds = unboxedGradeIds,
                             onOpenWhatIf = { viewModel.openWhatIf(it) },
+                            onOpenExportSheet = { viewModel.openGradeExportSheet() },
+                            onPlayGradeUnboxing = { grade -> viewModel.openGradeUnboxing(grade) },
                             modifier = contentModifier
                         )
                     }
@@ -349,6 +390,10 @@ fun AgendaPlusApp(
                             uiScale = uiScale,
                             appThemeStyle = appThemeStyle,
                             uitvalNotificationsEnabled = uitvalNotificationsEnabled,
+                            gradeNotificationsEnabled = gradeNotificationsEnabled,
+                            testNotificationsEnabled = testNotificationsEnabled,
+                            gradeUnboxingEnabled = gradeUnboxingEnabled,
+                            gradeUnboxingMode = gradeUnboxingMode,
                             onSelectSection = { viewModel.selectMeerSection(it) },
                             onSetOfflineMode = { viewModel.setOfflineModeEnabled(it) },
                             onOpenTodayModifySheet = { viewModel.openTodayModifySheet() },
@@ -358,13 +403,45 @@ fun AgendaPlusApp(
                             onSetAgendaStyle = { viewModel.setAgendaStyle(it) },
                             onSetUiScale = { viewModel.setUiScale(it) },
                             onSetAppThemeStyle = { viewModel.setAppThemeStyle(it) },
-                            onSetUitvalNotifications = { viewModel.setUitvalNotificationsEnabled(it) },
+                            onSetUitvalNotifications = { enabled ->
+                                viewModel.setUitvalNotificationsEnabled(enabled)
+                                if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                    ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.POST_NOTIFICATIONS
+                                    ) != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            },
+                            onSetGradeNotifications = { enabled ->
+                                viewModel.setGradeNotificationsEnabled(enabled)
+                                if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                    ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.POST_NOTIFICATIONS
+                                    ) != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            },
+                            onSetTestNotifications = { enabled ->
+                                viewModel.setTestNotificationsEnabled(enabled)
+                                if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                    ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.POST_NOTIFICATIONS
+                                    ) != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            },
+                            onSetGradeUnboxingEnabled = { viewModel.setGradeUnboxingEnabled(it) },
+                            onSetGradeUnboxingMode = { viewModel.setGradeUnboxingMode(it) },
                             onTestUitvalNotification = { viewModel.sendTestUitvalNotification() },
                             onResetAndLogout = { viewModel.resetAppAndLogout() },
                             onLoadMessageDetail = { id -> viewModel.loadMessageDetail(id) },
                             onMarkMessageRead = { id -> viewModel.markMessageRead(id) },
-                            onSearchRecipients = { q -> viewModel.searchMessageRecipients(q) },
-                            onSendMessage = { rec, subj, body -> viewModel.sendMessage(rec, subj, body) },
                             onOpenInAppBrowser = { title, url -> viewModel.openInAppBrowser(title, url) },
                             onUpdateEloUrl = { viewModel.setEloUrl(it) },
                             onAddStudySite = { name, url, cat -> viewModel.addStudySite(name, url, cat) },
@@ -431,6 +508,31 @@ fun AgendaPlusApp(
             WhatIfBottomSheet(
                 subjectSummary = subject,
                 onDismiss = { viewModel.closeWhatIf() }
+            )
+        }
+
+        if (showGradeExportSheet) {
+            val overallAvg = remember(gradeSummaries) {
+                if (gradeSummaries.isNotEmpty()) {
+                    round((gradeSummaries.sumOf { it.weightedAverage } / gradeSummaries.size) * 10) / 10.0
+                } else 0.0
+            }
+            GradeExportSheet(
+                summaries = gradeSummaries,
+                overallAverage = overallAvg,
+                studentName = session.studentName,
+                appThemeStyle = appThemeStyle,
+                onDismiss = { viewModel.closeGradeExportSheet() }
+            )
+        }
+
+        unboxingTargetGrade?.let { targetGrade ->
+            GradeUnboxingDialog(
+                grade = targetGrade,
+                initialMode = gradeUnboxingMode,
+                onChangeMode = { viewModel.setGradeUnboxingMode(it) },
+                onRevealComplete = { viewModel.closeGradeUnboxing(markUnboxed = true) },
+                onDismiss = { viewModel.closeGradeUnboxing(markUnboxed = true) }
             )
         }
 

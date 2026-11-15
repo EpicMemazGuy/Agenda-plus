@@ -20,12 +20,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
 import com.example.model.MagisterMessage
 import com.example.model.MessageFolder
 import com.example.model.MessageFolderInfo
-import com.example.model.MessageRecipient
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.nothingCardBorder
@@ -38,8 +36,6 @@ fun BerichtenView(
     isOffline: Boolean,
     onLoadMessageDetail: suspend (String) -> String?,
     onMarkMessageRead: (String) -> Unit,
-    onSearchRecipients: suspend (String) -> List<MessageRecipient>,
-    onSendMessage: suspend (List<MessageRecipient>, String, String) -> Result<Unit>,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
@@ -49,7 +45,6 @@ fun BerichtenView(
     var activeMessage by remember { mutableStateOf<MagisterMessage?>(null) }
     var loadedDetailBody by remember { mutableStateOf<String?>(null) }
     var isLoadingDetail by remember { mutableStateOf(false) }
-    var showComposeDialog by remember { mutableStateOf(false) }
 
     val filteredMessages = remember(messages, selectedFolderId, unreadOnly, searchQuery) {
         messages.filter { msg ->
@@ -65,17 +60,7 @@ fun BerichtenView(
     }
 
     Scaffold(
-        modifier = modifier.testTag("berichten_view"),
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showComposeDialog = true },
-                icon = { Icon(Icons.Default.Edit, contentDescription = null) },
-                text = { Text("Nieuw bericht") },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.testTag("compose_message_fab")
-            )
-        }
+        modifier = modifier.testTag("berichten_view")
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
@@ -83,8 +68,39 @@ fun BerichtenView(
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 84.dp)
+            contentPadding = PaddingValues(top = 8.dp, bottom = 28.dp)
         ) {
+            // Read-Only Info Banner
+            item(key = "messages_readonly_banner") {
+                Surface(
+                    shape = RoundedCornerShape(if (isNothingOs) 20.dp else 16.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    border = nothingCardBorder(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("messages_readonly_banner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Alleen-lezen modus",
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Alleen-lezen modus: Berichten versturen is uitgeschakeld in Agenda+. Gebruik officiële Magister om te antwoorden.",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+            }
+
             // Search box
             item(key = "messages_search") {
                 OutlinedTextField(
@@ -218,15 +234,6 @@ fun BerichtenView(
             bodyText = loadedDetailBody ?: msg.body.ifBlank { "Geen berichttekst beschikbaar." },
             isLoading = isLoadingDetail,
             onDismiss = { activeMessage = null }
-        )
-    }
-
-    if (showComposeDialog) {
-        ComposeMessageDialog(
-            isOffline = isOffline,
-            onSearchRecipients = onSearchRecipients,
-            onSend = onSendMessage,
-            onDismiss = { showComposeDialog = false }
         )
     }
 }
@@ -414,210 +421,6 @@ private fun MessageReaderDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Sluiten")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ComposeMessageDialog(
-    isOffline: Boolean,
-    onSearchRecipients: suspend (String) -> List<MessageRecipient>,
-    onSend: suspend (List<MessageRecipient>, String, String) -> Result<Unit>,
-    onDismiss: () -> Unit
-) {
-    val scope = rememberCoroutineScope()
-    var recipientQuery by remember { mutableStateOf("") }
-    var searchResults by remember { mutableStateOf<List<MessageRecipient>>(emptyList()) }
-    var selectedRecipients by remember { mutableStateOf<List<MessageRecipient>>(emptyList()) }
-    var subject by remember { mutableStateOf("") }
-    var body by remember { mutableStateOf("") }
-    var isSending by remember { mutableStateOf(false) }
-    var errorMsg by remember { mutableStateOf<String?>(null) }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            border = nothingCardBorder(),
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("compose_message_dialog")
-        ) {
-            Column(
-                modifier = Modifier
-                    .padding(20.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Nieuw bericht",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Sluiten")
-                    }
-                }
-
-                if (selectedRecipients.isNotEmpty()) {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(selectedRecipients, key = { it.id }) { rec ->
-                            InputChip(
-                                selected = true,
-                                onClick = { selectedRecipients = selectedRecipients.filterNot { it.id == rec.id } },
-                                label = { Text(rec.name) },
-                                trailingIcon = {
-                                    Icon(Icons.Default.Close, contentDescription = "Verwijder", modifier = Modifier.size(14.dp))
-                                }
-                            )
-                        }
-                    }
-                }
-
-                var debouncedQuery by remember { mutableStateOf("") }
-                LaunchedEffect(recipientQuery) {
-                    kotlinx.coroutines.delay(300)
-                    debouncedQuery = recipientQuery
-                }
-                LaunchedEffect(debouncedQuery) {
-                    if (debouncedQuery.trim().length >= 2 && !isOffline) {
-                        searchResults = onSearchRecipients(debouncedQuery)
-                    } else {
-                        searchResults = emptyList()
-                    }
-                }
-
-                Box(modifier = Modifier.fillMaxWidth().zIndex(10f)) {
-                    OutlinedTextField(
-                        value = recipientQuery,
-                        onValueChange = { recipientQuery = it },
-                        enabled = !isOffline,
-                        label = { Text("Zoek ontvanger (docent of leerling)") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("compose_recipient_input")
-                    )
-
-                    if (searchResults.isNotEmpty()) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            tonalElevation = 8.dp,
-                            shadowElevation = 12.dp,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 64.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                searchResults.take(6).forEach { rec ->
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainer,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .clickable {
-                                                if (selectedRecipients.none { it.id == rec.id }) {
-                                                    selectedRecipients = selectedRecipients + rec
-                                                }
-                                                recipientQuery = ""
-                                                debouncedQuery = ""
-                                                searchResults = emptyList()
-                                            }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Column {
-                                                Text(rec.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                                                if (rec.roleLabel.isNotBlank()) {
-                                                    Text(rec.roleLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                OutlinedTextField(
-                    value = subject,
-                    onValueChange = { subject = it },
-                    label = { Text("Onderwerp") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("compose_subject_input")
-                )
-
-                OutlinedTextField(
-                    value = body,
-                    onValueChange = { body = it },
-                    label = { Text("Bericht") },
-                    minLines = 4,
-                    maxLines = 7,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("compose_body_input")
-                )
-
-                errorMsg?.let { err ->
-                    Text(
-                        text = err,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-
-                Button(
-                    onClick = {
-                        scope.launch {
-                            isSending = true
-                            errorMsg = null
-                            val res = onSend(selectedRecipients, subject, body)
-                            isSending = false
-                            if (res.isSuccess) {
-                                onDismiss()
-                            } else {
-                                errorMsg = res.exceptionOrNull()?.message ?: "Verzenden mislukt."
-                            }
-                        }
-                    },
-                    enabled = !isOffline && !isSending && selectedRecipients.isNotEmpty() && subject.isNotBlank() && body.isNotBlank(),
-                    shape = RoundedCornerShape(percent = 50),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .testTag("compose_send_button")
-                ) {
-                    if (isSending) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Verzenden", fontWeight = FontWeight.Bold)
-                    }
                 }
             }
         }

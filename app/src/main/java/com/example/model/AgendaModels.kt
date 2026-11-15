@@ -54,6 +54,14 @@ enum class AppThemeStyle(val labelDutch: String, val subtitleDutch: String) {
     NOTHING_OS("Nothing OS", "OLED zwart, Ndot matrix & Nothing Red")
 }
 
+enum class GradeUnboxingMode(val labelDutch: String, val subtitleDutch: String) {
+    CASE_OPENING("Case Opening", "CS:GO-stijl roulette met zeldzaamheidskleuren"),
+    TAP_IT_UP("Tap It Up", "Tik razendsnel om de kluis open te breken"),
+    PENALTIES("Penalties", "Scoor vanaf de stip voor je cijfer"),
+    ULTIMATE_GRADE("Ultimate Grade", "Stadion tunnel & flare walkout reveal"),
+    PLINKO_DROP("Plinko Drop", "Laat de bal stuiteren naar je cijfervak")
+}
+
 enum class TodayBlockType(val labelDutch: String, val descriptionDutch: String) {
     WEATHER("Weer", "Actuele temperatuur en weersverwachting"),
     NEXT_LESSON("Volgende les", "Live afteller met lokaal en docent"),
@@ -143,8 +151,14 @@ data class Appointment(
     val homework: String? = null,
     val dateIso: String = "",
     val isKwt: Boolean = false,
-    val appointmentType: Int = 0
-)
+    val appointmentType: Int = 0,
+    val infoType: Int = 0
+) {
+    val isTestOrExam: Boolean
+        get() = infoType in 2..5 ||
+            isTestKeywordMatch(title) ||
+            isTestKeywordMatch(homework)
+}
 
 data class Disruption(
     val id: String,
@@ -318,4 +332,14 @@ fun String?.cleanSchoolText(): String? {
     if (trimmed.equals("null", ignoreCase = true)) return null
     if (trimmed.equals("undefined", ignoreCase = true)) return null
     return trimmed
+}
+
+private val TEST_KEYWORD_REGEX = Regex(
+    """\b(toets|proefwerk|pw|so|mo|tentamen|repetitie|examen|luistertoets|spreekbeurt|schriftelijke overhoring|mondelinge overhoring)\b""",
+    RegexOption.IGNORE_CASE
+)
+
+fun isTestKeywordMatch(text: String?): Boolean {
+    val clean = text.cleanSchoolText() ?: return false
+    return TEST_KEYWORD_REGEX.containsMatchIn(clean)
 }

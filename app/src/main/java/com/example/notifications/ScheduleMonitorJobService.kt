@@ -30,12 +30,13 @@ class ScheduleMonitorJobService : JobService() {
             return false
         }
 
-        if (!store.isUitvalNotificationsEnabled() || store.isOfflineModeEnabled() || !NetworkStatusHelper.isOnline(appContext)) {
+        if (!store.isAnyNotificationEnabled() || store.isOfflineModeEnabled() || !NetworkStatusHelper.isOnline(appContext)) {
             return false
         }
 
         activeJob = CoroutineScope(Dispatchers.IO).launch {
             try {
+                val previousAppointments = store.loadAppointments()
                 val magisterClient = MagisterClient()
                 var activeToken: String = initialToken
 
@@ -75,7 +76,13 @@ class ScheduleMonitorJobService : JobService() {
                 store.saveMessages(bundle.messages)
                 store.saveStudyGuides(bundle.studyGuides)
                 store.saveKwtSlots(bundle.kwtSlots)
-                UitvalNotificationHelper.evaluateAndNotifyCancellations(appContext, cleaned)
+                UitvalNotificationHelper.evaluateAllNotifications(
+                    context = appContext,
+                    previousAppointments = previousAppointments,
+                    newAppointments = cleaned,
+                    newGrades = bundle.grades,
+                    newTasks = bundle.tasks
+                )
                 WidgetUpdater.updateAllWidgets(appContext)
             } catch (_: Exception) {
             } finally {

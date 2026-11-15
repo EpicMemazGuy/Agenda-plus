@@ -74,6 +74,11 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
     val weatherInfo: StateFlow<WeatherInfo?> = repository.weatherInfo
     val isWeatherLoading: StateFlow<Boolean> = repository.isWeatherLoading
     val uitvalNotificationsEnabled: StateFlow<Boolean> = repository.uitvalNotificationsEnabled
+    val gradeNotificationsEnabled: StateFlow<Boolean> = repository.gradeNotificationsEnabled
+    val testNotificationsEnabled: StateFlow<Boolean> = repository.testNotificationsEnabled
+    val gradeUnboxingEnabled: StateFlow<Boolean> = repository.gradeUnboxingEnabled
+    val gradeUnboxingMode: StateFlow<GradeUnboxingMode> = repository.gradeUnboxingMode
+    val unboxedGradeIds: StateFlow<Set<String>> = repository.unboxedGradeIds
 
     private val _currentTab = MutableStateFlow(AppTab.TODAY)
     val currentTab: StateFlow<AppTab> = _currentTab.asStateFlow()
@@ -120,7 +125,7 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
     private val _selectedDay = MutableStateFlow(currentSchoolDay())
     val selectedDay: StateFlow<Int> = _selectedDay.asStateFlow()
 
-    private val _roosterViewMode = MutableStateFlow(0) // 0: Dag, 1: 3-Dagen, 2: Week
+    private val _roosterViewMode = MutableStateFlow(0) // 0: Dag, 1: 3-Dagen, 2: Week, 3: Toetsen
     val roosterViewMode: StateFlow<Int> = _roosterViewMode.asStateFlow()
 
     private val _taskFilter = MutableStateFlow<TaskCategory?>(null)
@@ -150,6 +155,12 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
     private val _selectedSubjectForWhatIf = MutableStateFlow<SubjectGradeSummary?>(null)
     val selectedSubjectForWhatIf: StateFlow<SubjectGradeSummary?> = _selectedSubjectForWhatIf.asStateFlow()
 
+    private val _showGradeExportSheet = MutableStateFlow(false)
+    val showGradeExportSheet: StateFlow<Boolean> = _showGradeExportSheet.asStateFlow()
+
+    private val _unboxingTargetGrade = MutableStateFlow<GradeItem?>(null)
+    val unboxingTargetGrade: StateFlow<GradeItem?> = _unboxingTargetGrade.asStateFlow()
+
     private val _isAuthenticating = MutableStateFlow(false)
     val isAuthenticating: StateFlow<Boolean> = _isAuthenticating.asStateFlow()
 
@@ -165,6 +176,8 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
         private set
     private var lastProcessedAuthCode: String? = null
 
+    private var lastResumeSyncMs = 0L
+
     init {
         viewModelScope.launch {
             repository.checkConnectivity()
@@ -178,14 +191,27 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
                 if (!repository.hasSeenTutorial.value) {
                     _showTutorialDialog.value = true
                 }
+                lastResumeSyncMs = System.currentTimeMillis()
                 repository.refreshAll()
             }
             while (true) {
-                delay(5 * 60_000L)
+                delay(60_000L)
                 repository.checkConnectivity()
-                if (repository.currentSession.value.isAuthenticated) {
+                if (repository.currentSession.value.isAuthenticated && !repository.isEffectivelyOffline()) {
                     repository.refreshAll()
                 }
+            }
+        }
+    }
+
+    fun onAppResumed() {
+        val now = System.currentTimeMillis()
+        if (now - lastResumeSyncMs < 5_000L) return
+        lastResumeSyncMs = now
+        viewModelScope.launch {
+            repository.checkConnectivity()
+            if (repository.currentSession.value.isAuthenticated && !repository.isEffectivelyOffline()) {
+                repository.refreshAll()
             }
         }
     }
@@ -276,14 +302,46 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { repository.markMessageRead(messageId) }
     }
 
-    suspend fun searchMessageRecipients(query: String): List<MessageRecipient> =
-        repository.searchMessageRecipients(query)
-
-    suspend fun sendMessage(recipients: List<MessageRecipient>, subject: String, body: String): Result<Unit> =
-        repository.sendMessage(recipients, subject, body)
+    fun isAnyNotificationEnabled(): Boolean = repository.isAnyNotificationEnabled()
 
     fun setUitvalNotificationsEnabled(enabled: Boolean) {
         repository.setUitvalNotificationsEnabled(enabled)
+    }
+
+    fun setGradeNotificationsEnabled(enabled: Boolean) {
+        repository.setGradeNotificationsEnabled(enabled)
+    }
+
+    fun setTestNotificationsEnabled(enabled: Boolean) {
+        repository.setTestNotificationsEnabled(enabled)
+    }
+
+    fun setGradeUnboxingEnabled(enabled: Boolean) {
+        repository.setGradeUnboxingEnabled(enabled)
+    }
+
+    fun setGradeUnboxingMode(mode: GradeUnboxingMode) {
+        repository.setGradeUnboxingMode(mode)
+    }
+
+    fun openGradeExportSheet() {
+        _showGradeExportSheet.value = true
+    }
+
+    fun closeGradeExportSheet() {
+        _showGradeExportSheet.value = false
+    }
+
+    fun openGradeUnboxing(grade: GradeItem) {
+        _unboxingTargetGrade.value = grade
+    }
+
+    fun closeGradeUnboxing(markUnboxed: Boolean = true) {
+        val target = _unboxingTargetGrade.value
+        if (markUnboxed && target != null) {
+            repository.markGradeUnboxed(target.id)
+        }
+        _unboxingTargetGrade.value = null
     }
 
     fun sendTestUitvalNotification(): Boolean = repository.sendTestUitvalNotification()

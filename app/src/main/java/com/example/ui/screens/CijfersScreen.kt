@@ -28,7 +28,11 @@ import kotlin.math.round
 @Composable
 fun CijfersScreen(
     summaries: List<SubjectGradeSummary>,
+    gradeUnboxingEnabled: Boolean = true,
+    unboxedGradeIds: Set<String> = emptySet(),
     onOpenWhatIf: (SubjectGradeSummary) -> Unit,
+    onOpenExportSheet: () -> Unit = {},
+    onPlayGradeUnboxing: (GradeItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Overall GPA calculation
@@ -38,6 +42,14 @@ fun CijfersScreen(
             round((total / summaries.size) * 10) / 10.0
         } else 0.0
     }
+
+    val allGradesSorted = remember(summaries) {
+        summaries.flatMap { it.grades }.sortedByDescending { it.date }
+    }
+    val nextUnrevealedGrade = remember(allGradesSorted, unboxedGradeIds, gradeUnboxingEnabled) {
+        if (gradeUnboxingEnabled) allGradesSorted.firstOrNull { it.id !in unboxedGradeIds } else null
+    }
+    val latestGrade = nextUnrevealedGrade ?: allGradesSorted.firstOrNull()
 
     val failingSubjects = summaries.count { !it.isPassingAverage }
     val passingSubjects = summaries.count { it.isPassingAverage }
@@ -164,6 +176,58 @@ fun CijfersScreen(
             }
         }
 
+        // Action Bar: Exporteer Cijfers + Cijfer Unboxing
+        if (summaries.isNotEmpty()) {
+            item(key = "cijfers_actions_row") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = onOpenExportSheet,
+                        shape = RoundedCornerShape(percent = 50),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("open_grade_export_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.IosShare,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Exporteer", fontWeight = FontWeight.Bold)
+                    }
+
+                    if (latestGrade != null) {
+                        Button(
+                            onClick = { onPlayGradeUnboxing(latestGrade) },
+                            shape = RoundedCornerShape(percent = 50),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (nextUnrevealedGrade != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("play_latest_unboxing_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CardGiftcard,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (nextUnrevealedGrade != null) "Nieuw Cijfer!" else "Cijfer Unboxing",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Section Title: Vakken & Cijfers
         item {
             Row(
@@ -221,7 +285,10 @@ fun CijfersScreen(
             items(summaries) { summary ->
                 SubjectGradeCard(
                     summary = summary,
-                    onWhatIfClick = { onOpenWhatIf(summary) }
+                    gradeUnboxingEnabled = gradeUnboxingEnabled,
+                    unboxedGradeIds = unboxedGradeIds,
+                    onWhatIfClick = { onOpenWhatIf(summary) },
+                    onUnboxGrade = onPlayGradeUnboxing
                 )
             }
         }
@@ -231,7 +298,10 @@ fun CijfersScreen(
 @Composable
 fun SubjectGradeCard(
     summary: SubjectGradeSummary,
+    gradeUnboxingEnabled: Boolean = true,
+    unboxedGradeIds: Set<String> = emptySet(),
     onWhatIfClick: () -> Unit,
+    onUnboxGrade: (GradeItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -308,9 +378,12 @@ fun SubjectGradeCard(
                     NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
 
                     summary.grades.forEach { grade ->
+                        val isUnrevealed = gradeUnboxingEnabled && grade.id !in unboxedGradeIds
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable(enabled = gradeUnboxingEnabled) { onUnboxGrade(grade) }
                                 .padding(vertical = 4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
@@ -323,22 +396,34 @@ fun SubjectGradeCard(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "${grade.date} • Weging ${grade.weight}x • Periode ${grade.period}",
+                                    text = if (isUnrevealed) {
+                                        "Tik om dit nieuwe cijfer te unboxen"
+                                    } else {
+                                        "${grade.date} • Weging ${grade.weight}x • Periode ${grade.period}"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (isUnrevealed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
-                                color = if (grade.isPassing) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.errorContainer
+                                color = when {
+                                    isUnrevealed -> MaterialTheme.colorScheme.primary
+                                    grade.isPassing -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                    else -> MaterialTheme.colorScheme.errorContainer
+                                }
                             ) {
                                 Text(
-                                    text = "${grade.score}",
+                                    text = if (isUnrevealed) "?" else "${grade.score}",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (grade.isPassing) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onErrorContainer,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    color = when {
+                                        isUnrevealed -> MaterialTheme.colorScheme.onPrimary
+                                        grade.isPassing -> MaterialTheme.colorScheme.onSurface
+                                        else -> MaterialTheme.colorScheme.onErrorContainer
+                                    },
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                                 )
                             }
                         }

@@ -53,6 +53,10 @@ fun MeerScreen(
     uiScale: Float,
     appThemeStyle: AppThemeStyle,
     uitvalNotificationsEnabled: Boolean,
+    gradeNotificationsEnabled: Boolean = true,
+    testNotificationsEnabled: Boolean = true,
+    gradeUnboxingEnabled: Boolean = true,
+    gradeUnboxingMode: GradeUnboxingMode = GradeUnboxingMode.CASE_OPENING,
     onSelectSection: (MeerSection) -> Unit,
     onSetOfflineMode: (Boolean) -> Unit,
     onOpenTodayModifySheet: () -> Unit,
@@ -63,12 +67,14 @@ fun MeerScreen(
     onSetUiScale: (Float) -> Unit,
     onSetAppThemeStyle: (AppThemeStyle) -> Unit,
     onSetUitvalNotifications: (Boolean) -> Unit,
+    onSetGradeNotifications: (Boolean) -> Unit = {},
+    onSetTestNotifications: (Boolean) -> Unit = {},
+    onSetGradeUnboxingEnabled: (Boolean) -> Unit = {},
+    onSetGradeUnboxingMode: (GradeUnboxingMode) -> Unit = {},
     onTestUitvalNotification: () -> Boolean,
     onResetAndLogout: () -> Unit,
     onLoadMessageDetail: suspend (String) -> String?,
     onMarkMessageRead: (String) -> Unit,
-    onSearchRecipients: suspend (String) -> List<MessageRecipient>,
-    onSendMessage: suspend (List<MessageRecipient>, String, String) -> Result<Unit>,
     onOpenInAppBrowser: (String, String) -> Unit,
     onUpdateEloUrl: (String) -> Unit,
     onAddStudySite: (String, String, String) -> Unit,
@@ -210,7 +216,7 @@ fun MeerScreen(
                     item(key = "meer_berichten") {
                         MeerMenuTile(
                             title = "Magister Berichten",
-                            subtitle = if (unreadMessagesCount > 0) "$unreadMessagesCount ongelezen bericht(en)" else "Inbox, mappen en nieuw bericht sturen",
+                            subtitle = if (unreadMessagesCount > 0) "$unreadMessagesCount ongelezen bericht(en) • Alleen-lezen" else "Inbox en mappen bekijken (alleen-lezen)",
                             icon = Icons.Default.Mail,
                             badgeText = if (unreadMessagesCount > 0) unreadMessagesCount.toString() else null,
                             onClick = { onSelectSection(MeerSection.BERICHTEN) },
@@ -345,9 +351,7 @@ fun MeerScreen(
                     folders = messageFolders,
                     isOffline = isEffectivelyOffline,
                     onLoadMessageDetail = onLoadMessageDetail,
-                    onMarkMessageRead = onMarkMessageRead,
-                    onSearchRecipients = onSearchRecipients,
-                    onSendMessage = onSendMessage
+                    onMarkMessageRead = onMarkMessageRead
                 )
             }
 
@@ -378,10 +382,18 @@ fun MeerScreen(
                     uiScale = uiScale,
                     appThemeStyle = appThemeStyle,
                     uitvalNotificationsEnabled = uitvalNotificationsEnabled,
+                    gradeNotificationsEnabled = gradeNotificationsEnabled,
+                    testNotificationsEnabled = testNotificationsEnabled,
+                    gradeUnboxingEnabled = gradeUnboxingEnabled,
+                    gradeUnboxingMode = gradeUnboxingMode,
                     onSetAgendaStyle = onSetAgendaStyle,
                     onSetUiScale = onSetUiScale,
                     onSetAppThemeStyle = onSetAppThemeStyle,
                     onSetUitvalNotifications = onSetUitvalNotifications,
+                    onSetGradeNotifications = onSetGradeNotifications,
+                    onSetTestNotifications = onSetTestNotifications,
+                    onSetGradeUnboxingEnabled = onSetGradeUnboxingEnabled,
+                    onSetGradeUnboxingMode = onSetGradeUnboxingMode,
                     onTestUitvalNotification = onTestUitvalNotification,
                     onOpenRawConsole = onOpenRawConsole,
                     onOpenSetupWizard = onOpenSetupWizard,
@@ -520,10 +532,18 @@ private fun MeerSettingsView(
     uiScale: Float,
     appThemeStyle: AppThemeStyle,
     uitvalNotificationsEnabled: Boolean,
+    gradeNotificationsEnabled: Boolean,
+    testNotificationsEnabled: Boolean,
+    gradeUnboxingEnabled: Boolean,
+    gradeUnboxingMode: GradeUnboxingMode,
     onSetAgendaStyle: (AgendaStyle) -> Unit,
     onSetUiScale: (Float) -> Unit,
     onSetAppThemeStyle: (AppThemeStyle) -> Unit,
     onSetUitvalNotifications: (Boolean) -> Unit,
+    onSetGradeNotifications: (Boolean) -> Unit,
+    onSetTestNotifications: (Boolean) -> Unit,
+    onSetGradeUnboxingEnabled: (Boolean) -> Unit,
+    onSetGradeUnboxingMode: (GradeUnboxingMode) -> Unit,
     onTestUitvalNotification: () -> Boolean,
     onOpenRawConsole: () -> Unit,
     onOpenSetupWizard: () -> Unit,
@@ -617,7 +637,7 @@ private fun MeerSettingsView(
             }
         }
 
-        // 2. Uitval Meldingen
+        // 2. Meldingen (Uitval/Wijzigingen, Cijfers, Toetsen)
         item {
             Surface(
                 shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),
@@ -625,30 +645,44 @@ private fun MeerSettingsView(
                 border = nothingCardBorder(),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Uitvalmeldingen",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Directe melding zodra een les vervalt",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = uitvalNotificationsEnabled,
-                            onCheckedChange = onSetUitvalNotifications
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Meldingen & Auto-Sync",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    SettingsSwitchRow(
+                        title = "Uitval & roosterwijzigingen",
+                        subtitle = "Directe melding bij lesuitval, lokaal- of tijdwijziging",
+                        checked = uitvalNotificationsEnabled,
+                        onCheckedChange = onSetUitvalNotifications,
+                        tag = "settings_uitval_switch"
+                    )
+
+                    NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+                    SettingsSwitchRow(
+                        title = "Nieuwe cijfers",
+                        subtitle = "Melding zodra er een nieuw cijfer in Magister verschijnt",
+                        checked = gradeNotificationsEnabled,
+                        onCheckedChange = onSetGradeNotifications,
+                        tag = "settings_grade_notifs_switch"
+                    )
+
+                    NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+                    SettingsSwitchRow(
+                        title = "Nieuwe toetsen",
+                        subtitle = "Melding bij een nieuw proefwerk, SO, MO of toets",
+                        checked = testNotificationsEnabled,
+                        onCheckedChange = onSetTestNotifications,
+                        tag = "settings_test_notifs_switch"
+                    )
+
                     OutlinedButton(
                         onClick = {
                             val ok = onTestUitvalNotification()
@@ -662,8 +696,76 @@ private fun MeerSettingsView(
                         Text("Test uitvalmelding")
                     }
                     testMsg?.let {
-                        Spacer(modifier = Modifier.height(6.dp))
                         Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+
+        // 3. Cijfer Unboxing Minigames
+        item {
+            Surface(
+                shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = nothingCardBorder(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    SettingsSwitchRow(
+                        title = "Cijfer Unboxing inschakelen",
+                        subtitle = "Onthul nieuwe cijfers via interactieve minigames",
+                        checked = gradeUnboxingEnabled,
+                        onCheckedChange = onSetGradeUnboxingEnabled,
+                        tag = "settings_unboxing_switch"
+                    )
+
+                    if (gradeUnboxingEnabled) {
+                        NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                        Text(
+                            text = "Kies Unboxing Minigame",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        GradeUnboxingMode.entries.forEach { mode ->
+                            val selected = gradeUnboxingMode == mode
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+                                border = nothingCardBorder(isAlert = selected),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable { onSetGradeUnboxingMode(mode) }
+                                    .testTag("settings_unboxing_mode_${mode.name}")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = selected,
+                                        onClick = null
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = mode.labelDutch,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = mode.subtitleDutch,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -745,3 +847,38 @@ private fun MeerSettingsView(
         }
     }
 }
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    tag: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            modifier = Modifier.testTag(tag)
+        )
+    }
+}
+

@@ -638,19 +638,6 @@ class MagisterClient {
     suspend fun markMessageAsRead(tenant: SchoolTenant, token: String, messageId: String): Boolean =
         withContext(Dispatchers.IO) { extendedApi.markMessageAsRead(tenant, token, messageId) }
 
-    suspend fun searchMessageRecipients(tenant: SchoolTenant, token: String, query: String): List<MessageRecipient> =
-        withContext(Dispatchers.IO) { extendedApi.searchRecipients(tenant, token, query) }
-
-    suspend fun sendMessage(
-        tenant: SchoolTenant,
-        token: String,
-        recipients: List<MessageRecipient>,
-        subject: String,
-        body: String
-    ): Result<Unit> = withContext(Dispatchers.IO) {
-        extendedApi.sendMessage(tenant, token, recipients, subject, body)
-    }
-
     suspend fun enrollKwtOption(
         tenant: SchoolTenant,
         token: String,
@@ -854,7 +841,8 @@ class MagisterClient {
                         homework = homework,
                         dateIso = dateIso,
                         isKwt = isKwt,
-                        appointmentType = appointmentType
+                        appointmentType = appointmentType,
+                        infoType = infoType
                     )
                     appts.add(appt)
 
@@ -1061,10 +1049,20 @@ class MagisterClient {
     ): List<HomeworkTask> {
         val tasks = mutableListOf<HomeworkTask>()
 
-        // 1. Convert appointments that contain valid non-null homework into tasks
-        appointments.filter { !it.homework.cleanSchoolText().isNullOrBlank() }.forEachIndexed { idx, appt ->
-            val hwTitle = appt.homework.cleanSchoolText() ?: return@forEachIndexed
-            val teacherLabel = appt.teacherName.cleanSchoolText()?.let { "Opgegeven door $it" } ?: "Huiswerk uit lesrooster"
+        // 1. Convert appointments that contain valid non-null homework or tests into tasks
+        appointments.filter { !it.homework.cleanSchoolText().isNullOrBlank() || it.isTestOrExam }.forEachIndexed { idx, appt ->
+            val hwTitle = appt.homework.cleanSchoolText() ?: appt.title.cleanSchoolText() ?: return@forEachIndexed
+            val teacherLabel = appt.teacherName.cleanSchoolText()?.let { "Opgegeven door $it" } ?: "Uit lesrooster"
+            val isMajor = appt.infoType in listOf(2, 3) ||
+                hwTitle.contains("proefwerk", ignoreCase = true) ||
+                Regex("""\bpw\b""", RegexOption.IGNORE_CASE).containsMatchIn(hwTitle) ||
+                hwTitle.contains("tentamen", ignoreCase = true) ||
+                hwTitle.contains("examen", ignoreCase = true)
+            val category = when {
+                isMajor -> TaskCategory.MAJOR_TEST
+                appt.isTestOrExam -> TaskCategory.EXAM
+                else -> TaskCategory.HOMEWORK
+            }
             tasks.add(
                 HomeworkTask(
                     id = "hw_${appt.id}_$idx",
@@ -1073,9 +1071,9 @@ class MagisterClient {
                     description = "$teacherLabel • ${appt.title}",
                     dueDay = appt.dateIso.ifBlank { "Lesdag ${appt.dayOfWeek}" },
                     dueDate = "${appt.startTime} (${appt.periodIndex}e uur)",
-                    category = TaskCategory.HOMEWORK,
+                    category = category,
                     isCompleted = false,
-                    priority = TaskPriority.HIGH
+                    priority = if (category != TaskCategory.HOMEWORK) TaskPriority.HIGH else TaskPriority.MEDIUM
                 )
             )
         }
@@ -1097,6 +1095,11 @@ class MagisterClient {
                     val subject = item.optCleanString("Vak", "vak") ?: "Algemeen"
                     val desc = item.optCleanString("Omschrijving", "omschrijving") ?: ""
                     val deadline = item.optCleanString("InleverenVoor", "inleverenVoor")?.take(16) ?: "Binnenkort"
+                    val cat = when {
+                        title.contains("proefwerk", ignoreCase = true) || desc.contains("proefwerk", ignoreCase = true) -> TaskCategory.MAJOR_TEST
+                        isTestKeywordMatch(title) || isTestKeywordMatch(desc) -> TaskCategory.EXAM
+                        else -> TaskCategory.HOMEWORK
+                    }
 
                     tasks.add(
                         HomeworkTask(
@@ -1106,9 +1109,9 @@ class MagisterClient {
                             description = desc,
                             dueDay = "ELO Opdracht",
                             dueDate = deadline,
-                            category = TaskCategory.HOMEWORK,
+                            category = cat,
                             isCompleted = item.optBoolean("Afgesloten", false),
-                            priority = TaskPriority.MEDIUM
+                            priority = if (cat != TaskCategory.HOMEWORK) TaskPriority.HIGH else TaskPriority.MEDIUM
                         )
                     )
                 }

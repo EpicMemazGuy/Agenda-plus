@@ -247,12 +247,93 @@ class AppPreferencesStore(context: Context) {
         prefs.edit().putBoolean(KEY_UITVAL_NOTIFS_ENABLED, enabled).apply()
     }
 
+    fun isGradeNotificationsEnabled(): Boolean =
+        prefs.getBoolean(KEY_GRADE_NOTIFS_ENABLED, true)
+
+    fun setGradeNotificationsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_GRADE_NOTIFS_ENABLED, enabled).apply()
+    }
+
+    fun isTestNotificationsEnabled(): Boolean =
+        prefs.getBoolean(KEY_TEST_NOTIFS_ENABLED, true)
+
+    fun setTestNotificationsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_TEST_NOTIFS_ENABLED, enabled).apply()
+    }
+
+    fun isAnyNotificationEnabled(): Boolean =
+        isUitvalNotificationsEnabled() || isGradeNotificationsEnabled() || isTestNotificationsEnabled()
+
     fun getNotifiedCanceledKeys(): Set<String> =
         prefs.getStringSet(KEY_NOTIFIED_CANCELED_KEYS, emptySet())?.toSet() ?: emptySet()
 
     fun setNotifiedCanceledKeys(keys: Set<String>) {
         val bounded = if (keys.size > 250) keys.toList().takeLast(250).toSet() else keys
         prefs.edit().putStringSet(KEY_NOTIFIED_CANCELED_KEYS, bounded).apply()
+    }
+
+    fun getNotifiedChangeKeys(): Set<String> =
+        prefs.getStringSet(KEY_NOTIFIED_CHANGE_KEYS, emptySet())?.toSet() ?: emptySet()
+
+    fun setNotifiedChangeKeys(keys: Set<String>) {
+        val bounded = if (keys.size > 250) keys.toList().takeLast(250).toSet() else keys
+        prefs.edit().putStringSet(KEY_NOTIFIED_CHANGE_KEYS, bounded).apply()
+    }
+
+    fun hasGradesBaseline(): Boolean = prefs.getBoolean(KEY_HAS_GRADES_BASELINE, false)
+
+    fun getKnownGradeIds(): Set<String> =
+        prefs.getStringSet(KEY_KNOWN_GRADE_IDS, emptySet())?.toSet() ?: emptySet()
+
+    fun setKnownGradeIds(ids: Set<String>) {
+        val bounded = if (ids.size > 500) ids.toList().takeLast(500).toSet() else ids
+        prefs.edit()
+            .putStringSet(KEY_KNOWN_GRADE_IDS, bounded)
+            .putBoolean(KEY_HAS_GRADES_BASELINE, true)
+            .apply()
+    }
+
+    fun hasTestsBaseline(): Boolean = prefs.getBoolean(KEY_HAS_TESTS_BASELINE, false)
+
+    fun getKnownTestKeys(): Set<String> =
+        prefs.getStringSet(KEY_KNOWN_TEST_KEYS, emptySet())?.toSet() ?: emptySet()
+
+    fun setKnownTestKeys(keys: Set<String>) {
+        val bounded = if (keys.size > 400) keys.toList().takeLast(400).toSet() else keys
+        prefs.edit()
+            .putStringSet(KEY_KNOWN_TEST_KEYS, bounded)
+            .putBoolean(KEY_HAS_TESTS_BASELINE, true)
+            .apply()
+    }
+
+    fun isGradeUnboxingEnabled(): Boolean =
+        prefs.getBoolean(KEY_GRADE_UNBOXING_ENABLED, true)
+
+    fun setGradeUnboxingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_GRADE_UNBOXING_ENABLED, enabled).apply()
+    }
+
+    fun getGradeUnboxingMode(): GradeUnboxingMode {
+        val raw = prefs.getString(KEY_GRADE_UNBOXING_MODE, GradeUnboxingMode.CASE_OPENING.name)
+        return runCatching { GradeUnboxingMode.valueOf(raw ?: GradeUnboxingMode.CASE_OPENING.name) }
+            .getOrDefault(GradeUnboxingMode.CASE_OPENING)
+    }
+
+    fun setGradeUnboxingMode(mode: GradeUnboxingMode) {
+        prefs.edit().putString(KEY_GRADE_UNBOXING_MODE, mode.name).apply()
+    }
+
+    fun hasUnboxedBaseline(): Boolean = prefs.getBoolean(KEY_HAS_UNBOXED_BASELINE, false)
+
+    fun getUnboxedGradeIds(): Set<String> =
+        prefs.getStringSet(KEY_UNBOXED_GRADE_IDS, emptySet())?.toSet() ?: emptySet()
+
+    fun setUnboxedGradeIds(ids: Set<String>) {
+        val bounded = if (ids.size > 500) ids.toList().takeLast(500).toSet() else ids
+        prefs.edit()
+            .putStringSet(KEY_UNBOXED_GRADE_IDS, bounded)
+            .putBoolean(KEY_HAS_UNBOXED_BASELINE, true)
+            .apply()
     }
 
     fun clearSession() {
@@ -266,6 +347,13 @@ class AppPreferencesStore(context: Context) {
             .remove(KEY_KWT_SLOTS_JSON)
             .remove(KEY_LAST_SYNC)
             .remove(KEY_NOTIFIED_CANCELED_KEYS)
+            .remove(KEY_NOTIFIED_CHANGE_KEYS)
+            .remove(KEY_KNOWN_GRADE_IDS)
+            .remove(KEY_HAS_GRADES_BASELINE)
+            .remove(KEY_KNOWN_TEST_KEYS)
+            .remove(KEY_HAS_TESTS_BASELINE)
+            .remove(KEY_UNBOXED_GRADE_IDS)
+            .remove(KEY_HAS_UNBOXED_BASELINE)
             .apply()
     }
 
@@ -292,6 +380,7 @@ class AppPreferencesStore(context: Context) {
                 put("dateIso", a.dateIso)
                 put("isKwt", a.isKwt)
                 put("appointmentType", a.appointmentType)
+                put("infoType", a.infoType)
             })
         }
         prefs.edit().putString(KEY_APPOINTMENTS_JSON, arr.toString()).apply()
@@ -326,7 +415,8 @@ class AppPreferencesStore(context: Context) {
                             homework = hw,
                             dateIso = o.optString("dateIso").cleanSchoolText() ?: "",
                             isKwt = o.optBoolean("isKwt", false),
-                            appointmentType = o.optInt("appointmentType", 0)
+                            appointmentType = o.optInt("appointmentType", 0),
+                            infoType = o.optInt("infoType", 0)
                         )
                     )
                 }
@@ -735,7 +825,18 @@ class AppPreferencesStore(context: Context) {
         private const val KEY_LAST_SYNC = "last_sync"
         private const val KEY_STUDY_SITES = "study_sites"
         private const val KEY_UITVAL_NOTIFS_ENABLED = "uitval_notifs_enabled"
+        private const val KEY_GRADE_NOTIFS_ENABLED = "grade_notifs_enabled"
+        private const val KEY_TEST_NOTIFS_ENABLED = "test_notifs_enabled"
         private const val KEY_NOTIFIED_CANCELED_KEYS = "notified_canceled_keys"
+        private const val KEY_NOTIFIED_CHANGE_KEYS = "notified_change_keys"
+        private const val KEY_KNOWN_GRADE_IDS = "known_grade_ids"
+        private const val KEY_HAS_GRADES_BASELINE = "has_grades_baseline"
+        private const val KEY_KNOWN_TEST_KEYS = "known_test_keys"
+        private const val KEY_HAS_TESTS_BASELINE = "has_tests_baseline"
+        private const val KEY_GRADE_UNBOXING_ENABLED = "grade_unboxing_enabled"
+        private const val KEY_GRADE_UNBOXING_MODE = "grade_unboxing_mode"
+        private const val KEY_UNBOXED_GRADE_IDS = "unboxed_grade_ids"
+        private const val KEY_HAS_UNBOXED_BASELINE = "has_unboxed_baseline"
         private const val KEY_OVAPI_CATALOG_JSON = "ovapi_catalog_json"
         private const val KEY_OVAPI_CATALOG_TIMESTAMP = "ovapi_catalog_timestamp"
         const val DEFAULT_ELO_URL = "https://www.itslearning.com"

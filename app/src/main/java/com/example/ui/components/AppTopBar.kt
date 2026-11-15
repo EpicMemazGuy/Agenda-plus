@@ -23,6 +23,7 @@ import androidx.compose.foundation.border
 import com.example.model.AgendaStyle
 import com.example.model.AppThemeStyle
 import com.example.model.AuthSession
+import com.example.model.GradeUnboxingMode
 import com.example.model.UiScalePreset
 import com.example.model.cleanSchoolText
 import com.example.ui.theme.NothingOutline
@@ -38,6 +39,10 @@ fun AppTopBar(
     uiScale: Float,
     appThemeStyle: AppThemeStyle = AppThemeStyle.STANDARD,
     uitvalNotificationsEnabled: Boolean = true,
+    gradeNotificationsEnabled: Boolean = true,
+    testNotificationsEnabled: Boolean = true,
+    gradeUnboxingEnabled: Boolean = true,
+    gradeUnboxingMode: GradeUnboxingMode = GradeUnboxingMode.CASE_OPENING,
     isOffline: Boolean = false,
     onRefreshClick: () -> Unit,
     onOpenRawConsole: () -> Unit = {},
@@ -45,6 +50,10 @@ fun AppTopBar(
     onSetUiScale: (Float) -> Unit = {},
     onSetAppThemeStyle: (AppThemeStyle) -> Unit = {},
     onSetUitvalNotifications: (Boolean) -> Unit = {},
+    onSetGradeNotifications: (Boolean) -> Unit = {},
+    onSetTestNotifications: (Boolean) -> Unit = {},
+    onSetGradeUnboxingEnabled: (Boolean) -> Unit = {},
+    onSetGradeUnboxingMode: (GradeUnboxingMode) -> Unit = {},
     onTestUitvalNotification: () -> Boolean = { false },
     onOpenSetupWizard: () -> Unit = {},
     onResetAndLogout: () -> Unit,
@@ -486,7 +495,7 @@ fun AppTopBar(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Meldingen & Uitval",
+                            text = "Meldingen & Cijfer Unboxing",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -502,13 +511,13 @@ fun AppTopBar(
                         ) {
                             Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                                 Text(
-                                    text = "Uitval Meldingen",
+                                    text = "Uitval & roosterwijzigingen",
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Directe melding zodra een les uitvalt",
+                                    text = "Bij lesuitval, lokaal- of tijdwijziging",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -518,6 +527,110 @@ fun AppTopBar(
                                 onCheckedChange = onSetUitvalNotifications,
                                 modifier = Modifier.testTag("uitval_notifications_switch")
                             )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                Text(
+                                    text = "Nieuwe cijfers",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Directe melding bij nieuw cijfer",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = gradeNotificationsEnabled,
+                                onCheckedChange = onSetGradeNotifications,
+                                modifier = Modifier.testTag("topbar_grade_notifs_switch")
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                Text(
+                                    text = "Nieuwe toetsen",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Melding bij nieuwe PW, SO of MO",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = testNotificationsEnabled,
+                                onCheckedChange = onSetTestNotifications,
+                                modifier = Modifier.testTag("topbar_test_notifs_switch")
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                Text(
+                                    text = "Cijfer Unboxing inschakelen",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Modus: ${gradeUnboxingMode.labelDutch}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = gradeUnboxingEnabled,
+                                onCheckedChange = onSetGradeUnboxingEnabled,
+                                modifier = Modifier.testTag("topbar_unboxing_switch")
+                            )
+                        }
+
+                        if (gradeUnboxingEnabled) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                GradeUnboxingMode.entries.forEach { mode ->
+                                    FilterChip(
+                                        selected = gradeUnboxingMode == mode,
+                                        onClick = { onSetGradeUnboxingMode(mode) },
+                                        label = {
+                                            Text(
+                                                text = mode.labelDutch.split(" ").first(),
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        }
+                                    )
+                                }
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))

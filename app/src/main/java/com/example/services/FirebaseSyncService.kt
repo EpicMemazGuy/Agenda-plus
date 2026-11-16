@@ -8,7 +8,10 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.example.BuildConfig
+import com.example.R
+import com.example.model.AuthSession
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
 import com.google.firebase.Firebase
@@ -17,11 +20,9 @@ import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.NonCancellable
-import com.example.R
-import com.example.model.AuthSession
 
 data class CloudSyncProfile(
     val uid: String = "",
@@ -76,8 +77,12 @@ class FirebaseSyncService(private val context: Context) {
         credentialManager: CredentialManager
     ): Result<Unit> {
         return try {
-            val clientId = context.getString(R.string.default_web_client_id)
-            val signInOption = com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption.Builder(serverClientId = clientId)
+            val clientId = BuildConfig.GOOGLE_WEB_CLIENT_ID
+            require(clientId.isNotBlank() && clientId != "REPLACE_WITH_WEB_CLIENT_ID_FROM_FIREBASE") {
+                "GOOGLE_WEB_CLIENT_ID is missing or still using the placeholder value. Configure the Firebase web client ID in Gradle or environment variables."
+            }
+
+            val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId)
                 .build()
             val request = GetCredentialRequest.Builder()
                 .addCredentialOption(signInOption)
@@ -95,6 +100,9 @@ class FirebaseSyncService(private val context: Context) {
             }
         } catch (e: GetCredentialCancellationException) {
             Result.failure(Exception("Google Inloggen geannuleerd."))
+        } catch (e: IllegalStateException) {
+            Log.e("FirebaseSyncService", "Google Sign-In configuration error", e)
+            Result.failure(e)
         } catch (e: Exception) {
             Log.e("FirebaseSyncService", "Google Sign-In failed", e)
             Result.failure(e)

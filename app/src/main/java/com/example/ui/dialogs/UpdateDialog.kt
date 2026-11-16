@@ -30,6 +30,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.BuildConfig
 import com.example.model.AppThemeStyle
+import com.example.ui.components.NothingAwareDivider
+import com.example.ui.components.appCardShape
+import com.example.ui.components.appSheetContainerColor
+import com.example.ui.components.appThumbnailShape
 import com.example.util.ApkUpdateDownloader
 import com.example.util.GithubReleaseInfo
 import com.example.util.UpdateDownloadState
@@ -52,8 +56,9 @@ fun UpdateDialog(
         }.getOrNull()?.takeIf { it.isNotBlank() } ?: BuildConfig.VERSION_NAME
     }
     val isNothing = appThemeStyle == AppThemeStyle.NOTHING_OS
+    val isOneUi = appThemeStyle == AppThemeStyle.ONE_UI
 
-    val containerColor = if (isNothing) Color(0xFF161616) else MaterialTheme.colorScheme.surfaceContainerHigh
+    val containerColor = if (isNothing) Color(0xFF161616) else appSheetContainerColor()
     val borderColor = if (isNothing) Color(0xFF2C2C2C) else MaterialTheme.colorScheme.outlineVariant
     val accentColor = if (isNothing) Color(0xFFD71921) else MaterialTheme.colorScheme.primary
     val primaryTextColor = if (isNothing) Color.White else MaterialTheme.colorScheme.onSurface
@@ -139,14 +144,17 @@ fun UpdateDialog(
         onDismissRequest = { if (dismissEnabled) onDismiss() },
         properties = DialogProperties(dismissOnBackPress = dismissEnabled, dismissOnClickOutside = dismissEnabled)
     ) {
+        val dialogShape = appCardShape(standard = 24.dp, nothing = 24.dp)
         Surface(
-            shape = RoundedCornerShape(24.dp),
+            shape = dialogShape,
             color = containerColor,
-            tonalElevation = 8.dp,
+            tonalElevation = if (isOneUi) 0.dp else 8.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp)
-                .border(1.dp, borderColor, RoundedCornerShape(24.dp))
+                .then(
+                    if (isOneUi) Modifier else Modifier.border(1.dp, borderColor, dialogShape)
+                )
                 .testTag("update_dialog")
         ) {
             Column(
@@ -159,7 +167,7 @@ fun UpdateDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
                         color = accentColor.copy(alpha = 0.15f),
                         modifier = Modifier.size(44.dp)
                     ) {
@@ -177,7 +185,7 @@ fun UpdateDialog(
                         Text(
                             text = "Update beschikbaar (${updateInfo.tagName})",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = if (isOneUi) FontWeight.Medium else FontWeight.Bold,
                             color = primaryTextColor
                         )
                         Text(
@@ -189,7 +197,7 @@ fun UpdateDialog(
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
-                HorizontalDivider(color = borderColor)
+                NothingAwareDivider(color = borderColor)
                 Spacer(modifier = Modifier.height(14.dp))
 
                 Text(

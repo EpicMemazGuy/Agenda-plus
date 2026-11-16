@@ -61,7 +61,7 @@ fun ScheduleLoadingSkeleton(
         verticalArrangement = Arrangement.spacedBy(if (agendaStyle == AgendaStyle.COMPACT) 6.dp else 12.dp)
     ) {
         Surface(
-            shape = RoundedCornerShape(if (nothingMode) 24.dp else 16.dp),
+            shape = appCardShape(standard = 16.dp, nothing = 24.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
             border = cardBorder,
             modifier = Modifier.fillMaxWidth()
@@ -115,7 +115,7 @@ fun ScheduleLoadingSkeleton(
 
         if (agendaStyle == AgendaStyle.COMPACT) {
             Surface(
-                shape = RoundedCornerShape(if (nothingMode) 24.dp else 18.dp),
+                shape = appCardShape(standard = 18.dp, nothing = 24.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 border = cardBorder,
                 modifier = Modifier.fillMaxWidth()
@@ -203,7 +203,7 @@ fun ScheduleLoadingSkeleton(
         } else {
             repeat(4) { idx ->
                 Surface(
-                    shape = RoundedCornerShape(if (nothingMode) 24.dp else 22.dp),
+                    shape = appCardShape(standard = 22.dp, nothing = 24.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     border = cardBorder,
                     modifier = Modifier.fillMaxWidth()
@@ -217,7 +217,7 @@ fun ScheduleLoadingSkeleton(
                         Box(
                             modifier = Modifier
                                 .size(44.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(appThumbnailShape(standard = 12.dp, nothing = 12.dp))
                                 .background(accentPulseColor)
                         )
                         Spacer(modifier = Modifier.width(12.dp))

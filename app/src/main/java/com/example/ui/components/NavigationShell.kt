@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,8 +19,6 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -31,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +48,8 @@ data class NavItem(
     val tab: AppTab,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector,
+    val oneUiSelectedIcon: ImageVector,
+    val oneUiUnselectedIcon: ImageVector,
     val testTag: String
 )
 
@@ -67,30 +69,40 @@ fun AppBottomNavigationBar(
                 tab = AppTab.TODAY,
                 selectedIcon = Icons.Filled.Today,
                 unselectedIcon = Icons.Outlined.Today,
+                oneUiSelectedIcon = OneUiIcons.TodayFilled,
+                oneUiUnselectedIcon = OneUiIcons.TodayOutline,
                 testTag = "nav_tab_today"
             ),
             NavItem(
                 tab = AppTab.ROOSTER,
                 selectedIcon = Icons.Filled.CalendarMonth,
                 unselectedIcon = Icons.Outlined.CalendarMonth,
+                oneUiSelectedIcon = OneUiIcons.RoosterFilled,
+                oneUiUnselectedIcon = OneUiIcons.RoosterOutline,
                 testTag = "nav_tab_rooster"
             ),
             NavItem(
                 tab = AppTab.HUISWERK,
                 selectedIcon = Icons.Filled.ListAlt,
                 unselectedIcon = Icons.Outlined.ListAlt,
+                oneUiSelectedIcon = OneUiIcons.HuiswerkFilled,
+                oneUiUnselectedIcon = OneUiIcons.HuiswerkOutline,
                 testTag = "nav_tab_huiswerk"
             ),
             NavItem(
                 tab = AppTab.CIJFERS,
                 selectedIcon = Icons.Filled.Analytics,
                 unselectedIcon = Icons.Outlined.Analytics,
+                oneUiSelectedIcon = OneUiIcons.CijfersFilled,
+                oneUiUnselectedIcon = OneUiIcons.CijfersOutline,
                 testTag = "nav_tab_cijfers"
             ),
             NavItem(
                 tab = AppTab.MEER,
                 selectedIcon = Icons.Filled.Apps,
                 unselectedIcon = Icons.Outlined.Apps,
+                oneUiSelectedIcon = OneUiIcons.MeerFilled,
+                oneUiUnselectedIcon = OneUiIcons.MeerOutline,
                 testTag = "nav_tab_meer"
             )
         )
@@ -101,15 +113,16 @@ fun AppBottomNavigationBar(
             modifier = modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(horizontal = 24.dp, vertical = 10.dp),
             contentAlignment = Alignment.Center
         ) {
-            Surface(
-                shape = RoundedCornerShape(30.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                border = nothingCardBorder(),
-                tonalElevation = 4.dp,
-                shadowElevation = 6.dp,
+            val dockShape = SquircleShape(26.dp)
+            OneUiFrostedSurface(
+                shape = dockShape,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
+                    alpha = if (isDark) 0.78f else 0.80f
+                ),
+                border = oneUiInnerHighlightBorder(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("main_navigation_bar")
@@ -125,11 +138,11 @@ fun AppBottomNavigationBar(
                         val isSelected = currentTab == item.tab
                         val pillColor by animateColorAsState(
                             targetValue = if (isSelected) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.24f else 0.14f)
+                                MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.22f else 0.13f)
                             } else {
                                 Color.Transparent
                             },
-                            animationSpec = tween(durationMillis = 200),
+                            animationSpec = oneUiSpring(),
                             label = "oneui_nav_pill_${item.tab.name}"
                         )
                         val tintColor by animateColorAsState(
@@ -138,8 +151,13 @@ fun AppBottomNavigationBar(
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             },
-                            animationSpec = tween(durationMillis = 200),
+                            animationSpec = oneUiTween(240),
                             label = "oneui_nav_tint_${item.tab.name}"
+                        )
+                        val iconScale by animateFloatAsState(
+                            targetValue = if (isSelected) 1.08f else 1.0f,
+                            animationSpec = oneUiSpring(),
+                            label = "oneui_nav_scale_${item.tab.name}"
                         )
 
                         Column(
@@ -147,7 +165,7 @@ fun AppBottomNavigationBar(
                             verticalArrangement = Arrangement.Center,
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(24.dp))
+                                .clip(SquircleShape(20.dp))
                                 .background(pillColor)
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
@@ -158,21 +176,26 @@ fun AppBottomNavigationBar(
                         ) {
                             Crossfade(
                                 targetState = isSelected,
-                                animationSpec = tween(durationMillis = 180),
+                                animationSpec = oneUiTween(220),
                                 label = "oneui_nav_icon_${item.tab.name}"
                             ) { selected ->
                                 Icon(
-                                    imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                                    imageVector = if (selected) item.oneUiSelectedIcon else item.oneUiUnselectedIcon,
                                     contentDescription = item.tab.title,
                                     tint = tintColor,
-                                    modifier = Modifier.size(22.dp)
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .graphicsLayer {
+                                            scaleX = iconScale
+                                            scaleY = iconScale
+                                        }
                                 )
                             }
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = item.tab.title,
                                 fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
                                 color = tintColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis

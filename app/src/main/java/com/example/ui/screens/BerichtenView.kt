@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -24,8 +25,14 @@ import androidx.compose.ui.window.Dialog
 import com.example.model.MagisterMessage
 import com.example.model.MessageFolder
 import com.example.model.MessageFolderInfo
+import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.NothingAwareDivider
+import com.example.ui.components.appCardShape
+import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appScreenHorizontalPadding
+import com.example.ui.components.appSheetContainerColor
 import com.example.ui.components.isNothingOs
+import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 import kotlinx.coroutines.launch
 
@@ -59,21 +66,28 @@ fun BerichtenView(
         }
     }
 
+    val oneUiMode = isOneUi85
+    val oneUiInsets = LocalOneUiScreenInsets.current
+
     Scaffold(
+        containerColor = if (oneUiMode) Color.Transparent else MaterialTheme.colorScheme.background,
         modifier = modifier.testTag("berichten_view")
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = appScreenHorizontalPadding()),
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 28.dp)
+            contentPadding = PaddingValues(
+                top = 8.dp,
+                bottom = oneUiInsets.calculateBottomPadding() + 28.dp
+            )
         ) {
             // Read-Only Info Banner
             item(key = "messages_readonly_banner") {
                 Surface(
-                    shape = RoundedCornerShape(if (isNothingOs) 20.dp else 16.dp),
+                    shape = appCardShape(standard = 16.dp, nothing = 20.dp),
                     color = MaterialTheme.colorScheme.secondaryContainer,
                     border = nothingCardBorder(),
                     modifier = Modifier
@@ -116,7 +130,7 @@ fun BerichtenView(
                         }
                     },
                     singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = appInnerCardShape(standard = 16.dp, nothing = 16.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("messages_search_input")
@@ -243,16 +257,16 @@ private fun MessageRowCard(
     message: MagisterMessage,
     onClick: () -> Unit
 ) {
-    val nothingMode = isNothingOs
+    val cardShape = appCardShape(standard = 18.dp, nothing = 22.dp)
     Card(
-        shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),
+        shape = cardShape,
         border = nothingCardBorder(isAlert = !message.isRead),
         colors = CardDefaults.cardColors(
             containerColor = if (message.isRead) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainer
         ),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(if (nothingMode) 22.dp else 18.dp))
+            .clip(cardShape)
             .clickable(onClick = onClick)
             .testTag("message_item_${message.id}")
     ) {
@@ -349,9 +363,10 @@ private fun MessageReaderDialog(
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = appCardShape(standard = 24.dp, nothing = 24.dp),
+            color = appSheetContainerColor(),
             border = nothingCardBorder(),
+            tonalElevation = if (isOneUi85) 0.dp else 6.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = 560.dp)

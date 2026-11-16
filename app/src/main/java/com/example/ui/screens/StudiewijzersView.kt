@@ -3,6 +3,10 @@ package com.example.ui.screens
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -22,9 +27,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.model.StudyGuide
 import com.example.model.StudySite
+import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.NothingAwareDivider
-import com.example.ui.components.isNothingOs
+import com.example.ui.components.appCardShape
+import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appScreenHorizontalPadding
+import com.example.ui.components.appSheetContainerColor
+import com.example.ui.components.appThumbnailShape
+import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.oneUiSpring
+import com.example.ui.components.oneUiTween
 
 @Composable
 fun StudiewijzersView(
@@ -61,7 +74,11 @@ fun StudiewijzersView(
         }
     }
 
+    val oneUiMode = isOneUi85
+    val oneUiInsets = LocalOneUiScreenInsets.current
+
     Scaffold(
+        containerColor = if (oneUiMode) Color.Transparent else MaterialTheme.colorScheme.background,
         modifier = modifier.testTag("studiewijzers_view"),
         floatingActionButton = {
             ExtendedFloatingActionButton(
@@ -70,7 +87,15 @@ fun StudiewijzersView(
                 text = { Text("Bron toevoegen") },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.testTag("add_study_site_fab")
+                shape = if (oneUiMode) appCardShape() else FloatingActionButtonDefaults.extendedFabShape,
+                elevation = if (oneUiMode) {
+                    FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp)
+                } else {
+                    FloatingActionButtonDefaults.elevation()
+                },
+                modifier = Modifier
+                    .padding(bottom = oneUiInsets.calculateBottomPadding())
+                    .testTag("add_study_site_fab")
             )
         }
     ) { innerPadding ->
@@ -78,9 +103,12 @@ fun StudiewijzersView(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = appScreenHorizontalPadding()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 84.dp)
+            contentPadding = PaddingValues(
+                top = 8.dp,
+                bottom = oneUiInsets.calculateBottomPadding() + 84.dp
+            )
         ) {
             // 1. Magister Studiewijzers Header & Search
             item(key = "guides_header") {
@@ -178,7 +206,7 @@ fun StudiewijzersView(
             item(key = "elo_card") {
                 Spacer(modifier = Modifier.height(4.dp))
                 Card(
-                    shape = RoundedCornerShape(24.dp),
+                    shape = appCardShape(standard = 24.dp, nothing = 24.dp),
                     border = nothingCardBorder(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -193,7 +221,7 @@ fun StudiewijzersView(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Surface(
-                                shape = RoundedCornerShape(14.dp),
+                                shape = appThumbnailShape(standard = 14.dp, nothing = 14.dp),
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(46.dp)
                             ) {
@@ -365,10 +393,9 @@ private fun StudyGuideAccordionCard(
     onOpenResource: (String, String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val nothingMode = isNothingOs
 
     Card(
-        shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),
+        shape = appCardShape(standard = 18.dp, nothing = 22.dp),
         border = nothingCardBorder(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -378,15 +405,16 @@ private fun StudyGuideAccordionCard(
             .testTag("study_guide_card_${guide.id}")
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
+            val touchShape = appInnerCardShape(standard = 12.dp, nothing = 12.dp)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(touchShape)
                     .clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
+                    shape = appThumbnailShape(standard = 10.dp, nothing = 10.dp),
                     color = MaterialTheme.colorScheme.primaryContainer,
                     modifier = Modifier.size(38.dp)
                 ) {
@@ -404,7 +432,7 @@ private fun StudyGuideAccordionCard(
                     Text(
                         text = guide.title,
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = if (isOneUi85) FontWeight.Medium else FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
@@ -421,14 +449,21 @@ private fun StudyGuideAccordionCard(
                 }
             }
 
-            AnimatedVisibility(visible = expanded) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(oneUiSpring()) + fadeIn(oneUiTween()),
+                exit = shrinkVertically(oneUiSpring()) + fadeOut(oneUiTween())
+            ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    NothingAwareDivider(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        insetStart = if (isOneUi85) 12.dp else 0.dp
+                    )
                     if (guide.description.isNotBlank()) {
                         Text(
                             text = guide.description,
@@ -445,7 +480,7 @@ private fun StudyGuideAccordionCard(
                     } else {
                         guide.parts.forEach { part ->
                             Surface(
-                                shape = RoundedCornerShape(12.dp),
+                                shape = appInnerCardShape(standard = 12.dp, nothing = 12.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainer,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -499,15 +534,16 @@ private fun BronSiteCard(
         runCatching { Uri.parse(site.url).host }.getOrNull()?.removePrefix("www.") ?: site.url
     }
 
+    val cardShape = appCardShape(standard = 18.dp, nothing = 22.dp)
     Card(
-        shape = RoundedCornerShape(if (isNothingOs) 22.dp else 18.dp),
+        shape = cardShape,
         border = nothingCardBorder(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(if (isNothingOs) 22.dp else 18.dp))
+            .clip(cardShape)
             .clickable(onClick = onOpenInApp)
             .testTag("study_site_card_${site.id}")
     ) {
@@ -518,7 +554,7 @@ private fun BronSiteCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
                 color = MaterialTheme.colorScheme.secondaryContainer,
                 modifier = Modifier.size(40.dp)
             ) {
@@ -577,7 +613,10 @@ private fun AddBronDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Studiewebsite of bron toevoegen", fontWeight = FontWeight.Bold) },
+        shape = appCardShape(standard = 24.dp, nothing = 26.dp),
+        containerColor = appSheetContainerColor(),
+        tonalElevation = if (isOneUi85) 0.dp else AlertDialogDefaults.TonalElevation,
+        title = { Text("Studiewebsite of bron toevoegen", fontWeight = if (isOneUi85) FontWeight.Medium else FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
@@ -628,7 +667,10 @@ private fun EditEloAddressDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("ELO-adres (itslearning)", fontWeight = FontWeight.Bold) },
+        shape = appCardShape(standard = 24.dp, nothing = 26.dp),
+        containerColor = appSheetContainerColor(),
+        tonalElevation = if (isOneUi85) 0.dp else AlertDialogDefaults.TonalElevation,
+        title = { Text("ELO-adres (itslearning)", fontWeight = if (isOneUi85) FontWeight.Medium else FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(

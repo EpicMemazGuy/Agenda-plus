@@ -24,7 +24,12 @@ import androidx.compose.ui.unit.dp
 import com.example.model.AppThemeStyle
 import com.example.model.GradeItem
 import com.example.model.SubjectGradeSummary
-import com.example.ui.components.isNothingOs
+import com.example.ui.components.appCardShape
+import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appScreenHorizontalPadding
+import com.example.ui.components.appSheetContainerColor
+import com.example.ui.components.appSheetShape
+import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 import com.example.ui.theme.LocalDarkThemeActive
 import com.example.util.GradeExporter
@@ -96,13 +101,15 @@ fun GradeExportSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = appSheetShape(),
+        containerColor = appSheetContainerColor(),
+        tonalElevation = if (isOneUi85) 0.dp else BottomSheetDefaults.Elevation,
         modifier = Modifier.testTag("grade_export_sheet")
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = appScreenHorizontalPadding(standard = 20.dp))
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -130,7 +137,7 @@ fun GradeExportSheet(
 
             // Full Grade List Export (CSV & PDF)
             Surface(
-                shape = RoundedCornerShape(if (isNothingOs) 20.dp else 16.dp),
+                shape = appCardShape(standard = 16.dp, nothing = 20.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 border = nothingCardBorder(),
                 modifier = Modifier.fillMaxWidth()
@@ -245,13 +252,14 @@ fun GradeExportSheet(
             ) {
                 items(allGrades, key = { it.id }) { grade ->
                     val isSelected = grade.id in selectedIds
+                    val itemShape = appInnerCardShape(standard = 14.dp, nothing = 14.dp)
                     Surface(
-                        shape = RoundedCornerShape(14.dp),
+                        shape = itemShape,
                         color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f) else MaterialTheme.colorScheme.surfaceContainerLow,
                         border = nothingCardBorder(isAlert = isSelected),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(itemShape)
                             .clickable {
                                 selectedIds = if (isSelected) {
                                     selectedIds - grade.id

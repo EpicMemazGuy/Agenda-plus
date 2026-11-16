@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -45,6 +46,8 @@ import com.example.ui.theme.NothingAsh
 import com.example.ui.theme.NothingOutline
 import com.example.ui.theme.NothingRed
 import com.example.ui.theme.NothingWhite
+import com.example.ui.theme.OneUiDividerDark
+import com.example.ui.theme.OneUiDividerLight
 import kotlin.math.abs
 
 val isNothingOs: Boolean
@@ -69,7 +72,13 @@ fun appCardCornerRadius(
 fun appCardShape(
     standard: Dp = 18.dp,
     nothing: Dp = 24.dp
-): RoundedCornerShape = RoundedCornerShape(appCardCornerRadius(standard = standard, nothing = nothing))
+): Shape {
+    return when (LocalAppThemeStyle.current) {
+        AppThemeStyle.ONE_UI -> SquircleShape(26.dp)
+        AppThemeStyle.NOTHING_OS -> RoundedCornerShape(nothing)
+        AppThemeStyle.STANDARD -> RoundedCornerShape(standard)
+    }
+}
 
 @Composable
 fun nothingCardBorder(
@@ -80,10 +89,13 @@ fun nothingCardBorder(
             width = 1.dp,
             color = if (isAlert) NothingRed else NothingOutline
         )
-        AppThemeStyle.ONE_UI -> BorderStroke(
-            width = 1.dp,
-            color = if (isAlert) MaterialTheme.colorScheme.error.copy(alpha = 0.65f) else MaterialTheme.colorScheme.outline
-        )
+        // One UI relies strictly on surface separation and whitespace rather than boxy borders.
+        AppThemeStyle.ONE_UI -> if (isAlert) {
+            BorderStroke(
+                width = onePixelDp(),
+                color = MaterialTheme.colorScheme.error.copy(alpha = 0.45f)
+            )
+        } else null
         AppThemeStyle.STANDARD -> null
     }
 }
@@ -121,7 +133,7 @@ fun OneUiPillBadge(
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.Medium,
             color = resolvedContent,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -132,7 +144,7 @@ fun OneUiPillBadge(
 
 /**
  * One UI 8.5 Reachability Expanding Header placed in the upper viewing area
- * that smoothly collapses into the pinned top bar when scrolling.
+ * using a 34sp light-to-regular humanist display title and spring physics collapse.
  */
 @Composable
 fun OneUiExpandingHeader(
@@ -144,16 +156,19 @@ fun OneUiExpandingHeader(
 ) {
     val collapseFraction by animateFloatAsState(
         targetValue = if (isScrolled) 1f else 0f,
-        animationSpec = tween(durationMillis = 220),
+        animationSpec = oneUiSpring(),
         label = "oneui_header_collapse"
     )
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 20.dp, bottom = 10.dp)
+            .padding(top = 24.dp, bottom = 14.dp)
             .graphicsLayer {
-                alpha = 1f - (collapseFraction * 0.85f)
-                translationY = -collapseFraction * 18f
+                alpha = (1f - (collapseFraction * 0.90f)).coerceIn(0f, 1f)
+                translationY = -collapseFraction * 22f
+                val s = 1f - (collapseFraction * 0.06f)
+                scaleX = s
+                scaleY = s
             }
     ) {
         Row(
@@ -164,14 +179,13 @@ fun OneUiExpandingHeader(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.displayMedium,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.displayLarge,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 if (!subtitle.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodyMedium,
@@ -191,12 +205,20 @@ fun OneUiExpandingHeader(
 @Composable
 fun NothingAwareDivider(
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.outlineVariant
+    color: Color = MaterialTheme.colorScheme.outlineVariant,
+    insetStart: Dp = 0.dp
 ) {
-    if (isNothingOs) {
-        NothingDottedDivider(modifier = modifier, color = NothingOutline)
-    } else {
-        HorizontalDivider(modifier = modifier, color = color)
+    when (LocalAppThemeStyle.current) {
+        AppThemeStyle.NOTHING_OS -> NothingDottedDivider(modifier = modifier, color = NothingOutline)
+        AppThemeStyle.ONE_UI -> {
+            val hairlineColor = if (LocalDarkThemeActive.current) OneUiDividerDark else OneUiDividerLight
+            HorizontalDivider(
+                modifier = modifier.padding(start = insetStart),
+                thickness = onePixelDp(),
+                color = hairlineColor
+            )
+        }
+        AppThemeStyle.STANDARD -> HorizontalDivider(modifier = modifier, color = color)
     }
 }
 

@@ -19,7 +19,12 @@ import androidx.compose.ui.unit.dp
 import com.example.model.SchoolAddress
 import com.example.model.TodayBlockConfig
 import com.example.model.TodayBlockType
-import com.example.ui.components.isNothingOs
+import com.example.ui.components.appCardShape
+import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appScreenHorizontalPadding
+import com.example.ui.components.appSheetContainerColor
+import com.example.ui.components.appSheetShape
+import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 import kotlinx.coroutines.launch
 
@@ -37,7 +42,6 @@ fun TodayModifySheet(
     onSetBusLine: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val nothingMode = isNothingOs
     val scope = rememberCoroutineScope()
     var addressQuery by remember { mutableStateOf("") }
     var addressResults by remember { mutableStateOf<List<SchoolAddress>>(emptyList()) }
@@ -47,14 +51,16 @@ fun TodayModifySheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = appSheetShape(),
+        containerColor = appSheetContainerColor(),
+        tonalElevation = if (isOneUi85) 0.dp else BottomSheetDefaults.Elevation,
         modifier = Modifier.testTag("today_modify_sheet")
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = appScreenHorizontalPadding(standard = 20.dp))
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -89,7 +95,7 @@ fun TodayModifySheet(
 
             // 1. 1-Tap School Address Setup
             Surface(
-                shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),
+                shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 border = nothingCardBorder(),
                 modifier = Modifier.fillMaxWidth()
@@ -179,12 +185,13 @@ fun TodayModifySheet(
                     }
 
                     addressResults.take(4).forEach { result ->
+                        val resShape = appInnerCardShape(standard = 12.dp, nothing = 12.dp)
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = resShape,
                             color = MaterialTheme.colorScheme.surfaceContainer,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(resShape)
                                 .clickable {
                                     onSaveSchoolAddress(result)
                                     addressQuery = ""
@@ -225,7 +232,7 @@ fun TodayModifySheet(
 
             // 2. Bustijd setup
             Surface(
-                shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),
+                shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 border = nothingCardBorder(),
                 modifier = Modifier.fillMaxWidth()
@@ -282,7 +289,7 @@ fun TodayModifySheet(
 
             // 3. Onderdelen aan/uit & volgorde
             Surface(
-                shape = RoundedCornerShape(if (nothingMode) 22.dp else 18.dp),
+                shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 border = nothingCardBorder(),
                 modifier = Modifier.fillMaxWidth()
@@ -294,13 +301,13 @@ fun TodayModifySheet(
                     Text(
                         text = "Onderdelen en volgorde",
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = if (isOneUi85) FontWeight.Medium else FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
 
                     todayBlocks.forEachIndexed { idx, block ->
                         Surface(
-                            shape = RoundedCornerShape(14.dp),
+                            shape = appInnerCardShape(standard = 14.dp, nothing = 14.dp),
                             color = MaterialTheme.colorScheme.surfaceContainer,
                             modifier = Modifier
                                 .fillMaxWidth()

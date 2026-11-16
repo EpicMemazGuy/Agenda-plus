@@ -34,10 +34,14 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.model.*
 import com.example.ui.MeerSection
+import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
 import com.example.ui.components.appCardShape
+import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appScreenHorizontalPadding
+import com.example.ui.components.appThumbnailShape
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
@@ -133,10 +137,16 @@ fun MeerScreen(
     }
     val unreadMessagesCount = messages.count { !it.isRead }
     var showPromoVideoDialog by remember { mutableStateOf(false) }
+    val oneUiInsets = LocalOneUiScreenInsets.current
 
     Column(
         modifier = modifier
             .fillMaxSize()
+            .then(
+                if (currentSection != MeerSection.HOME && oneUiMode) {
+                    Modifier.padding(top = oneUiInsets.calculateTopPadding())
+                } else Modifier
+            )
             .testTag("meer_screen")
     ) {
         if (currentSection != MeerSection.HOME) {
@@ -147,7 +157,7 @@ fun MeerScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                        .padding(horizontal = if (oneUiMode) 12.dp else 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
@@ -164,7 +174,7 @@ fun MeerScreen(
                     Text(
                         text = currentSection.titleDutch,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = if (oneUiMode) FontWeight.Medium else FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
@@ -178,9 +188,12 @@ fun MeerScreen(
                     state = homeListState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 16.dp),
+                        .padding(horizontal = appScreenHorizontalPadding()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(top = 12.dp, bottom = 28.dp)
+                    contentPadding = PaddingValues(
+                        top = oneUiInsets.calculateTopPadding() + 12.dp,
+                        bottom = oneUiInsets.calculateBottomPadding() + 28.dp
+                    )
                 ) {
                     item(key = "meer_header") {
                         if (oneUiMode) {
@@ -220,7 +233,7 @@ fun MeerScreen(
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Surface(
-                                            shape = RoundedCornerShape(12.dp),
+                                            shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
                                             color = MaterialTheme.colorScheme.primaryContainer,
                                             modifier = Modifier.size(40.dp)
                                         ) {
@@ -359,7 +372,7 @@ fun MeerScreen(
                             title = "Bekijk Promo Video (115 BPM)",
                             subtitle = "9:16 Motion Graphics • Nothing OS • Rozovoye Vino beat",
                             icon = Icons.Default.PlayCircle,
-                            badgeText = "NIEUW",
+                            badgeText = if (oneUiMode) "Nieuw" else "NIEUW",
                             onClick = { showPromoVideoDialog = true },
                             tag = "meer_tile_promo_video"
                         )
@@ -562,7 +575,7 @@ private fun MeerMenuTile(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
                 color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.size(42.dp)
             ) {
@@ -580,7 +593,7 @@ private fun MeerMenuTile(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = if (isOneUi85) FontWeight.Medium else FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
@@ -710,14 +723,18 @@ private fun MeerSettingsView(
         }
     }
 
+    val oneUiInsets = LocalOneUiScreenInsets.current
     LazyColumn(
         state = settingsListState,
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = appScreenHorizontalPadding())
             .testTag("meer_settings_view"),
         verticalArrangement = Arrangement.spacedBy(14.dp),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 28.dp)
+        contentPadding = PaddingValues(
+            top = 12.dp,
+            bottom = oneUiInsets.calculateBottomPadding() + 28.dp
+        )
     ) {
         if (oneUiMode) {
             item(key = "oneui_settings_header") {
@@ -1047,13 +1064,14 @@ private fun MeerSettingsView(
 
                         GradeUnboxingMode.entries.forEach { mode ->
                             val selected = gradeUnboxingMode == mode
+                            val optionShape = appInnerCardShape(standard = 14.dp, nothing = 14.dp)
                             Surface(
-                                shape = RoundedCornerShape(14.dp),
+                                shape = optionShape,
                                 color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
                                 border = nothingCardBorder(isAlert = selected),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(14.dp))
+                                    .clip(optionShape)
                                     .clickable { onSetGradeUnboxingMode(mode) }
                                     .testTag("settings_unboxing_mode_${mode.name}")
                             ) {
@@ -1296,13 +1314,17 @@ private fun AfwezigheidView(
     absences: List<AbsenceRecord>,
     modifier: Modifier = Modifier
 ) {
+    val oneUiInsets = LocalOneUiScreenInsets.current
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = appScreenHorizontalPadding())
             .testTag("afwezigheid_view"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 28.dp)
+        contentPadding = PaddingValues(
+            top = 12.dp,
+            bottom = oneUiInsets.calculateBottomPadding() + 28.dp
+        )
     ) {
         if (absences.isEmpty()) {
             item(key = "absences_empty") {
@@ -1361,7 +1383,7 @@ private fun AfwezigheidView(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
                             color = if (isAlert) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
                             modifier = Modifier.size(42.dp)
                         ) {

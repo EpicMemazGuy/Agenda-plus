@@ -24,6 +24,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.RectangleShape
 import com.example.model.AgendaStyle
 import com.example.model.AppThemeStyle
 import com.example.model.AuthSession
@@ -31,6 +32,7 @@ import com.example.model.DarkModePreference
 import com.example.model.GradeUnboxingMode
 import com.example.model.UiScalePreset
 import com.example.model.cleanSchoolText
+import com.example.ui.theme.LocalDarkThemeActive
 import com.example.ui.theme.NothingOutline
 import com.example.ui.theme.NothingRed
 
@@ -77,21 +79,13 @@ fun AppTopBar(
     val cleanStudentClass = session.studentClass.cleanSchoolText()
     val firstName = cleanStudentName.split(" ").firstOrNull()?.cleanSchoolText() ?: "Account"
 
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("app_top_bar"),
-        color = when {
-            oneUiMode && !collapsedTitle.isNullOrBlank() -> MaterialTheme.colorScheme.surfaceContainerLow
-            else -> MaterialTheme.colorScheme.surface
-        },
-        tonalElevation = if (nothingMode || oneUiMode) 0.dp else 2.dp
-    ) {
+    val isDark = LocalDarkThemeActive.current
+    val topBarInner: @Composable () -> Unit = {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = if (oneUiMode) 8.dp else 10.dp)
+                .padding(horizontal = appScreenHorizontalPadding(), vertical = if (oneUiMode) 8.dp else 10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -112,7 +106,7 @@ fun AppTopBar(
 
                     AnimatedContent(
                         targetState = if (oneUiMode && !collapsedTitle.isNullOrBlank()) collapsedTitle else null,
-                        transitionSpec = { fadeIn() togetherWith fadeOut() },
+                        transitionSpec = { fadeIn(oneUiTween(240)) togetherWith fadeOut(oneUiTween(180)) },
                         label = "topbar_collapsed_title"
                     ) { pinnedTitle ->
                         if (pinnedTitle != null) {
@@ -120,14 +114,14 @@ fun AppTopBar(
                                 Text(
                                     text = pinnedTitle,
                                     style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
+                                    fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = if (isOffline) "Offline-cache • $lastSyncTime" else "Sync: $lastSyncTime",
-                                    style = MaterialTheme.typography.labelSmall,
+                                    style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -139,7 +133,7 @@ fun AppTopBar(
                                     Text(
                                         text = if (nothingMode) "AGENDA+" else "Agenda+",
                                         style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
+                                        fontWeight = if (oneUiMode) FontWeight.Medium else FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
@@ -149,11 +143,11 @@ fun AppTopBar(
                                         border = cardBorder
                                     ) {
                                         Text(
-                                            text = session.provider.displayName.uppercase(),
+                                            text = if (nothingMode) session.provider.displayName.uppercase() else session.provider.displayName,
                                             style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
+                                            fontWeight = if (oneUiMode) FontWeight.Medium else FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                                         )
                                     }
                                     if (isOffline) {
@@ -195,7 +189,7 @@ fun AppTopBar(
                             .testTag("topbar_raw_console_button")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Terminal,
+                            imageVector = if (oneUiMode) OneUiIcons.Terminal else Icons.Default.Terminal,
                             contentDescription = "Raw CLI Log",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -219,7 +213,7 @@ fun AppTopBar(
                             }
                         } else {
                             Icon(
-                                imageVector = Icons.Default.Refresh,
+                                imageVector = if (oneUiMode) OneUiIcons.Refresh else Icons.Default.Refresh,
                                 contentDescription = "Synchroniseer met ${session.provider.displayName}",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -240,7 +234,7 @@ fun AppTopBar(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.AccountCircle,
+                                imageVector = if (oneUiMode) OneUiIcons.Account else Icons.Default.AccountCircle,
                                 contentDescription = "Account instellingen",
                                 modifier = Modifier.size(20.dp),
                                 tint = MaterialTheme.colorScheme.primary
@@ -294,9 +288,37 @@ fun AppTopBar(
                 Spacer(modifier = Modifier.height(6.dp))
                 NothingDottedDivider()
             } else if (oneUiMode && !collapsedTitle.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                Spacer(modifier = Modifier.height(6.dp))
+                NothingAwareDivider()
             }
+        }
+    }
+
+    if (oneUiMode) {
+        OneUiFrostedSurface(
+            shape = RectangleShape,
+            containerColor = if (!collapsedTitle.isNullOrBlank()) {
+                MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = if (isDark) 0.78f else 0.80f)
+            } else {
+                MaterialTheme.colorScheme.background.copy(alpha = if (isDark) 0.84f else 0.88f)
+            },
+            border = null,
+            enableBackdropBlur = !collapsedTitle.isNullOrBlank(),
+            modifier = modifier
+                .fillMaxWidth()
+                .testTag("app_top_bar")
+        ) {
+            topBarInner()
+        }
+    } else {
+        Surface(
+            modifier = modifier
+                .fillMaxWidth()
+                .testTag("app_top_bar"),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = if (nothingMode) 0.dp else 2.dp
+        ) {
+            topBarInner()
         }
     }
 
@@ -308,7 +330,13 @@ fun AppTopBar(
         ModalBottomSheet(
             onDismissRequest = { showAccountSheet = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = appSheetShape(),
+            tonalElevation = 0.dp,
+            containerColor = if (oneUiMode) {
+                MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = if (isDark) 0.94f else 0.96f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
             modifier = Modifier.testTag("account_bottom_sheet")
         ) {
             Column(

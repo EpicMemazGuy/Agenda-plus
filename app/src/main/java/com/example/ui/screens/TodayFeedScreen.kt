@@ -31,12 +31,17 @@ import com.example.model.*
 import com.example.network.CitySearchResult
 import com.example.ui.components.BusLiveMapCard
 import com.example.ui.components.CustomScheduleItemCard
+import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.NothingDotMatrixSpinner
 import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
 import com.example.ui.components.ScheduleLoadingSkeleton
 import com.example.ui.components.appCardShape
+import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appScreenHorizontalPadding
+import com.example.ui.components.appSheetContainerColor
+import com.example.ui.components.appThumbnailShape
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
@@ -203,14 +208,18 @@ fun TodayFeedScreen(
         }
     }
 
+    val oneUiInsets = LocalOneUiScreenInsets.current
     LazyColumn(
         state = listState,
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = appScreenHorizontalPadding())
             .testTag("today_feed_screen"),
         verticalArrangement = Arrangement.spacedBy(14.dp),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 28.dp)
+        contentPadding = PaddingValues(
+            top = oneUiInsets.calculateTopPadding() + 12.dp,
+            bottom = oneUiInsets.calculateBottomPadding() + 28.dp
+        )
     ) {
         if (oneUiMode) {
             item(key = "oneui_today_header") {
@@ -364,7 +373,7 @@ fun TodayFeedScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Surface(
-                                        shape = RoundedCornerShape(12.dp),
+                                        shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
                                         color = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(40.dp)
                                     ) {
@@ -724,7 +733,8 @@ fun TodayFeedScreen(
                                 if (idx < todayClasses.lastIndex) {
                                     NothingAwareDivider(
                                         color = MaterialTheme.colorScheme.surfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 12.dp)
+                                        insetStart = if (oneUiMode) 52.dp else 0.dp,
+                                        modifier = if (oneUiMode) Modifier else Modifier.padding(horizontal = 12.dp)
                                     )
                                 }
                             }
@@ -904,7 +914,7 @@ private fun SchoolNavigationCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
                 color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.size(44.dp)
             ) {
@@ -1011,7 +1021,7 @@ private fun LocalWeatherHeaderCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = RoundedCornerShape(14.dp),
+                shape = appThumbnailShape(standard = 14.dp, nothing = 14.dp),
                 color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.size(44.dp)
             ) {
@@ -1116,11 +1126,14 @@ private fun WeatherCityPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = appCardShape(standard = 24.dp, nothing = 26.dp),
+        containerColor = appSheetContainerColor(),
+        tonalElevation = if (isOneUi85) 0.dp else AlertDialogDefaults.TonalElevation,
         title = {
             Text(
                 text = "Plaatsnaam kiezen",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = if (isOneUi85) FontWeight.Medium else FontWeight.Bold
             )
         },
         text = {
@@ -1142,7 +1155,7 @@ private fun WeatherCityPickerDialog(
                     label = { Text("Zoek stad of dorp") },
                     placeholder = { Text("Bijv. Schijndel, Utrecht...") },
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = appInnerCardShape(standard = 12.dp, nothing = 12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("weather_city_search_input")
@@ -1154,12 +1167,13 @@ private fun WeatherCityPickerDialog(
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     results.take(5).forEach { city ->
+                        val cityItemShape = appInnerCardShape(standard = 12.dp, nothing = 12.dp)
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = cityItemShape,
                             color = MaterialTheme.colorScheme.surfaceContainerLow,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(cityItemShape)
                                 .clickable { onSelectCity(city) }
                         ) {
                             Row(
@@ -1225,13 +1239,14 @@ fun HeroClassCard(
     val cleanHomework = appointment.homework.cleanSchoolText()
 
     val nothingMode = isNothingOs
+    val heroShape = appCardShape(standard = 26.dp, nothing = 26.dp)
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(26.dp))
+            .clip(heroShape)
             .clickable(onClick = onCardClick)
             .testTag("hero_class_card"),
-        shape = RoundedCornerShape(26.dp),
+        shape = heroShape,
         border = nothingCardBorder(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer
@@ -1345,7 +1360,7 @@ fun HeroClassCard(
             if (cleanHomework != null) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
+                    shape = appInnerCardShape(standard = 14.dp, nothing = 14.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -1403,7 +1418,7 @@ fun TodayClassRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
                 color = if (isCanceled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceContainerHigh,
                 modifier = Modifier.size(40.dp)
             ) {
@@ -1431,7 +1446,7 @@ fun TodayClassRow(
                     if (isCanceled) {
                         Spacer(modifier = Modifier.width(6.dp))
                         if (oneUiMode) {
-                            OneUiPillBadge(text = "UITVAL", isError = true)
+                            OneUiPillBadge(text = "Uitval", isError = true)
                         } else {
                             Surface(
                                 shape = RoundedCornerShape(percent = 50),
@@ -1448,7 +1463,7 @@ fun TodayClassRow(
                     } else if (appointment.isRelocated) {
                         Spacer(modifier = Modifier.width(6.dp))
                         if (oneUiMode) {
-                            OneUiPillBadge(text = "GEWIJZIGD")
+                            OneUiPillBadge(text = "Gewijzigd")
                         } else {
                             Surface(
                                 shape = RoundedCornerShape(percent = 50),

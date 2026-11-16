@@ -20,6 +20,14 @@ import com.example.model.SchoolProvider
 import com.example.model.SchoolTenant
 import com.example.network.PkceHelper
 import com.example.ui.AuthUiError
+import com.example.ui.components.NothingAwareDivider
+import com.example.ui.components.appCardShape
+import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appScreenHorizontalPadding
+import com.example.ui.components.appSheetContainerColor
+import com.example.ui.components.appThumbnailShape
+import com.example.ui.components.isOneUi85
+import com.example.ui.components.nothingCardBorder
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,18 +60,20 @@ fun LoginDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        val oneUi = isOneUi85
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .wrapContentHeight()
                 .testTag("school_login_dialog"),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 6.dp
+            shape = appCardShape(),
+            color = appSheetContainerColor(),
+            border = nothingCardBorder(),
+            tonalElevation = if (oneUi) 0.dp else 6.dp
         ) {
             Column(
                 modifier = Modifier
-                    .padding(24.dp)
+                    .padding(horizontal = appScreenHorizontalPadding(24.dp), vertical = 24.dp)
                     .verticalScroll(rememberScrollState())
                     .fillMaxWidth()
             ) {
@@ -75,7 +85,7 @@ fun LoginDialog(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(36.dp)
                         ) {
@@ -193,12 +203,14 @@ fun LoginDialog(
                                 .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                                 .fillMaxWidth()
                                 .testTag("tenant_selector_field"),
-                            shape = RoundedCornerShape(14.dp)
+                            shape = appInnerCardShape()
                         )
 
                         ExposedDropdownMenu(
                             expanded = tenantDropdownExpanded,
-                            onDismissRequest = { tenantDropdownExpanded = false }
+                            onDismissRequest = { tenantDropdownExpanded = false },
+                            shape = appInnerCardShape(),
+                            containerColor = appSheetContainerColor()
                         ) {
                             providerTenants.forEach { tenant ->
                                 DropdownMenuItem(
@@ -242,7 +254,7 @@ fun LoginDialog(
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp)
+                        shape = appInnerCardShape()
                     )
                 }
 
@@ -276,7 +288,7 @@ fun LoginDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                NothingAwareDivider()
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -297,7 +309,7 @@ fun LoginDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("auth_code_input"),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = appInnerCardShape()
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -334,7 +346,7 @@ fun LoginDialog(
 
                 // OAuth2 / PKCE Parameter Details Toggle
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
+                    shape = appInnerCardShape(),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     modifier = Modifier.fillMaxWidth()
                 ) {

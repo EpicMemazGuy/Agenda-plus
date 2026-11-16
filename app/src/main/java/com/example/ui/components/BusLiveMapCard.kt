@@ -134,7 +134,7 @@ fun BusLiveMapCard(
                     modifier = Modifier.weight(1f)
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
                         color = MaterialTheme.colorScheme.primaryContainer,
                         modifier = Modifier.size(40.dp)
                     ) {
@@ -216,7 +216,7 @@ fun BusLiveMapCard(
                         onValueChange = { lineInput = it },
                         label = { Text("Buslijn (bijv. 156 of 300)") },
                         singleLine = true,
-                        shape = RoundedCornerShape(14.dp),
+                        shape = appInnerCardShape(standard = 14.dp, nothing = 14.dp),
                         modifier = Modifier
                             .weight(1f)
                             .testTag("bus_line_input")
@@ -361,7 +361,7 @@ fun BusLiveMapCard(
             busTrackingState.nearestStop?.let { nearest ->
                 Spacer(modifier = Modifier.height(10.dp))
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = appInnerCardShape(standard = 16.dp, nothing = 16.dp),
                     color = MaterialTheme.colorScheme.primaryContainer,
                     border = nothingCardBorder(),
                     modifier = Modifier
@@ -444,13 +444,14 @@ fun BusLiveMapCard(
                     )
                 }
 
+                val mapShape = appInnerCardShape(standard = 16.dp, nothing = 16.dp)
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = mapShape,
                     border = nothingCardBorder(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(240.dp)
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(mapShape)
                         .testTag("bus_osm_webview_container")
                 ) {
                     AndroidView(
@@ -526,7 +527,7 @@ fun BusLiveMapCard(
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         upcomingStops.forEach { stop ->
                             Surface(
-                                shape = RoundedCornerShape(if (oneUiMode) 18.dp else 12.dp),
+                                shape = appInnerCardShape(standard = 12.dp, nothing = 12.dp),
                                 color = if (oneUiMode) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
                                 modifier = Modifier.fillMaxWidth()
                             ) {

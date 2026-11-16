@@ -21,6 +21,9 @@ import androidx.compose.ui.unit.dp
 import com.example.model.GradeItem
 import com.example.model.SubjectGradeSummary
 import com.example.ui.components.appCardShape
+import com.example.ui.components.appSheetContainerColor
+import com.example.ui.components.appSheetShape
+import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 import kotlin.math.round
 
@@ -63,7 +66,9 @@ fun WhatIfBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = appSheetShape(),
+        containerColor = appSheetContainerColor(),
+        tonalElevation = if (isOneUi85) 0.dp else BottomSheetDefaults.Elevation,
         modifier = Modifier.testTag("what_if_bottom_sheet")
     ) {
         Column(

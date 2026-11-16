@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -24,9 +25,12 @@ import com.example.model.TaskCategory
 import com.example.model.TaskPriority
 import com.example.model.TestPrepChecklist
 import com.example.model.isTestKeywordMatch
+import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
 import com.example.ui.components.appCardShape
+import com.example.ui.components.appScreenHorizontalPadding
+import com.example.ui.components.appThumbnailShape
 import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 
@@ -62,7 +66,10 @@ fun HuiswerkScreen(
     val totalCount = tasks.size
     val progressFraction = if (totalCount > 0) completedCount.toFloat() / totalCount.toFloat() else 0f
 
+    val oneUiInsets = LocalOneUiScreenInsets.current
+
     Scaffold(
+        containerColor = if (oneUiMode) Color.Transparent else MaterialTheme.colorScheme.background,
         modifier = modifier.testTag("huiswerk_screen"),
         floatingActionButton = {
             ExtendedFloatingActionButton(
@@ -71,7 +78,15 @@ fun HuiswerkScreen(
                 text = { Text("Taak toevoegen") },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.testTag("add_task_fab")
+                shape = if (oneUiMode) appCardShape() else FloatingActionButtonDefaults.extendedFabShape,
+                elevation = if (oneUiMode) {
+                    FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp)
+                } else {
+                    FloatingActionButtonDefaults.elevation()
+                },
+                modifier = Modifier
+                    .padding(bottom = oneUiInsets.calculateBottomPadding())
+                    .testTag("add_task_fab")
             )
         }
     ) { innerPadding ->
@@ -80,9 +95,12 @@ fun HuiswerkScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = appScreenHorizontalPadding()),
             verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(top = 12.dp, bottom = 80.dp)
+            contentPadding = PaddingValues(
+                top = oneUiInsets.calculateTopPadding() + 12.dp,
+                bottom = oneUiInsets.calculateBottomPadding() + 80.dp
+            )
         ) {
             if (oneUiMode) {
                 item(key = "oneui_huiswerk_header") {
@@ -142,7 +160,7 @@ fun HuiswerkScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
+                                .clip(appThumbnailShape(standard = 4.dp, nothing = 4.dp)),
                             color = MaterialTheme.colorScheme.primary,
                             trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                         )

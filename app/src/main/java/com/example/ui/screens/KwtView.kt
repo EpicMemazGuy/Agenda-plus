@@ -17,7 +17,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.model.KwtOption
 import com.example.model.KwtSlot
-import com.example.ui.components.isNothingOs
+import com.example.ui.components.LocalOneUiScreenInsets
+import com.example.ui.components.appCardShape
+import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appScreenHorizontalPadding
+import com.example.ui.components.appSheetContainerColor
+import com.example.ui.components.appSheetShape
+import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 import kotlinx.coroutines.launch
 
@@ -32,13 +38,17 @@ fun KwtView(
     var activeEnrollmentId by remember { mutableStateOf<Long?>(null) }
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
 
+    val oneUiInsets = LocalOneUiScreenInsets.current
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = appScreenHorizontalPadding())
             .testTag("kwt_view"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(top = 8.dp, bottom = 28.dp)
+        contentPadding = PaddingValues(
+            top = 8.dp,
+            bottom = oneUiInsets.calculateBottomPadding() + 28.dp
+        )
     ) {
         feedbackMessage?.let { msg ->
             item(key = "kwt_feedback") {
@@ -61,7 +71,7 @@ fun KwtView(
         if (kwtSlots.isEmpty()) {
             item(key = "kwt_empty") {
                 Surface(
-                    shape = RoundedCornerShape(if (isNothingOs) 24.dp else 20.dp),
+                    shape = appCardShape(standard = 20.dp, nothing = 24.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     border = nothingCardBorder(),
                     modifier = Modifier
@@ -126,9 +136,8 @@ private fun KwtSlotCard(
     activeEnrollmentId: Long?,
     onSelectOption: (KwtOption) -> Unit
 ) {
-    val nothingMode = isNothingOs
     Card(
-        shape = RoundedCornerShape(if (nothingMode) 24.dp else 20.dp),
+        shape = appCardShape(standard = 20.dp, nothing = 24.dp),
         border = nothingCardBorder(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -189,7 +198,7 @@ private fun KwtOptionRow(
     onChoose: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(14.dp),
+        shape = appInnerCardShape(standard = 14.dp, nothing = 14.dp),
         color = if (option.isEnrolled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
         border = nothingCardBorder(),
         modifier = Modifier.fillMaxWidth()
@@ -280,14 +289,16 @@ fun KwtPickerBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = appSheetShape(),
+        containerColor = appSheetContainerColor(),
+        tonalElevation = if (isOneUi85) 0.dp else BottomSheetDefaults.Elevation,
         modifier = Modifier.testTag("kwt_picker_bottom_sheet")
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = appScreenHorizontalPadding(standard = 20.dp))
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {

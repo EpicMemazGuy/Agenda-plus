@@ -123,31 +123,32 @@ private fun oneUiColorScheme(
         val primary = dynamicBase?.primary ?: OneUiBlueDark
         val secondary = dynamicBase?.secondary ?: Color(0xFF7CB4FF)
         val tertiary = dynamicBase?.tertiary ?: Color(0xFF66D1FF)
-        val cardSurface = lerp(OneUiDarkCardBase, primary, 0.06f)
-        val elevatedSurface = lerp(OneUiDarkElevatedBase, primary, 0.08f)
-        val highestSurface = lerp(OneUiDarkHighestBase, primary, 0.10f)
+        val cardSurface = lerp(OneUiDarkCardBase, primary, 0.05f)
+        val elevatedSurface = lerp(OneUiDarkElevatedBase, primary, 0.07f)
+        val highestSurface = lerp(OneUiDarkHighestBase, primary, 0.09f)
+        val onSurfacePrimary = Color(0xFFF5F6FA)
 
         darkColorScheme(
             primary = primary,
             onPrimary = Color.Black,
-            primaryContainer = lerp(OneUiDarkCardBase, primary, 0.24f),
+            primaryContainer = lerp(OneUiDarkCardBase, primary, 0.22f),
             onPrimaryContainer = Color.White,
             secondary = secondary,
             onSecondary = Color.Black,
-            secondaryContainer = lerp(OneUiDarkCardBase, secondary, 0.20f),
+            secondaryContainer = lerp(OneUiDarkCardBase, secondary, 0.18f),
             onSecondaryContainer = Color(0xFFF2F4F8),
             tertiary = tertiary,
             onTertiary = Color.Black,
-            tertiaryContainer = lerp(OneUiDarkCardBase, tertiary, 0.22f),
+            tertiaryContainer = lerp(OneUiDarkCardBase, tertiary, 0.20f),
             onTertiaryContainer = Color.White,
             background = Color.Black,
-            onBackground = Color(0xFFF5F6FA),
+            onBackground = onSurfacePrimary,
             surface = Color.Black,
-            onSurface = Color(0xFFF5F6FA),
+            onSurface = onSurfacePrimary,
             surfaceVariant = elevatedSurface,
-            onSurfaceVariant = Color(0xFF9EA3B0),
-            outline = Color.White.copy(alpha = 0.09f),
-            outlineVariant = Color.White.copy(alpha = 0.08f),
+            onSurfaceVariant = onSurfacePrimary.copy(alpha = 0.65f),
+            outline = OneUiDividerDark,
+            outlineVariant = OneUiDividerDark,
             surfaceContainerLowest = Color.Black,
             surfaceContainerLow = cardSurface,
             surfaceContainer = cardSurface,
@@ -162,31 +163,32 @@ private fun oneUiColorScheme(
         val primary = dynamicBase?.primary ?: OneUiBlueLight
         val secondary = dynamicBase?.secondary ?: Color(0xFF3E91FF)
         val tertiary = dynamicBase?.tertiary ?: Color(0xFF0078D4)
-        val lightCanvas = lerp(OneUiLightCanvasBase, primary, 0.03f)
-        val elevatedTint = lerp(OneUiLightElevatedTintBase, primary, 0.05f)
-        val highestTint = lerp(OneUiLightHighestTintBase, primary, 0.08f)
+        val lightCanvas = lerp(OneUiLightCanvasBase, primary, 0.025f)
+        val elevatedTint = lerp(OneUiLightElevatedTintBase, primary, 0.04f)
+        val highestTint = lerp(OneUiLightHighestTintBase, primary, 0.06f)
+        val onSurfacePrimary = Color(0xFF101318)
 
         lightColorScheme(
             primary = primary,
             onPrimary = Color.White,
-            primaryContainer = lerp(Color.White, primary, 0.14f),
+            primaryContainer = lerp(Color.White, primary, 0.13f),
             onPrimaryContainer = Color(0xFF0B1C36),
             secondary = secondary,
             onSecondary = Color.White,
-            secondaryContainer = lerp(Color.White, secondary, 0.12f),
+            secondaryContainer = lerp(Color.White, secondary, 0.11f),
             onSecondaryContainer = Color(0xFF18202C),
             tertiary = tertiary,
             onTertiary = Color.White,
-            tertiaryContainer = lerp(Color.White, tertiary, 0.14f),
+            tertiaryContainer = lerp(Color.White, tertiary, 0.13f),
             onTertiaryContainer = Color(0xFF092238),
             background = lightCanvas,
-            onBackground = Color(0xFF101318),
+            onBackground = onSurfacePrimary,
             surface = lightCanvas,
-            onSurface = Color(0xFF101318),
+            onSurface = onSurfacePrimary,
             surfaceVariant = elevatedTint,
-            onSurfaceVariant = Color(0xFF5D6472),
-            outline = Color.Black.copy(alpha = 0.06f),
-            outlineVariant = Color.Black.copy(alpha = 0.06f),
+            onSurfaceVariant = onSurfacePrimary.copy(alpha = 0.65f),
+            outline = OneUiDividerLight,
+            outlineVariant = OneUiDividerLight,
             surfaceContainerLowest = Color.White,
             surfaceContainerLow = Color.White,
             surfaceContainer = Color.White,

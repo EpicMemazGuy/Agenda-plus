@@ -12,15 +12,33 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -34,6 +52,11 @@ import com.example.ui.AppTab
 import com.example.ui.MeerSection
 import com.example.ui.components.AppBottomNavigationBar
 import com.example.ui.components.AppTopBar
+import com.example.ui.components.LocalOneUiBackdropState
+import com.example.ui.components.LocalOneUiScreenInsets
+import com.example.ui.components.OneUiBackdropState
+import com.example.ui.components.oneUiSpring
+import com.example.ui.components.oneUiTween
 import com.example.ui.dialogs.AddTaskDialog
 import com.example.ui.dialogs.CustomScheduleItemDialog
 import com.example.ui.dialogs.GradeExportSheet
@@ -296,59 +319,59 @@ fun AgendaPlusApp(
                 }
             } else null
 
-            Scaffold(
-                modifier = Modifier.fillMaxSize(),
-                topBar = {
-                    AppTopBar(
-                        session = session,
-                        lastSyncTime = lastSyncTime,
-                        isRefreshing = isRefreshing,
-                        agendaStyle = agendaStyle,
-                        uiScale = uiScale,
-                        appThemeStyle = appThemeStyle,
-                        darkModePreference = darkModePreference,
-                        collapsedTitle = collapsedTitle,
-                        uitvalNotificationsEnabled = uitvalNotificationsEnabled,
-                        gradeNotificationsEnabled = gradeNotificationsEnabled,
-                        testNotificationsEnabled = testNotificationsEnabled,
-                        gradeUnboxingEnabled = gradeUnboxingEnabled,
-                        gradeUnboxingMode = gradeUnboxingMode,
-                        isOffline = isEffectivelyOffline,
-                        onRefreshClick = { viewModel.refreshAll() },
-                        onOpenRawConsole = { viewModel.openRawConsole() },
-                        onSetAgendaStyle = { viewModel.setAgendaStyle(it) },
-                        onSetUiScale = { viewModel.setUiScale(it) },
-                        onSetAppThemeStyle = { viewModel.setAppThemeStyle(it) },
-                        onSetDarkModePreference = { viewModel.setDarkModePreference(it) },
-                        onSetUitvalNotifications = { enabled ->
-                            viewModel.setUitvalNotificationsEnabled(enabled)
-                            if (enabled) requestNotifPermissionIfNeeded()
-                        },
-                        onSetGradeNotifications = { enabled ->
-                            viewModel.setGradeNotificationsEnabled(enabled)
-                            if (enabled) requestNotifPermissionIfNeeded()
-                        },
-                        onSetTestNotifications = { enabled ->
-                            viewModel.setTestNotificationsEnabled(enabled)
-                            if (enabled) requestNotifPermissionIfNeeded()
-                        },
-                        onSetGradeUnboxingEnabled = { viewModel.setGradeUnboxingEnabled(it) },
-                        onSetGradeUnboxingMode = { viewModel.setGradeUnboxingMode(it) },
-                        onTestUitvalNotification = { viewModel.sendTestUitvalNotification() },
-                        onOpenSetupWizard = { viewModel.reopenOnboarding() },
-                        onResetAndLogout = { viewModel.resetAppAndLogout() }
-                    )
-                },
-                bottomBar = {
-                    AppBottomNavigationBar(
-                        currentTab = currentTab,
-                        onTabSelected = { viewModel.selectTab(it) }
-                    )
-                }
-            ) { innerPadding ->
-                val contentModifier = Modifier.padding(innerPadding)
+            val topBarComposable: @Composable (Modifier) -> Unit = { barMod ->
+                AppTopBar(
+                    session = session,
+                    lastSyncTime = lastSyncTime,
+                    isRefreshing = isRefreshing,
+                    agendaStyle = agendaStyle,
+                    uiScale = uiScale,
+                    appThemeStyle = appThemeStyle,
+                    darkModePreference = darkModePreference,
+                    collapsedTitle = collapsedTitle,
+                    uitvalNotificationsEnabled = uitvalNotificationsEnabled,
+                    gradeNotificationsEnabled = gradeNotificationsEnabled,
+                    testNotificationsEnabled = testNotificationsEnabled,
+                    gradeUnboxingEnabled = gradeUnboxingEnabled,
+                    gradeUnboxingMode = gradeUnboxingMode,
+                    isOffline = isEffectivelyOffline,
+                    onRefreshClick = { viewModel.refreshAll() },
+                    onOpenRawConsole = { viewModel.openRawConsole() },
+                    onSetAgendaStyle = { viewModel.setAgendaStyle(it) },
+                    onSetUiScale = { viewModel.setUiScale(it) },
+                    onSetAppThemeStyle = { viewModel.setAppThemeStyle(it) },
+                    onSetDarkModePreference = { viewModel.setDarkModePreference(it) },
+                    onSetUitvalNotifications = { enabled ->
+                        viewModel.setUitvalNotificationsEnabled(enabled)
+                        if (enabled) requestNotifPermissionIfNeeded()
+                    },
+                    onSetGradeNotifications = { enabled ->
+                        viewModel.setGradeNotificationsEnabled(enabled)
+                        if (enabled) requestNotifPermissionIfNeeded()
+                    },
+                    onSetTestNotifications = { enabled ->
+                        viewModel.setTestNotificationsEnabled(enabled)
+                        if (enabled) requestNotifPermissionIfNeeded()
+                    },
+                    onSetGradeUnboxingEnabled = { viewModel.setGradeUnboxingEnabled(it) },
+                    onSetGradeUnboxingMode = { viewModel.setGradeUnboxingMode(it) },
+                    onTestUitvalNotification = { viewModel.sendTestUitvalNotification() },
+                    onOpenSetupWizard = { viewModel.reopenOnboarding() },
+                    onResetAndLogout = { viewModel.resetAppAndLogout() },
+                    modifier = barMod
+                )
+            }
 
-                when (currentTab) {
+            val bottomBarComposable: @Composable (Modifier) -> Unit = { navMod ->
+                AppBottomNavigationBar(
+                    currentTab = currentTab,
+                    onTabSelected = { viewModel.selectTab(it) },
+                    modifier = navMod
+                )
+            }
+
+            val renderTabContent: @Composable (AppTab, Modifier) -> Unit = { tab, contentModifier ->
+                when (tab) {
                     AppTab.TODAY -> {
                         TodayFeedScreen(
                             appointments = appointments,
@@ -561,6 +584,82 @@ fun AgendaPlusApp(
                             modifier = contentModifier
                         )
                     }
+                }
+            }
+
+            if (appThemeStyle == AppThemeStyle.ONE_UI) {
+                val densityNow = LocalDensity.current
+                val backdropLayer = rememberGraphicsLayer()
+                var contentOriginInRoot by remember { mutableStateOf(Offset.Zero) }
+                var topBarHeightDp by remember { mutableStateOf(96.dp) }
+                var bottomBarHeightDp by remember { mutableStateOf(88.dp) }
+
+                CompositionLocalProvider(
+                    LocalOneUiBackdropState provides OneUiBackdropState(
+                        graphicsLayer = backdropLayer,
+                        contentOriginInRoot = contentOriginInRoot
+                    ),
+                    LocalOneUiScreenInsets provides PaddingValues(
+                        top = topBarHeightDp,
+                        bottom = bottomBarHeightDp
+                    )
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .onGloballyPositioned { coords ->
+                                    contentOriginInRoot = coords.positionInRoot()
+                                }
+                                .drawWithContent {
+                                    backdropLayer.record {
+                                        this@drawWithContent.drawContent()
+                                    }
+                                    drawLayer(backdropLayer)
+                                }
+                        ) {
+                            AnimatedContent(
+                                targetState = currentTab,
+                                transitionSpec = {
+                                    (fadeIn(oneUiTween(280)) + scaleIn(
+                                        initialScale = 0.985f,
+                                        animationSpec = oneUiSpring()
+                                    )) togetherWith fadeOut(oneUiTween(180))
+                                },
+                                label = "oneui_tab_transition"
+                            ) { activeTab ->
+                                renderTabContent(activeTab, Modifier.fillMaxSize())
+                            }
+                        }
+
+                        topBarComposable(
+                            Modifier
+                                .align(Alignment.TopCenter)
+                                .onSizeChanged { size ->
+                                    topBarHeightDp = with(densityNow) { size.height.toDp() }
+                                }
+                        )
+
+                        bottomBarComposable(
+                            Modifier
+                                .align(Alignment.BottomCenter)
+                                .onSizeChanged { size ->
+                                    bottomBarHeightDp = with(densityNow) { size.height.toDp() }
+                                }
+                        )
+                    }
+                }
+            } else {
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    topBar = { topBarComposable(Modifier) },
+                    bottomBar = { bottomBarComposable(Modifier) }
+                ) { innerPadding ->
+                    renderTabContent(currentTab, Modifier.padding(innerPadding))
                 }
             }
         }

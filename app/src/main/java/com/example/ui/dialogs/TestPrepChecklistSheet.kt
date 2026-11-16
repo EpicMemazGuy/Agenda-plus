@@ -22,6 +22,11 @@ import androidx.compose.ui.unit.dp
 import com.example.model.TestPrepChecklist
 import com.example.ui.components.OneUiPillBadge
 import com.example.ui.components.appCardShape
+import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appScreenHorizontalPadding
+import com.example.ui.components.appSheetContainerColor
+import com.example.ui.components.appSheetShape
+import com.example.ui.components.appThumbnailShape
 import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 
@@ -39,13 +44,15 @@ fun TestPrepChecklistSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = appSheetShape(),
+        containerColor = appSheetContainerColor(),
+        tonalElevation = if (isOneUi85) 0.dp else BottomSheetDefaults.Elevation,
         modifier = Modifier.testTag("test_prep_checklist_sheet")
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = appScreenHorizontalPadding(standard = 20.dp))
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -59,7 +66,7 @@ fun TestPrepChecklistSheet(
                     modifier = Modifier.weight(1f)
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
                         color = MaterialTheme.colorScheme.primaryContainer,
                         modifier = Modifier.size(40.dp)
                     ) {
@@ -171,8 +178,9 @@ fun TestPrepChecklistSheet(
                     }
                 } else {
                     items(checklist.topics, key = { it.id }) { topic ->
+                        val topicShape = appInnerCardShape(standard = 14.dp, nothing = 18.dp)
                         Surface(
-                            shape = appCardShape(standard = 14.dp, nothing = 18.dp),
+                            shape = topicShape,
                             color = if (topic.isChecked) {
                                 MaterialTheme.colorScheme.surfaceContainerLowest
                             } else {
@@ -181,7 +189,7 @@ fun TestPrepChecklistSheet(
                             border = nothingCardBorder(),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(appCardShape(standard = 14.dp, nothing = 18.dp))
+                                .clip(topicShape)
                                 .clickable { onToggleTopic(topic.id) }
                                 .testTag("test_prep_topic_${topic.id}")
                         ) {

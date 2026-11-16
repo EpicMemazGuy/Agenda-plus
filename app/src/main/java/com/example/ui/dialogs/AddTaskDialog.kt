@@ -17,6 +17,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.example.model.TaskCategory
 import com.example.model.TaskPriority
+import com.example.ui.components.appCardShape
+import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appSheetContainerColor
+import com.example.ui.components.isOneUi85
+import com.example.ui.components.nothingCardBorder
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,9 +42,10 @@ fun AddTaskDialog(
                 .fillMaxWidth(0.92f)
                 .wrapContentHeight()
                 .testTag("add_task_dialog"),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 6.dp
+            shape = appCardShape(standard = 28.dp, nothing = 26.dp),
+            color = appSheetContainerColor(),
+            border = nothingCardBorder(),
+            tonalElevation = if (isOneUi85) 0.dp else 6.dp
         ) {
             Column(
                 modifier = Modifier

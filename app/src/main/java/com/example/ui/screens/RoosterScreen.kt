@@ -1,6 +1,10 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -35,16 +39,22 @@ import com.example.model.TestPrepChecklist
 import com.example.model.cleanSchoolText
 import com.example.model.isTestKeywordMatch
 import com.example.ui.components.CustomScheduleItemCard
+import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
 import com.example.ui.components.ScheduleLoadingSkeleton
 import com.example.ui.components.appCardShape
+import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appScreenHorizontalPadding
+import com.example.ui.components.appThumbnailShape
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 import com.example.ui.components.oneUiPillContainerColor
 import com.example.ui.components.oneUiPillContentColor
+import com.example.ui.components.oneUiSpring
+import com.example.ui.components.oneUiTween
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -199,14 +209,18 @@ fun RoosterScreen(
         }
     }
 
+    val oneUiInsets = LocalOneUiScreenInsets.current
     LazyColumn(
         state = listState,
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = if (agendaStyle == AgendaStyle.COMPACT) 12.dp else 16.dp)
+            .padding(horizontal = appScreenHorizontalPadding(if (agendaStyle == AgendaStyle.COMPACT) 12.dp else 16.dp))
             .testTag("rooster_screen"),
         verticalArrangement = Arrangement.spacedBy(if (agendaStyle == AgendaStyle.COMPACT) 10.dp else 14.dp),
-        contentPadding = PaddingValues(top = 10.dp, bottom = 24.dp)
+        contentPadding = PaddingValues(
+            top = oneUiInsets.calculateTopPadding() + 10.dp,
+            bottom = oneUiInsets.calculateBottomPadding() + 24.dp
+        )
     ) {
         // 1. Live Week Banner & Week Navigation
         item {
@@ -344,13 +358,14 @@ fun RoosterScreen(
                 ) {
                     items(days) { day ->
                         val isSelected = selectedDay == day.dayNumber
+                        val dayShape = appInnerCardShape(standard = 16.dp, nothing = 16.dp)
                         Surface(
                             modifier = Modifier
                                 .width(if (agendaStyle == AgendaStyle.COMPACT) 62.dp else 68.dp)
-                                .clip(RoundedCornerShape(16.dp))
+                                .clip(dayShape)
                                 .clickable { onSelectDay(day.dayNumber) }
                                 .testTag("day_selector_${day.dayNumber}"),
-                            shape = RoundedCornerShape(16.dp),
+                            shape = dayShape,
                             border = nothingCardBorder(isAlert = day.hasDisruption && !isSelected),
                             color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
                             contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
@@ -521,9 +536,9 @@ fun RoosterScreen(
                 if (viewMode != 0) {
                     item(key = "header_$dayHeader") {
                         Text(
-                            text = dayHeader.uppercase(),
+                            text = if (oneUiMode) dayHeader else dayHeader.uppercase(),
                             style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = if (oneUiMode) FontWeight.Medium else FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 4.dp, start = 4.dp)
                         )
@@ -550,7 +565,8 @@ fun RoosterScreen(
                                 if (idx < dayAppointments.lastIndex) {
                                     NothingAwareDivider(
                                         color = MaterialTheme.colorScheme.surfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 12.dp)
+                                        insetStart = if (oneUiMode) 52.dp else 0.dp,
+                                        modifier = if (oneUiMode) Modifier else Modifier.padding(horizontal = 12.dp)
                                     )
                                 }
                             }
@@ -581,10 +597,11 @@ fun RoosterScreen(
                 if (dayTimeline.isNotEmpty()) {
                     if (viewMode != 0) {
                         item(key = "spacious_header_${dayItem.dateIso}") {
+                            val headerLabel = "${dayItem.nameDutch} ${dayItem.dateString}"
                             Text(
-                                text = "${dayItem.nameDutch} ${dayItem.dateString}".uppercase(),
+                                text = if (oneUiMode) headerLabel else headerLabel.uppercase(),
                                 style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = if (oneUiMode) FontWeight.Medium else FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(top = 4.dp, start = 4.dp)
                             )
@@ -690,7 +707,7 @@ fun CompactRoosterRow(
 
             // Compact period chip
             Surface(
-                shape = RoundedCornerShape(8.dp),
+                shape = appThumbnailShape(standard = 8.dp, nothing = 8.dp),
                 color = if (isCanceled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceContainerHigh,
                 modifier = Modifier.size(26.dp)
             ) {
@@ -839,9 +856,13 @@ fun CompactRoosterRow(
         }
 
         // Expandable clean homework strip (only shown when non-null)
-        AnimatedVisibility(visible = showHomework && cleanHomework != null) {
+        AnimatedVisibility(
+            visible = showHomework && cleanHomework != null,
+            enter = expandVertically(oneUiSpring()) + fadeIn(oneUiTween()),
+            exit = shrinkVertically(oneUiSpring()) + fadeOut(oneUiTween())
+        ) {
             Surface(
-                shape = RoundedCornerShape(10.dp),
+                shape = appInnerCardShape(standard = 10.dp, nothing = 10.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -890,7 +911,7 @@ fun RoosterPeriodCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
                     color = if (isCanceled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(44.dp)
                 ) {
@@ -994,7 +1015,7 @@ fun RoosterPeriodCard(
             if (cleanHomework != null) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = appInnerCardShape(standard = 12.dp, nothing = 12.dp),
                     color = if (isCanceled) MaterialTheme.colorScheme.surface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceContainer,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -1130,7 +1151,7 @@ private fun UpcomingTestCard(
             if (test.description.isNotBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = appInnerCardShape(standard = 12.dp, nothing = 12.dp),
                     color = MaterialTheme.colorScheme.surfaceContainer,
                     modifier = Modifier.fillMaxWidth()
                 ) {

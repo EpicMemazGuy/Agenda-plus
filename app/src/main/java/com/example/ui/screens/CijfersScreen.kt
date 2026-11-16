@@ -1,6 +1,10 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,16 +25,21 @@ import androidx.compose.ui.unit.dp
 import com.example.model.GradeItem
 import com.example.model.GradeScopeFilter
 import com.example.model.SubjectGradeSummary
+import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.NothingConcentricGradeRing
 import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
 import com.example.ui.components.appCardShape
+import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appScreenHorizontalPadding
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 import com.example.ui.components.oneUiPillContainerColor
 import com.example.ui.components.oneUiPillContentColor
+import com.example.ui.components.oneUiSpring
+import com.example.ui.components.oneUiTween
 import kotlin.math.round
 
 fun filterGradeSummariesByScope(
@@ -104,14 +113,18 @@ fun CijfersScreen(
     val failingSubjects = filteredSummaries.count { !it.isPassingAverage }
     val passingSubjects = filteredSummaries.count { it.isPassingAverage }
 
+    val oneUiInsets = LocalOneUiScreenInsets.current
     LazyColumn(
         state = listState,
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = appScreenHorizontalPadding())
             .testTag("cijfers_screen"),
         verticalArrangement = Arrangement.spacedBy(14.dp),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp)
+        contentPadding = PaddingValues(
+            top = oneUiInsets.calculateTopPadding() + 12.dp,
+            bottom = oneUiInsets.calculateBottomPadding() + 24.dp
+        )
     ) {
         if (oneUiMode) {
             item(key = "oneui_cijfers_header") {
@@ -399,10 +412,11 @@ fun SubjectGradeCard(
         )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            val rowTouchShape = appInnerCardShape(standard = 12.dp, nothing = 12.dp)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(rowTouchShape)
                     .clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -458,21 +472,29 @@ fun SubjectGradeCard(
             }
 
             // Expanded Grades History & What-If Button
-            AnimatedVisibility(visible = expanded) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(oneUiSpring()) + fadeIn(oneUiTween()),
+                exit = shrinkVertically(oneUiSpring()) + fadeOut(oneUiTween())
+            ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    NothingAwareDivider(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        insetStart = if (isOneUi85) 12.dp else 0.dp
+                    )
 
-                    summary.grades.forEach { grade ->
+                    summary.grades.forEachIndexed { gradeIdx, grade ->
                         val isUnrevealed = gradeUnboxingEnabled && grade.id !in unboxedGradeIds
+                        val gradeTouchShape = appInnerCardShape(standard = 10.dp, nothing = 10.dp)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
+                                .clip(gradeTouchShape)
                                 .clickable(enabled = gradeUnboxingEnabled) { onUnboxGrade(grade) }
                                 .padding(vertical = 4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -526,6 +548,9 @@ fun SubjectGradeCard(
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                                 )
                             }
+                        }
+                        if (isOneUi85 && gradeIdx < summary.grades.lastIndex) {
+                            NothingAwareDivider(insetStart = 12.dp)
                         }
                     }
 

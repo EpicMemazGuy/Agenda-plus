@@ -817,6 +817,70 @@ class ExampleRobolectricTest {
         store.setAppThemeStyle(com.example.model.AppThemeStyle.ONE_UI)
         com.example.widget.WidgetUpdater.updateAllWidgets(context)
     }
+
+    @Test
+    fun test_one_ui_design_rules_geometry_tokens_typography_and_motion() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val store = com.example.data.AppPreferencesStore(context)
+
+        // 1. Default theme lock remains Material You (STANDARD)
+        assertEquals(com.example.model.AppThemeStyle.STANDARD, store.getAppThemeStyle())
+
+        // 2. Squircle superellipse geometry produces valid generic outlines & equality semantics
+        val density = androidx.compose.ui.unit.Density(3.0f, 1.0f)
+        val focusShape = com.example.ui.components.SquircleShape(androidx.compose.ui.unit.Dp(26f))
+        val innerShape = com.example.ui.components.SquircleShape(androidx.compose.ui.unit.Dp(14f))
+        val thumbShape = com.example.ui.components.SquircleShape(androidx.compose.ui.unit.Dp(9f))
+        val sheetShape = com.example.ui.components.SquircleShape(androidx.compose.ui.unit.Dp(26f), topOnly = true)
+
+        assertTrue(
+            focusShape.createOutline(
+                androidx.compose.ui.geometry.Size(300f, 180f),
+                androidx.compose.ui.unit.LayoutDirection.Ltr,
+                density
+            ) is androidx.compose.ui.graphics.Outline.Generic
+        )
+        assertTrue(
+            innerShape.createOutline(
+                androidx.compose.ui.geometry.Size(160f, 90f),
+                androidx.compose.ui.unit.LayoutDirection.Ltr,
+                density
+            ) is androidx.compose.ui.graphics.Outline.Generic
+        )
+        assertTrue(
+            thumbShape.createOutline(
+                androidx.compose.ui.geometry.Size(48f, 48f),
+                androidx.compose.ui.unit.LayoutDirection.Ltr,
+                density
+            ) is androidx.compose.ui.graphics.Outline.Generic
+        )
+        assertEquals(focusShape, com.example.ui.components.SquircleShape(androidx.compose.ui.unit.Dp(26f)))
+        assertFalse(focusShape == sheetShape)
+
+        // 3. One UI Color & Surface Architecture tokens
+        assertEquals(androidx.compose.ui.graphics.Color(0xFF0381FE), com.example.ui.theme.OneUiBlueLight)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFF3E91FF), com.example.ui.theme.OneUiBlueDark)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFFF5F5F7), com.example.ui.theme.OneUiLightCanvasBase)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFF19191C), com.example.ui.theme.OneUiDarkCardBase)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFFE6E6E6), com.example.ui.theme.OneUiDividerLight)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFF2C2C2E), com.example.ui.theme.OneUiDividerDark)
+
+        // 4. Typography hierarchy: Light-to-Regular humanist display + Roboto dense labels
+        assertEquals(androidx.compose.ui.unit.TextUnit(34f, androidx.compose.ui.unit.TextUnitType.Sp), com.example.ui.theme.OneUiTypography.displayLarge.fontSize)
+        assertEquals(androidx.compose.ui.text.font.FontWeight.Light, com.example.ui.theme.OneUiTypography.displayLarge.fontWeight)
+        assertEquals(com.example.ui.theme.OneUiDisplayFontFamily, com.example.ui.theme.OneUiTypography.displayLarge.fontFamily)
+
+        assertEquals(androidx.compose.ui.unit.TextUnit(32f, androidx.compose.ui.unit.TextUnitType.Sp), com.example.ui.theme.OneUiTypography.displayMedium.fontSize)
+        assertEquals(androidx.compose.ui.unit.TextUnit(18f, androidx.compose.ui.unit.TextUnitType.Sp), com.example.ui.theme.OneUiTypography.titleLarge.fontSize)
+        assertEquals(androidx.compose.ui.unit.TextUnit(17f, androidx.compose.ui.unit.TextUnitType.Sp), com.example.ui.theme.OneUiTypography.titleMedium.fontSize)
+        assertEquals(androidx.compose.ui.text.font.FontFamily.SansSerif, com.example.ui.theme.OneUiTypography.titleMedium.fontFamily)
+        assertEquals(androidx.compose.ui.unit.TextUnit(14f, androidx.compose.ui.unit.TextUnitType.Sp), com.example.ui.theme.OneUiTypography.bodyMedium.fontSize)
+        assertEquals(androidx.compose.ui.unit.TextUnit(13f, androidx.compose.ui.unit.TextUnitType.Sp), com.example.ui.theme.OneUiTypography.bodySmall.fontSize)
+
+        // 5. Deceleration curve is non-linear (smooth fast-out, slow-in)
+        assertTrue(com.example.ui.components.OneUiDecelerationEasing.transform(0.25f) > 0.5f)
+    }
 }
+
 
 

@@ -125,7 +125,7 @@ fun CustomScheduleItemCard(
                 Text(
                     text = item.title,
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = if (isOneUi85) FontWeight.Medium else FontWeight.Bold,
                     textDecoration = if (item.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,

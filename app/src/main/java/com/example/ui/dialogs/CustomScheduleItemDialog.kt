@@ -18,6 +18,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.example.data.db.CustomScheduleItem
 import com.example.ui.components.appCardShape
+import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appScreenHorizontalPadding
+import com.example.ui.components.appSheetContainerColor
+import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 
 private val WEEKDAY_OPTIONS = listOf(
@@ -73,8 +77,9 @@ fun CustomScheduleItemDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = appCardShape(standard = 24.dp, nothing = 26.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = appSheetContainerColor(),
             border = nothingCardBorder(),
+            tonalElevation = if (isOneUi85) 0.dp else 6.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("custom_schedule_item_dialog")
@@ -83,7 +88,7 @@ fun CustomScheduleItemDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
+                    .padding(appScreenHorizontalPadding(standard = 20.dp)),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(

@@ -95,12 +95,14 @@ val NothingOnRedContainer = Color(0xFFFFDAD8)
 // ============================================================================
 val OneUiBlueLight = Color(0xFF0381FE)
 val OneUiBlueDark = Color(0xFF3E91FF)
-val OneUiDarkCardBase = Color(0xFF17171A)
-val OneUiDarkElevatedBase = Color(0xFF202025)
-val OneUiDarkHighestBase = Color(0xFF2B2B31)
-val OneUiLightCanvasBase = Color(0xFFF6F6F8)
-val OneUiLightElevatedTintBase = Color(0xFFEBEBF0)
-val OneUiLightHighestTintBase = Color(0xFFE1E1E8)
+val OneUiDarkCardBase = Color(0xFF19191C)         // #17171A to #1C1C1E dark charcoal focus blocks
+val OneUiDarkElevatedBase = Color(0xFF212125)
+val OneUiDarkHighestBase = Color(0xFF2C2C32)
+val OneUiLightCanvasBase = Color(0xFFF5F5F7)      // #F2F2F2 to #F6F6F8 cool off-white canvas
+val OneUiLightElevatedTintBase = Color(0xFFEBECEF)
+val OneUiLightHighestTintBase = Color(0xFFE1E3E8)
+val OneUiDividerLight = Color(0xFFE6E6E6)         // Ultra-thin 1px light hairline divider
+val OneUiDividerDark = Color(0xFF2C2C2E)          // Ultra-thin 1px dark hairline divider
 val OneUiErrorRedLight = Color(0xFFD93025)
 val OneUiErrorRedDark = Color(0xFFFF5E57)
 

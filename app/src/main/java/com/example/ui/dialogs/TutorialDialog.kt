@@ -17,7 +17,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.example.ui.components.isNothingOs
+import com.example.ui.components.appCardShape
+import com.example.ui.components.appSheetContainerColor
+import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 
 private data class TutorialStep(
@@ -68,16 +70,15 @@ fun TutorialDialog(
 
     var currentStep by remember { mutableIntStateOf(0) }
     val step = steps[currentStep]
-    val nothingMode = isNothingOs
-
     Dialog(onDismissRequest = onDismissAndComplete) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("tutorial_dialog"),
-            shape = RoundedCornerShape(if (nothingMode) 26.dp else 24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            border = nothingCardBorder()
+            shape = appCardShape(standard = 24.dp, nothing = 26.dp),
+            color = appSheetContainerColor(),
+            border = nothingCardBorder(),
+            tonalElevation = if (isOneUi85) 0.dp else 6.dp
         ) {
             Column(
                 modifier = Modifier.padding(22.dp),

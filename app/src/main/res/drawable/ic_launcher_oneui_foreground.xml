@@ -1,8 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:width="66dp"
-        android:height="66dp"
-        android:drawable="@drawable/oneui_agenda_icon_1794766439349"
-        android:gravity="center" />
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Pure white superellipse ("squircle") inner card silhouette, zero 3D/gradients -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,23 C73,23 85,23 85,54 C85,85 73,85 54,85 C35,85 23,85 23,54 C23,23 35,23 54,23 Z" />
+    <!-- Flat front-facing calendar/agenda strokes (uniform 4dp on 108dp canvas = ~1.8dp scaled), rounded caps & miter corners -->
+    <path
+        android:pathData="M37,43 H71 V70 H37 Z"
+        android:strokeColor="#0381FE"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="miter"
+        android:strokeWidth="4.2" />
+    <path
+        android:pathData="M37,51 H71 M46,36 V43 M62,36 V43"
+        android:strokeColor="#0381FE"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="miter"
+        android:strokeWidth="4.2" />
+    <path
+        android:pathData="M54,56.5 V65.5 M49.5,61 H58.5"
+        android:strokeColor="#0381FE"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="miter"
+        android:strokeWidth="4.2" />
+</vector>

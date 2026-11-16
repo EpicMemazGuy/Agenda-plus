@@ -76,7 +76,31 @@ class FirebaseSyncService(private val context: Context) {
         credentialManager: CredentialManager
     ): Result<Unit> {
         return try {
-            val clientId = context.getString(R.string.default_web_client_id)
+            // Google Services generates this resource from app/google-services.json. Resolve it
+            // dynamically so builds without Firebase configuration still compile; sign-in then
+            // reports a useful configuration error instead of failing at compile time.
+            val clientIdResourceId = context.resources.getIdentifier(
+                "default_web_client_id",
+                "string",
+                context.packageName
+            )
+            if (clientIdResourceId == 0) {
+                return Result.failure(
+                    IllegalStateException(
+                        "Google Sign-In is not configured. Add the Firebase google-services.json " +
+                            "for this app to app/google-services.json."
+                    )
+                )
+            }
+            val clientId = context.getString(clientIdResourceId)
+            if (clientId.isBlank()) {
+                return Result.failure(
+                    IllegalStateException(
+                        "Google Sign-In is not configured. The Firebase web client ID is empty."
+                    )
+                )
+            }
+
             val signInOption = com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption.Builder(serverClientId = clientId)
                 .build()
             val request = GetCredentialRequest.Builder()

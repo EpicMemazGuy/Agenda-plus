@@ -26,6 +26,10 @@ import android.content.Intent
 import android.net.Uri
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.app.Activity
+import androidx.credentials.CredentialManager
+import com.example.services.FirebaseSyncService
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
@@ -273,6 +277,11 @@ fun MeerScreen(
                                 )
                             }
                         }
+                    }
+
+                    // Firebase Cloud Sync card
+                    item(key = "meer_cloud_sync") {
+                        CloudSyncAccountCard(session = session)
                     }
 
                     // Feature hubs
@@ -1439,5 +1448,184 @@ private fun AfwezigheidView(
         }
     }
 }
+
+@Composable
+fun CloudSyncAccountCard(
+    session: AuthSession,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val syncService = remember { FirebaseSyncService(context) }
+    var currentUser by remember { mutableStateOf(syncService.currentUser) }
+    var isSigningIn by remember { mutableStateOf(false) }
+    var isSyncing by remember { mutableStateOf(false) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+    val credentialManager = remember { CredentialManager.create(context) }
+
+    Surface(
+        shape = appCardShape(standard = 20.dp, nothing = 24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = nothingCardBorder(),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Surface(
+                        shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.CloudSync,
+                                contentDescription = "Cloud Sync",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Firebase Cloud Sync",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (currentUser != null) "Verbonden: ${currentUser?.email ?: "Google Account"}" else "Synchroniseer je rooster & cijfers in de cloud",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (currentUser == null) {
+                Button(
+                    onClick = {
+                        val activity = context as? Activity
+                        if (activity != null) {
+                            isSigningIn = true
+                            statusMessage = null
+                            coroutineScope.launch {
+                                val res = syncService.signInWithGoogle(activity, credentialManager)
+                                isSigningIn = false
+                                res.onSuccess {
+                                    currentUser = syncService.currentUser
+                                    statusMessage = "Succesvol ingelogd met Google!"
+                                    runCatching { syncService.syncSessionToCloud(session) }
+                                }.onFailure { err ->
+                                    statusMessage = err.localizedMessage ?: "Inloggen mislukt."
+                                }
+                            }
+                        } else {
+                            statusMessage = "Geen Activity beschikbaar."
+                        }
+                    },
+                    enabled = !isSigningIn,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("google_signin_button"),
+                    shape = RoundedCornerShape(percent = 50),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    if (isSigningIn) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(imageVector = Icons.Default.Login, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Inloggen met Google (Firebase Cloud Sync)",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            isSyncing = true
+                            statusMessage = null
+                            coroutineScope.launch {
+                                runCatching {
+                                    syncService.syncSessionToCloud(session)
+                                }.onSuccess {
+                                    statusMessage = "Gegevens succesvol naar Firestore gesynchroniseerd!"
+                                }.onFailure { err ->
+                                    statusMessage = err.localizedMessage ?: "Synchronisatie mislukt."
+                                }
+                                isSyncing = false
+                            }
+                        },
+                        enabled = !isSyncing,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(42.dp)
+                            .testTag("cloud_sync_now_button"),
+                        shape = RoundedCornerShape(percent = 50),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    ) {
+                        if (isSyncing) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(imageVector = Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Nu Synchroniseren", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                syncService.signOut(credentialManager)
+                                currentUser = null
+                                statusMessage = "Uitgelogd."
+                            }
+                        },
+                        modifier = Modifier
+                            .height(42.dp)
+                            .testTag("cloud_signout_button"),
+                        shape = RoundedCornerShape(percent = 50)
+                    ) {
+                        Text("Uitloggen", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+
+            statusMessage?.let { msg ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = msg,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+
 
 

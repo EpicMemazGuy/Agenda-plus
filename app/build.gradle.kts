@@ -29,6 +29,11 @@ android {
     versionCode = resolvedVersionCode
     versionName = resolvedVersionName
 
+    val googleWebClientId = providers.environmentVariable("GOOGLE_WEB_CLIENT_ID")
+      .orElse(providers.gradleProperty("googleWebClientId"))
+      .orElse("REPLACE_WITH_WEB_CLIENT_ID_FROM_FIREBASE")
+    buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${googleWebClientId.get()}\"")
+
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 

@@ -54,8 +54,14 @@ class NextLessonWidgetProvider : AppWidgetProvider() {
             appWidgetId: Int
         ) {
             val store = AppPreferencesStore(context)
-            val isNothing = store.getAppThemeStyle() == AppThemeStyle.NOTHING_OS
-            val layoutId = if (isNothing) R.layout.widget_next_lesson_nothing else R.layout.widget_next_lesson
+            val themeStyle = store.getAppThemeStyle()
+            val isNothing = themeStyle == AppThemeStyle.NOTHING_OS
+            val isOneUi = themeStyle == AppThemeStyle.ONE_UI
+            val layoutId = when (themeStyle) {
+                AppThemeStyle.NOTHING_OS -> R.layout.widget_next_lesson_nothing
+                AppThemeStyle.ONE_UI -> R.layout.widget_next_lesson_oneui
+                AppThemeStyle.STANDARD -> R.layout.widget_next_lesson
+            }
             val views = RemoteViews(context.packageName, layoutId)
             val session = store.loadSession()
             val appointments = store.loadAppointments()
@@ -91,6 +97,8 @@ class NextLessonWidgetProvider : AppWidgetProvider() {
                 views.setViewVisibility(R.id.widget_room, View.GONE)
                 if (isNothing) {
                     views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_nothing_pill_bg)
+                } else if (isOneUi) {
+                    views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_oneui_pill_bg)
                 }
             } else {
                 val cal = Calendar.getInstance()
@@ -120,6 +128,8 @@ class NextLessonWidgetProvider : AppWidgetProvider() {
                     views.setViewVisibility(R.id.widget_room, View.GONE)
                     if (isNothing) {
                         views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_nothing_pill_bg)
+                    } else if (isOneUi) {
+                        views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_oneui_pill_bg)
                     }
                 } else {
                     val isNow = nextUpcoming.dateIso == todayIso &&
@@ -150,6 +160,12 @@ class NextLessonWidgetProvider : AppWidgetProvider() {
                             R.id.widget_status_badge,
                             "setBackgroundResource",
                             if (isNow || isToday) R.drawable.widget_nothing_red_pill_bg else R.drawable.widget_nothing_pill_bg
+                        )
+                    } else if (isOneUi) {
+                        views.setInt(
+                            R.id.widget_status_badge,
+                            "setBackgroundResource",
+                            R.drawable.widget_oneui_pill_bg
                         )
                     }
                     if (room != null) {

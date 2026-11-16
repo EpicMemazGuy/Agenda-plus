@@ -6,6 +6,7 @@ import com.example.model.TaskCategory
 import com.example.model.TaskPriority
 import com.example.model.cleanSchoolText
 import com.example.network.MagisterClient
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -430,5 +431,392 @@ class ExampleRobolectricTest {
         // Invalid JSON fails cleanly
         assertTrue(store.importChoicesBackupJson("{}").isFailure)
     }
+
+    @Test
+    fun test_one_ui_default_theme_lock_dark_mode_and_launcher_icon() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val store = com.example.data.AppPreferencesStore(context)
+
+        // Strict default lock: Material You (STANDARD) and SYSTEM dark mode on fresh install
+        assertEquals(com.example.model.AppThemeStyle.STANDARD, store.getAppThemeStyle())
+        assertEquals(com.example.model.DarkModePreference.SYSTEM, store.getDarkModePreference())
+        assertEquals("Material You", com.example.model.AppThemeStyle.STANDARD.labelDutch)
+        assertEquals("Nothing OS", com.example.model.AppThemeStyle.NOTHING_OS.labelDutch)
+        assertEquals("One UI 8.5", com.example.model.AppThemeStyle.ONE_UI.labelDutch)
+        assertEquals("Systeem", com.example.model.DarkModePreference.SYSTEM.labelDutch)
+        assertEquals("Licht", com.example.model.DarkModePreference.LIGHT.labelDutch)
+        assertEquals("Donker", com.example.model.DarkModePreference.DARK.labelDutch)
+
+        // Switching to One UI 8.5 + Light mode + squircle launcher icon
+        store.setAppThemeStyle(com.example.model.AppThemeStyle.ONE_UI)
+        store.setDarkModePreference(com.example.model.DarkModePreference.LIGHT)
+        assertEquals(com.example.model.AppThemeStyle.ONE_UI, store.getAppThemeStyle())
+        assertEquals(com.example.model.DarkModePreference.LIGHT, store.getDarkModePreference())
+
+        com.example.util.LauncherIconManager.applyThemeIcon(context, com.example.model.AppThemeStyle.ONE_UI)
+        val pm = context.packageManager
+        val defaultComp = android.content.ComponentName(context.packageName, "${context.packageName}.MainActivityDefault")
+        val nothingComp = android.content.ComponentName(context.packageName, "${context.packageName}.MainActivityNothingOs")
+        val oneUiComp = android.content.ComponentName(context.packageName, "${context.packageName}.MainActivityOneUi")
+        assertEquals(
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            pm.getComponentEnabledSetting(defaultComp)
+        )
+        assertEquals(
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            pm.getComponentEnabledSetting(nothingComp)
+        )
+        assertEquals(
+            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            pm.getComponentEnabledSetting(oneUiComp)
+        )
+
+        // Backup v2 preserves One UI, dark mode, quiet hours, muted subjects, and bus settings
+        store.setQuietHoursEnabled(true)
+        store.setQuietHoursStartMinutes(23 * 60)
+        store.setQuietHoursEndMinutes(6 * 60 + 30)
+        store.setMutedSubjects(setOf("Gym", "Rekenen"))
+        store.setSmartBusAlertsEnabled(false)
+        store.setBusWalkMinutes(8)
+        store.setBusArrivalBufferMinutes(15)
+
+        val backup = store.exportChoicesBackupJson()
+        store.setAppThemeStyle(com.example.model.AppThemeStyle.STANDARD)
+        store.setDarkModePreference(com.example.model.DarkModePreference.SYSTEM)
+        store.setMutedSubjects(emptySet())
+        store.setBusWalkMinutes(5)
+
+        val restoreRes = store.importChoicesBackupJson(backup)
+        assertTrue(restoreRes.isSuccess)
+        assertEquals(com.example.model.AppThemeStyle.ONE_UI, store.getAppThemeStyle())
+        assertEquals(com.example.model.DarkModePreference.LIGHT, store.getDarkModePreference())
+        assertEquals(23 * 60, store.getQuietHoursStartMinutes())
+        assertEquals(6 * 60 + 30, store.getQuietHoursEndMinutes())
+        assertEquals(setOf("Gym", "Rekenen"), store.getMutedSubjects())
+        assertFalse(store.isSmartBusAlertsEnabled())
+        assertEquals(8, store.getBusWalkMinutes())
+        assertEquals(15, store.getBusArrivalBufferMinutes())
+    }
+
+    @Test
+    fun test_quiet_hours_and_subject_muting_keep_baselines_updated() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val store = com.example.data.AppPreferencesStore(context)
+
+        // Default quiet hours 22:00 - 07:00
+        assertTrue(store.isQuietHoursEnabled())
+        assertEquals(22 * 60, store.getQuietHoursStartMinutes())
+        assertEquals(7 * 60, store.getQuietHoursEndMinutes())
+
+        // Overnight wraparound checks
+        assertTrue(com.example.notifications.UitvalNotificationHelper.isWithinQuietHours(22 * 60, 22 * 60, 7 * 60))
+        assertTrue(com.example.notifications.UitvalNotificationHelper.isWithinQuietHours(23 * 60 + 30, 22 * 60, 7 * 60))
+        assertTrue(com.example.notifications.UitvalNotificationHelper.isWithinQuietHours(2 * 60, 22 * 60, 7 * 60))
+        assertTrue(com.example.notifications.UitvalNotificationHelper.isWithinQuietHours(6 * 60 + 59, 22 * 60, 7 * 60))
+        assertFalse(com.example.notifications.UitvalNotificationHelper.isWithinQuietHours(7 * 60, 22 * 60, 7 * 60))
+        assertFalse(com.example.notifications.UitvalNotificationHelper.isWithinQuietHours(14 * 60 + 15, 22 * 60, 7 * 60))
+
+        // Subject muting (case-insensitive & partial match)
+        val muted = setOf("LO", "Rekenen")
+        assertTrue(com.example.notifications.UitvalNotificationHelper.isSubjectMuted("lo", muted))
+        assertTrue(com.example.notifications.UitvalNotificationHelper.isSubjectMuted("Rekenen klas 4", muted))
+        assertFalse(com.example.notifications.UitvalNotificationHelper.isSubjectMuted("Wiskunde B", muted))
+
+        // During quiet hours, evaluateAllNotifications still updates baselines without buzzing
+        val todayIso = com.example.notifications.SmartBusPlanner.currentTodayIso()
+        val canceledAppt = com.example.model.Appointment(
+            id = 8801L,
+            title = "Rekenen",
+            subjectCode = "REK",
+            subjectName = "Rekenen",
+            teacherName = "Jansen",
+            teacherInitials = "JAN",
+            classroom = "102",
+            periodIndex = 1,
+            startTime = "08:30",
+            endTime = "09:20",
+            dayOfWeek = 1,
+            isCanceled = true,
+            dateIso = todayIso
+        )
+        val grade = com.example.model.GradeItem("g_quiet_1", "WI", "Wiskunde", 8.0, 1.0, "SO", todayIso, 1)
+        val summary = com.example.model.SubjectGradeSummary("WI", "Wiskunde", 8.0, listOf(grade))
+
+        com.example.notifications.UitvalNotificationHelper.evaluateAllNotifications(
+            context = context,
+            previousAppointments = emptyList(),
+            newAppointments = listOf(canceledAppt),
+            newGrades = listOf(summary),
+            newTasks = emptyList(),
+            nowMinutes = 23 * 60 + 15 // inside quiet hours
+        )
+        assertTrue(
+            store.getNotifiedCanceledKeys().contains(
+                com.example.notifications.UitvalNotificationHelper.cancellationKey(canceledAppt)
+            )
+        )
+        assertTrue(store.getKnownGradeIds().contains("g_quiet_1"))
+    }
+
+    @Test
+    fun test_smart_bus_planner_shifts_bus_when_first_hour_canceled() {
+        val todayIso = "2026-11-16"
+        val firstHourActive = com.example.model.Appointment(
+            id = 1L,
+            title = "Nederlands",
+            subjectCode = "NE",
+            subjectName = "Nederlands",
+            teacherName = "Bakker",
+            teacherInitials = "BAK",
+            classroom = "105",
+            periodIndex = 1,
+            startTime = "08:30",
+            endTime = "09:20",
+            dayOfWeek = 1,
+            isCanceled = false,
+            dateIso = todayIso
+        )
+        val secondHourActive = com.example.model.Appointment(
+            id = 2L,
+            title = "Wiskunde B",
+            subjectCode = "WI",
+            subjectName = "Wiskunde B",
+            teacherName = "De Vries",
+            teacherInitials = "DVR",
+            classroom = "204",
+            periodIndex = 2,
+            startTime = "09:20",
+            endTime = "10:10",
+            dayOfWeek = 1,
+            isCanceled = false,
+            dateIso = todayIso
+        )
+
+        val busState = com.example.model.BusTrackingState(
+            lineNumber = "156",
+            nearestStop = com.example.model.BusStopInfo(
+                timingPointCode = "STOP1",
+                name = "Kerkstraat",
+                town = "Schijndel",
+                latitude = 51.62,
+                longitude = 5.43,
+                upcomingDepartures = listOf(
+                    com.example.model.BusDeparture("07:55"),
+                    com.example.model.BusDeparture("08:45"),
+                    com.example.model.BusDeparture("09:15")
+                )
+            )
+        )
+
+        // Now it's 07:30, 1st hour (08:30) was previously active and is now canceled -> start at 09:20
+        // Latest bus: 09:20 - 10 (buffer) - 10 (est ride) = 09:00 -> best catchable bus is 08:45; leave home = 08:40
+        val advice = com.example.notifications.SmartBusPlanner.computeAdvice(
+            todayAppointments = listOf(firstHourActive.copy(isCanceled = true), secondHourActive),
+            previousAppointments = listOf(firstHourActive, secondHourActive),
+            busTrackingState = busState,
+            walkMinutes = 5,
+            arrivalBufferMinutes = 10,
+            nowMinutes = 7 * 60 + 30,
+            savedBusLine = "156",
+            todayIso = todayIso
+        )
+
+        assertNotNull(advice)
+        assertEquals("08:45", advice!!.busDepartureTime)
+        assertEquals("08:40", advice.leaveHomeTime)
+        assertEquals("1e uur uitgevallen! Pak in plaats daarvan de bus van 08:45.", advice.shiftReasonMessage)
+        assertTrue(advice.shouldNotifyPriority)
+    }
+
+    @Test
+    fun test_pta_parsing_scope_filter_and_weighted_what_if_calculator() {
+        val mixedGradesJson = """
+            {
+              "items": [
+                {
+                  "kolomId": 5001,
+                  "omschrijving": "SO Grammatica",
+                  "behaaldOp": "2026-10-01T10:00:00Z",
+                  "waarde": "6,0",
+                  "weegfactor": 1.0,
+                  "isPta": false,
+                  "vak": { "code": "EN", "omschrijving": "Engels" }
+                },
+                {
+                  "kolomId": 5002,
+                  "omschrijving": "SE Schrijfvaardigheid",
+                  "behaaldOp": "2026-11-12T10:00:00Z",
+                  "waarde": "8,0",
+                  "weegfactor": 3.0,
+                  "isPta": true,
+                  "vak": { "code": "EN", "omschrijving": "Engels" }
+                },
+                {
+                  "kolomId": 5003,
+                  "omschrijving": "Oefentoets",
+                  "behaaldOp": "2026-11-05T10:00:00Z",
+                  "waarde": "7,0",
+                  "weegfactor": 1.0,
+                  "vak": { "code": "WI", "omschrijving": "Wiskunde" }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val summaries = MagisterClient().parseGradesJson(mixedGradesJson)
+        assertEquals(2, summaries.size)
+
+        val ptaOnly = com.example.ui.screens.filterGradeSummariesByScope(
+            summaries,
+            com.example.model.GradeScopeFilter.PTA
+        )
+        assertEquals(1, ptaOnly.size)
+        assertEquals("Engels", ptaOnly.first().subjectName)
+        assertEquals(8.0, ptaOnly.first().weightedAverage, 0.01)
+
+        val regularOnly = com.example.ui.screens.filterGradeSummariesByScope(
+            summaries,
+            com.example.model.GradeScopeFilter.REGULAR
+        )
+        assertEquals(2, regularOnly.size)
+        assertEquals(6.0, regularOnly.first { it.subjectName == "Engels" }.weightedAverage, 0.01)
+
+        // Weighted "Wat moet ik halen?": current (6.0 * 1.0 + 8.0 * 3.0) = 30.0 over weight 4.0 -> avg 7.5
+        // For target 8.0 with next test weight 2.0: needed = (8.0 * 6.0 - 30.0) / 2.0 = 9.0
+        val engelsGrades = summaries.first { it.subjectName == "Engels" }.grades
+        val neededFeasible = com.example.ui.screens.calculateRequiredGradeForTarget(
+            currentGrades = engelsGrades,
+            targetAverage = 8.0,
+            nextTestWeight = 2.0
+        )
+        assertEquals(9.0, neededFeasible, 0.05)
+
+        // Impossible target (> 10.0)
+        val neededImpossible = com.example.ui.screens.calculateRequiredGradeForTarget(
+            currentGrades = engelsGrades,
+            targetAverage = 9.5,
+            nextTestWeight = 1.0
+        )
+        assertTrue(neededImpossible > 10.0)
+    }
+
+    @Test
+    fun test_room_custom_schedule_db_recurrence_and_crud() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val db = androidx.room.Room.inMemoryDatabaseBuilder(
+            context,
+            com.example.data.db.AgendaDatabase::class.java
+        ).allowMainThreadQueries().build()
+
+        try {
+            val dao = db.customScheduleDao()
+            val recurringItem = com.example.data.db.CustomScheduleItem(
+                title = "Voetbaltraining",
+                description = "Veld 2",
+                startTime = "18:30",
+                endTime = "20:00",
+                daysOfWeekCsv = "1,3", // Ma, Wo
+                isRecurring = true,
+                colorKey = "EMERALD"
+            )
+            assertTrue(recurringItem.appliesToDate("2026-11-16", 1))
+            assertFalse(recurringItem.appliesToDate("2026-11-17", 2))
+
+            val singleItem = com.example.data.db.CustomScheduleItem(
+                title = "Bijles Natuurkunde",
+                startTime = "15:15",
+                endTime = "16:15",
+                dateIso = "2026-11-18",
+                isRecurring = false,
+                colorKey = "BLUE"
+            )
+            assertTrue(singleItem.appliesToDate("2026-11-18", 3))
+            assertFalse(singleItem.appliesToDate("2026-11-19", 4))
+
+            kotlinx.coroutines.runBlocking {
+                val id1 = dao.upsert(recurringItem)
+                dao.upsert(singleItem)
+                val all = dao.observeAll().first()
+                assertEquals(2, all.size)
+                assertEquals("Bijles Natuurkunde", all.first().title) // sorted by startTime ASC
+
+                dao.updateCompletion(id1, true)
+                val updated = dao.observeAll().first().first { it.id == id1 }
+                assertTrue(updated.isCompleted)
+
+                dao.deleteById(id1)
+                assertEquals(1, dao.observeAll().first().size)
+            }
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun test_prep_checklist_splitter_absences_parser_glyph_and_one_ui_artifacts() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val store = com.example.data.AppPreferencesStore(context)
+
+        // 1. Toetsstof checklist splitting & persistence
+        val topics = com.example.data.AppPreferencesStore.splitToetsstofIntoTopics(
+            rawText = "Hoofdstuk 3, Paragraaf 4.2; Woordjes Unit 5 en Samenvatting",
+            subject = "Engels",
+            fallbackTitle = "Proefwerk"
+        )
+        assertEquals(4, topics.size)
+        assertEquals("Hoofdstuk 3", topics[0].title)
+        assertEquals("Samenvatting", topics[3].title)
+
+        val checklist = com.example.model.TestPrepChecklist(
+            key = "test_en_1",
+            subject = "Engels",
+            title = "PW Unit 5",
+            topics = topics.mapIndexed { idx, t -> if (idx == 0) t.copy(isChecked = true) else t }
+        )
+        store.saveTestPrepChecklist(checklist)
+        val loaded = store.loadTestPrepChecklists()["test_en_1"]
+        assertNotNull(loaded)
+        assertEquals(1, loaded!!.completedCount)
+        assertEquals(0.25f, loaded.progress, 0.01f)
+
+        // 2. Absences JSON parser
+        val absencesJson = """
+            {
+              "items": [
+                { "id": "a1", "start": "2026-11-10T08:30:00Z", "lesuurVan": 1, "omschrijving": "Ziek gemeld", "geoorloofd": true },
+                { "id": "a2", "start": "2026-11-12T09:20:00Z", "lesuurVan": 2, "omschrijving": "Te laat in de les", "geoorloofd": false }
+              ]
+            }
+        """.trimIndent()
+        val parsedAbsences = MagisterClient().parseAbsencesJson(absencesJson)
+        assertEquals(2, parsedAbsences.size)
+        assertEquals(com.example.model.AbsenceType.SICK, parsedAbsences[0].type)
+        assertEquals("1e uur", parsedAbsences[0].period)
+        assertTrue(parsedAbsences[0].isApproved)
+        assertEquals(com.example.model.AbsenceType.TARDY, parsedAbsences[1].type)
+        assertFalse(parsedAbsences[1].isApproved)
+
+        // 3. Nothing Glyph 15-minute countdown
+        assertNull(com.example.hardware.NothingGlyphBridge.computeCountdownProgress(10 * 60, 10 * 60 + 20))
+        assertNull(com.example.hardware.NothingGlyphBridge.computeCountdownProgress(10 * 60, 10 * 60))
+        val progress = com.example.hardware.NothingGlyphBridge.computeCountdownProgress(10 * 60, 10 * 60 + 7)
+        assertNotNull(progress)
+        assertTrue(progress!! in 40..55)
+
+        // 4. One UI 8.5 PNG Grade Share Card & all 4 Widgets
+        val grade = com.example.model.GradeItem("g_oneui", "NA", "Natuurkunde", 8.9, 2.0, "PTA Mechanica", "2026-11-15", 1, isPta = true)
+        val png = com.example.util.GradeExporter.renderGradeShareCardPng(
+            context = context,
+            selectedGrades = listOf(grade),
+            overallAverage = 8.9,
+            studentName = "One UI Tester",
+            appThemeStyle = com.example.model.AppThemeStyle.ONE_UI
+        )
+        assertTrue(png.exists() && png.length() > 1000L)
+
+        store.setAppThemeStyle(com.example.model.AppThemeStyle.ONE_UI)
+        com.example.widget.WidgetUpdater.updateAllWidgets(context)
+    }
 }
+
 

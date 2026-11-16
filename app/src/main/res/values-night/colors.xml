@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="oneui_widget_bg">#FF161619</color>
+    <color name="oneui_widget_border">#1AFFFFFF</color>
+    <color name="oneui_widget_row_bg">#FF222227</color>
+    <color name="oneui_widget_pill_bg">#293E91FF</color>
+    <color name="oneui_widget_error_pill_bg">#33FF5252</color>
+    <color name="oneui_widget_text_primary">#FFF5F6FA</color>
+    <color name="oneui_widget_text_secondary">#FF9EA3B0</color>
+    <color name="oneui_widget_accent">#FF3E91FF</color>
+</resources>

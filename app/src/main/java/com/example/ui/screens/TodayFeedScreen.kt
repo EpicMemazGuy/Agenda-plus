@@ -26,9 +26,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.data.db.CustomScheduleItem
 import com.example.model.*
 import com.example.network.CitySearchResult
 import com.example.ui.components.BusLiveMapCard
+import com.example.ui.components.CustomScheduleItemCard
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.NothingDotMatrixSpinner
 import com.example.ui.components.OneUiExpandingHeader
@@ -43,6 +45,11 @@ import com.example.ui.components.oneUiPillContentColor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+
+private sealed class TodayTimelineEntry(val sortTime: String, val key: String) {
+    class Lesson(val appointment: Appointment) : TodayTimelineEntry(appointment.startTime, "lesson_${appointment.id}")
+    class Custom(val item: CustomScheduleItem) : TodayTimelineEntry(item.startTime, "custom_${item.id}")
+}
 
 @Composable
 fun TodayFeedScreen(
@@ -59,6 +66,8 @@ fun TodayFeedScreen(
     schoolAddress: SchoolAddress?,
     savedBusLine: String,
     busTrackingState: BusTrackingState,
+    smartBusAdvice: SmartBusAdvice? = null,
+    customScheduleItems: List<CustomScheduleItem> = emptyList(),
     onNavigateToRooster: () -> Unit,
     onNavigateToTasks: () -> Unit,
     onNavigateToKwt: () -> Unit,
@@ -71,6 +80,11 @@ fun TodayFeedScreen(
     onOpenTodayModifySheet: () -> Unit,
     onSetBusLine: (String, Double?, Double?) -> Unit,
     onRefreshBusTracking: (Double?, Double?) -> Unit,
+    onAddCustomScheduleItem: () -> Unit = {},
+    onEditCustomScheduleItem: (CustomScheduleItem) -> Unit = {},
+    onToggleCustomScheduleItem: (Long, Boolean) -> Unit = { _, _ -> },
+    onDeleteCustomScheduleItem: (Long) -> Unit = {},
+    onOpenKwtSlot: (Appointment) -> Unit = {},
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -132,6 +146,26 @@ fun TodayFeedScreen(
     val dayNameDutch = todayContext.first
     val todayClasses = todayContext.second
     val nextClass = todayContext.third
+
+    val todayCustomItems = remember(customScheduleItems) {
+        val cal = java.util.Calendar.getInstance()
+        val todayIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(cal.time)
+        val dayNum = when (cal.get(java.util.Calendar.DAY_OF_WEEK)) {
+            java.util.Calendar.MONDAY -> 1
+            java.util.Calendar.TUESDAY -> 2
+            java.util.Calendar.WEDNESDAY -> 3
+            java.util.Calendar.THURSDAY -> 4
+            java.util.Calendar.FRIDAY -> 5
+            java.util.Calendar.SATURDAY -> 6
+            else -> 7
+        }
+        customScheduleItems.filter { it.appliesToDate(todayIso, dayNum) }.sortedBy { it.startTime }
+    }
+
+    val mergedTimeline = remember(todayClasses, todayCustomItems) {
+        (todayClasses.map { TodayTimelineEntry.Lesson(it) } + todayCustomItems.map { TodayTimelineEntry.Custom(it) })
+            .sortedBy { it.sortTime }
+    }
 
     val activeLessonCount = todayClasses.count { !it.isCanceled }
     val endTimeSummary = todayClasses.lastOrNull { !it.isCanceled }?.endTime
@@ -385,6 +419,7 @@ fun TodayFeedScreen(
                             busTrackingState = busTrackingState,
                             savedBusLine = savedBusLine,
                             isOffline = isOffline,
+                            smartBusAdvice = smartBusAdvice,
                             onSetBusLine = onSetBusLine,
                             onRefreshBus = onRefreshBusTracking
                         )
@@ -629,18 +664,29 @@ fun TodayFeedScreen(
                     text = "Lessen Vandaag ($dayNameDutch)",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
                 )
-                TextButton(
-                    onClick = onNavigateToRooster,
-                    modifier = Modifier.testTag("view_all_schedule_button")
-                ) {
-                    Text("Volledig rooster")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = onAddCustomScheduleItem,
+                        modifier = Modifier.testTag("today_add_custom_block_button")
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Blok")
+                    }
+                    TextButton(
+                        onClick = onNavigateToRooster,
+                        modifier = Modifier.testTag("view_all_schedule_button")
+                    ) {
+                        Text("Rooster")
+                    }
                 }
             }
         }
 
-        if (todayClasses.isEmpty()) {
+        if (mergedTimeline.isEmpty()) {
             item {
                 Surface(
                     shape = appCardShape(standard = 16.dp, nothing = 20.dp),
@@ -659,29 +705,61 @@ fun TodayFeedScreen(
                 }
             }
         } else if (agendaStyle == AgendaStyle.COMPACT) {
-            item {
-                Surface(
-                    shape = appCardShape(standard = 18.dp, nothing = 24.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    border = nothingCardBorder(),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        todayClasses.forEachIndexed { idx, appt ->
-                            CompactRoosterRow(appointment = appt)
-                            if (idx < todayClasses.lastIndex) {
-                                NothingAwareDivider(
-                                    color = MaterialTheme.colorScheme.surfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 12.dp)
+            if (todayClasses.isNotEmpty()) {
+                item {
+                    Surface(
+                        shape = appCardShape(standard = 18.dp, nothing = 24.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        border = nothingCardBorder(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            todayClasses.forEachIndexed { idx, appt ->
+                                val isKwtItem = appt.isKwt || kwtSlots.any { it.appointmentId == appt.id }
+                                CompactRoosterRow(
+                                    appointment = appt,
+                                    isKwtSelectable = isKwtItem,
+                                    onOpenKwt = { onOpenKwtSlot(appt) }
                                 )
+                                if (idx < todayClasses.lastIndex) {
+                                    NothingAwareDivider(
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 12.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
+            items(todayCustomItems, key = { "today_custom_${it.id}" }) { custom ->
+                CustomScheduleItemCard(
+                    item = custom,
+                    onToggleCompleted = { onToggleCustomScheduleItem(custom.id, it) },
+                    onEdit = { onEditCustomScheduleItem(custom) },
+                    onDelete = { onDeleteCustomScheduleItem(custom.id) }
+                )
+            }
         } else {
-            items(todayClasses, key = { it.id }) { appt ->
-                TodayClassRow(appointment = appt)
+            items(mergedTimeline, key = { it.key }) { entry ->
+                when (entry) {
+                    is TodayTimelineEntry.Lesson -> {
+                        val isKwtItem = entry.appointment.isKwt || kwtSlots.any { it.appointmentId == entry.appointment.id }
+                        TodayClassRow(
+                            appointment = entry.appointment,
+                            isKwtSelectable = isKwtItem,
+                            onOpenKwt = { onOpenKwtSlot(entry.appointment) }
+                        )
+                    }
+                    is TodayTimelineEntry.Custom -> {
+                        CustomScheduleItemCard(
+                            item = entry.item,
+                            onToggleCompleted = { onToggleCustomScheduleItem(entry.item.id, it) },
+                            onEdit = { onEditCustomScheduleItem(entry.item) },
+                            onDelete = { onDeleteCustomScheduleItem(entry.item.id) }
+                        )
+                    }
+                }
             }
         }
 
@@ -1297,6 +1375,8 @@ fun HeroClassCard(
 @Composable
 fun TodayClassRow(
     appointment: Appointment,
+    isKwtSelectable: Boolean = false,
+    onOpenKwt: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isCanceled = appointment.isCanceled
@@ -1304,11 +1384,15 @@ fun TodayClassRow(
     val cleanRoom = appointment.classroom.cleanSchoolText()
 
     val oneUiMode = isOneUi85
+    val rowShape = appCardShape(standard = 16.dp, nothing = 24.dp)
     Card(
         modifier = modifier
             .fillMaxWidth()
+            .then(
+                if (isKwtSelectable) Modifier.clip(rowShape).clickable(onClick = onOpenKwt) else Modifier
+            )
             .testTag("today_class_item_${appointment.id}"),
-        shape = appCardShape(standard = 16.dp, nothing = 24.dp),
+        shape = rowShape,
         border = nothingCardBorder(isAlert = isCanceled),
         colors = CardDefaults.cardColors(
             containerColor = if (isCanceled) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerLow

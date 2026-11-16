@@ -25,13 +25,16 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.db.CustomScheduleItem
 import com.example.model.AgendaStyle
 import com.example.model.Appointment
 import com.example.model.HomeworkTask
 import com.example.model.KwtSlot
 import com.example.model.TaskCategory
+import com.example.model.TestPrepChecklist
 import com.example.model.cleanSchoolText
 import com.example.model.isTestKeywordMatch
+import com.example.ui.components.CustomScheduleItemCard
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
@@ -68,6 +71,11 @@ data class UpcomingTestEntry(
     val daysRemaining: Int?
 )
 
+private sealed class RoosterDayEntry(val sortTime: String, val key: String) {
+    class Lesson(val appointment: Appointment) : RoosterDayEntry(appointment.startTime, "appt_${appointment.id}")
+    class Custom(val item: CustomScheduleItem) : RoosterDayEntry(item.startTime, "custom_${item.id}")
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoosterScreen(
@@ -78,9 +86,16 @@ fun RoosterScreen(
     agendaStyle: AgendaStyle,
     isRefreshing: Boolean,
     kwtSlots: List<KwtSlot> = emptyList(),
+    customScheduleItems: List<CustomScheduleItem> = emptyList(),
+    testPrepChecklists: Map<String, TestPrepChecklist> = emptyMap(),
     onSelectDay: (Int) -> Unit,
     onSelectViewMode: (Int) -> Unit,
     onOpenKwtSlot: (Appointment) -> Unit = {},
+    onAddCustomScheduleItem: (dateIso: String, dayOfWeek: Int) -> Unit = { _, _ -> },
+    onEditCustomScheduleItem: (CustomScheduleItem) -> Unit = {},
+    onToggleCustomScheduleItem: (Long, Boolean) -> Unit = { _, _ -> },
+    onDeleteCustomScheduleItem: (Long) -> Unit = {},
+    onOpenTestPrep: (key: String, subject: String, title: String, toetsstof: String) -> Unit = { _, _, _, _ -> },
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -168,6 +183,20 @@ fun RoosterScreen(
 
     val upcomingTests = remember(appointments, tasks) {
         buildUpcomingTestsList(appointments, tasks)
+    }
+
+    val visibleCustomItems = remember(customScheduleItems, selectedDay, viewMode, days) {
+        val visibleDays = when (viewMode) {
+            0 -> listOf(selectedDayItem)
+            1 -> days.filter { it.dayNumber in selectedDay..(selectedDay + 2).coerceAtMost(5) }
+            2 -> days
+            else -> emptyList()
+        }
+        visibleDays.associateWith { d ->
+            customScheduleItems
+                .filter { it.appliesToDate(d.dateIso, d.dayNumber) }
+                .sortedBy { it.startTime }
+        }
     }
 
     LazyColumn(
@@ -365,6 +394,27 @@ fun RoosterScreen(
             }
         }
 
+        if (viewMode != 3) {
+            item(key = "rooster_add_custom_row") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    FilledTonalButton(
+                        onClick = { onAddCustomScheduleItem(selectedDayItem.dateIso, selectedDayItem.dayNumber) },
+                        shape = RoundedCornerShape(percent = 50),
+                        modifier = Modifier
+                            .height(40.dp)
+                            .testTag("rooster_add_custom_block_button")
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Persoonlijk blok toevoegen")
+                    }
+                }
+            }
+        }
+
         // 4. Toetsen View OR Schedule Skeleton / Empty / Dense or Spacious List
         if (viewMode == 3) {
             if (upcomingTests.isEmpty()) {
@@ -407,7 +457,12 @@ fun RoosterScreen(
                 }
             } else {
                 items(upcomingTests, key = { it.id }) { test ->
-                    UpcomingTestCard(test = test)
+                    val checklist = testPrepChecklists[test.id]
+                    UpcomingTestCard(
+                        test = test,
+                        checklistProgressText = checklist?.let { "${it.completedCount}/${it.topics.size} klaar" },
+                        onClick = { onOpenTestPrep(test.id, test.subject, "${test.typeBadge} ${test.subject}", test.description) }
+                    )
                 }
             }
         } else if (isRefreshing && appointments.isEmpty()) {
@@ -417,7 +472,7 @@ fun RoosterScreen(
                     statusLabel = "Rooster ophalen van Magister..."
                 )
             }
-        } else if (currentAppointments.isEmpty()) {
+        } else if (currentAppointments.isEmpty() && visibleCustomItems.values.all { it.isEmpty() }) {
             item {
                 Surface(
                     shape = appCardShape(standard = 20.dp, nothing = 20.dp),
@@ -503,26 +558,59 @@ fun RoosterScreen(
                     }
                 }
             }
-        } else {
-            groupedByDay.forEach { (dayHeader, dayAppointments) ->
-                if (viewMode != 0) {
-                    item(key = "spacious_header_$dayHeader") {
-                        Text(
-                            text = dayHeader.uppercase(),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = 4.dp, start = 4.dp)
-                        )
-                    }
-                }
-                items(dayAppointments, key = { it.id }) { appt ->
-                    val isKwtItem = appt.isKwt || kwtSlots.any { it.appointmentId == appt.id }
-                    RoosterPeriodCard(
-                        appointment = appt,
-                        isKwtSelectable = isKwtItem,
-                        onOpenKwt = { onOpenKwtSlot(appt) }
+            visibleCustomItems.forEach { (dayItem, itemsForDay) ->
+                items(itemsForDay, key = { "compact_custom_${dayItem.dateIso}_${it.id}" }) { custom ->
+                    CustomScheduleItemCard(
+                        item = custom,
+                        onToggleCompleted = { onToggleCustomScheduleItem(custom.id, it) },
+                        onEdit = { onEditCustomScheduleItem(custom) },
+                        onDelete = { onDeleteCustomScheduleItem(custom.id) }
                     )
+                }
+            }
+        } else {
+            val dayHeadersOrder = if (viewMode == 0) listOf(selectedDayItem) else if (viewMode == 1) days.filter { it.dayNumber in selectedDay..(selectedDay + 2).coerceAtMost(5) } else days
+            dayHeadersOrder.forEach { dayItem ->
+                val dayAppts = currentAppointments.filter { appt ->
+                    if (hasIsoDates) appt.dateIso == dayItem.dateIso else appt.dayOfWeek == dayItem.dayNumber
+                }
+                val dayCustom = visibleCustomItems[dayItem].orEmpty()
+                val dayTimeline = (dayAppts.map { RoosterDayEntry.Lesson(it) } + dayCustom.map { RoosterDayEntry.Custom(it) })
+                    .sortedBy { it.sortTime }
+
+                if (dayTimeline.isNotEmpty()) {
+                    if (viewMode != 0) {
+                        item(key = "spacious_header_${dayItem.dateIso}") {
+                            Text(
+                                text = "${dayItem.nameDutch} ${dayItem.dateString}".uppercase(),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+                            )
+                        }
+                    }
+                    items(dayTimeline, key = { "${dayItem.dateIso}_${it.key}" }) { entry ->
+                        when (entry) {
+                            is RoosterDayEntry.Lesson -> {
+                                val appt = entry.appointment
+                                val isKwtItem = appt.isKwt || kwtSlots.any { it.appointmentId == appt.id }
+                                RoosterPeriodCard(
+                                    appointment = appt,
+                                    isKwtSelectable = isKwtItem,
+                                    onOpenKwt = { onOpenKwtSlot(appt) }
+                                )
+                            }
+                            is RoosterDayEntry.Custom -> {
+                                CustomScheduleItemCard(
+                                    item = entry.item,
+                                    onToggleCompleted = { onToggleCustomScheduleItem(entry.item.id, it) },
+                                    onEdit = { onEditCustomScheduleItem(entry.item) },
+                                    onDelete = { onDeleteCustomScheduleItem(entry.item.id) }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -956,17 +1044,22 @@ fun RoosterPeriodCard(
 @Composable
 private fun UpcomingTestCard(
     test: UpcomingTestEntry,
+    checklistProgressText: String? = null,
+    onClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isUrgent = test.daysRemaining != null && test.daysRemaining <= 2
+    val cardShape = appCardShape(standard = 18.dp, nothing = 22.dp)
     Card(
-        shape = appCardShape(standard = 18.dp, nothing = 22.dp),
+        shape = cardShape,
         border = nothingCardBorder(isAlert = isUrgent),
         colors = CardDefaults.cardColors(
             containerColor = if (isUrgent) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceContainerLow
         ),
         modifier = modifier
             .fillMaxWidth()
+            .clip(cardShape)
+            .clickable(onClick = onClick)
             .testTag("upcoming_test_card_${test.id}")
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -1048,6 +1141,17 @@ private fun UpcomingTestCard(
                         modifier = Modifier.padding(10.dp)
                     )
                 }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                OneUiPillBadge(
+                    text = checklistProgressText ?: "Studiechecklist openen",
+                    modifier = Modifier.testTag("upcoming_test_checklist_${test.id}")
+                )
             }
         }
     }

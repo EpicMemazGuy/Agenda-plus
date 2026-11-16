@@ -1,6 +1,11 @@
 package com.example.data
 
 import android.content.Context
+import com.example.data.db.AgendaDatabase
+import com.example.data.db.CustomScheduleItem
+import com.example.data.db.CustomScheduleRepository
+import com.example.hardware.NothingGlyphBridge
+import com.example.hardware.WearSyncBridge
 import com.example.model.*
 import com.example.network.AuthResult
 import com.example.network.CitySearchResult
@@ -8,13 +13,16 @@ import com.example.network.MagisterClient
 import com.example.network.TransitClient
 import com.example.network.WeatherClient
 import com.example.notifications.ScheduleMonitorJobService
+import com.example.notifications.SmartBusPlanner
 import com.example.notifications.UitvalNotificationHelper
 import com.example.util.LauncherIconManager
 import com.example.util.NetworkStatusHelper
 import com.example.widget.WidgetUpdater
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOf
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -23,6 +31,8 @@ import java.util.UUID
 class AgendaRepository(private val context: Context? = null) {
 
     private val prefs: AppPreferencesStore? = context?.let { AppPreferencesStore(it) }
+    private val customScheduleRepo: CustomScheduleRepository? =
+        context?.let { CustomScheduleRepository(AgendaDatabase.getInstance(it).customScheduleDao()) }
     private val weatherClient = WeatherClient()
     private val transitClient = TransitClient(prefs)
     private val magisterClient = MagisterClient()
@@ -72,6 +82,35 @@ class AgendaRepository(private val context: Context? = null) {
 
     private val _kwtSlots = MutableStateFlow(prefs?.loadKwtSlots() ?: emptyList())
     val kwtSlots: StateFlow<List<KwtSlot>> = _kwtSlots.asStateFlow()
+
+    private val _absences = MutableStateFlow(prefs?.loadAbsences() ?: emptyList())
+    val absences: StateFlow<List<AbsenceRecord>> = _absences.asStateFlow()
+
+    private val _testPrepChecklists = MutableStateFlow(prefs?.loadTestPrepChecklists() ?: emptyMap())
+    val testPrepChecklists: StateFlow<Map<String, TestPrepChecklist>> = _testPrepChecklists.asStateFlow()
+
+    private val _quietHoursConfig = MutableStateFlow(prefs?.getQuietHoursConfig() ?: QuietHoursConfig())
+    val quietHoursConfig: StateFlow<QuietHoursConfig> = _quietHoursConfig.asStateFlow()
+
+    private val _mutedSubjects = MutableStateFlow(prefs?.getMutedSubjects() ?: emptySet())
+    val mutedSubjects: StateFlow<Set<String>> = _mutedSubjects.asStateFlow()
+
+    private val _smartBusAlertsEnabled = MutableStateFlow(prefs?.isSmartBusAlertsEnabled() ?: true)
+    val smartBusAlertsEnabled: StateFlow<Boolean> = _smartBusAlertsEnabled.asStateFlow()
+
+    private val _busWalkMinutes = MutableStateFlow(prefs?.getBusWalkMinutes() ?: 5)
+    val busWalkMinutes: StateFlow<Int> = _busWalkMinutes.asStateFlow()
+
+    private val _busArrivalBufferMinutes = MutableStateFlow(prefs?.getBusArrivalBufferMinutes() ?: 10)
+    val busArrivalBufferMinutes: StateFlow<Int> = _busArrivalBufferMinutes.asStateFlow()
+
+    private val _smartBusAdvice = MutableStateFlow<SmartBusAdvice?>(null)
+    val smartBusAdvice: StateFlow<SmartBusAdvice?> = _smartBusAdvice.asStateFlow()
+
+    private var previousAppointmentsSnapshot: List<Appointment> = _appointments.value
+
+    val customScheduleItems: Flow<List<CustomScheduleItem>> =
+        customScheduleRepo?.observeAll() ?: flowOf(emptyList())
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -253,6 +292,7 @@ class AgendaRepository(private val context: Context? = null) {
                 )
             }
 
+            previousAppointmentsSnapshot = prevAppointments
             _appointments.value = cleanedAppointments
             _disruptions.value = bundle.disruptions
             _gradeSummaries.value = bundle.grades
@@ -263,6 +303,7 @@ class AgendaRepository(private val context: Context? = null) {
             }
             _studyGuides.value = bundle.studyGuides
             _kwtSlots.value = bundle.kwtSlots
+            _absences.value = bundle.absences
 
             if (prefs != null && !prefs.hasUnboxedBaseline()) {
                 val allGradeIds = bundle.grades.flatMap { it.grades }.map { it.id }.toSet()
@@ -282,6 +323,7 @@ class AgendaRepository(private val context: Context? = null) {
             prefs?.saveMessages(bundle.messages)
             prefs?.saveStudyGuides(bundle.studyGuides)
             prefs?.saveKwtSlots(bundle.kwtSlots)
+            prefs?.saveAbsences(bundle.absences)
             prefs?.saveLastSyncTime(syncLabel)
 
             context?.let { ctx ->
@@ -292,8 +334,8 @@ class AgendaRepository(private val context: Context? = null) {
                     newGrades = bundle.grades,
                     newTasks = bundle.tasks
                 )
-                WidgetUpdater.updateAllWidgets(ctx)
             }
+            recalculateSmartBusAndBridges()
         } catch (e: Exception) {
             com.example.util.RawConsoleLogger.warn("Sync", "Sync probleem: ${e.message}")
             _lastSyncTime.value = if (_appointments.value.isNotEmpty()) {
@@ -392,6 +434,62 @@ class AgendaRepository(private val context: Context? = null) {
         ).joinToString(" ")
         val updated = transitClient.fetchLiveBusTracking(line, cityHint, userLat, userLon)
         _busTrackingState.value = updated
+        recalculateSmartBusAndBridges()
+    }
+
+    private fun recalculateSmartBusAndBridges() {
+        val busState = _busTrackingState.value
+        val advice = if (_smartBusAlertsEnabled.value) {
+            SmartBusPlanner.computeAdvice(
+                todayAppointments = _appointments.value,
+                previousAppointments = previousAppointmentsSnapshot,
+                busTrackingState = busState,
+                walkMinutes = _busWalkMinutes.value,
+                arrivalBufferMinutes = _busArrivalBufferMinutes.value,
+                savedBusLine = _savedBusLine.value
+            )
+        } else null
+        _smartBusAdvice.value = advice
+
+        if (busState.lineNumber.isNotBlank()) {
+            val nearest = busState.nearestStop
+            prefs?.saveBusWidgetSnapshot(
+                BusWidgetSnapshot(
+                    busLine = busState.lineNumber,
+                    stopName = nearest?.name ?: "",
+                    expectedTime = nearest?.expectedArrival ?: advice?.busDepartureTime ?: "",
+                    delayMinutes = nearest?.delayMinutes ?: 0,
+                    smartAdviceText = advice?.let { "Vertrek ${it.leaveHomeTime} • Lijn ${it.busLine}" } ?: "",
+                    updatedLabel = busState.lastUpdatedLabel
+                )
+            )
+        }
+
+        context?.let { ctx ->
+            if (advice != null && advice.shouldNotifyPriority && advice.alertKey != prefs?.getLastSmartBusAlertKey()) {
+                prefs?.setLastSmartBusAlertKey(advice.alertKey)
+                val body = advice.shiftReasonMessage
+                    ?: "Vertrek om ${advice.leaveHomeTime} voor lijn ${advice.busLine} (${advice.busDepartureTime})."
+                UitvalNotificationHelper.postSmartBusNotification(
+                    context = ctx,
+                    title = "Slimme Busmelding: Lijn ${advice.busLine}",
+                    body = body
+                )
+            }
+            NothingGlyphBridge.updateGlyphCountdown(
+                context = ctx,
+                appointments = _appointments.value,
+                busAdvice = advice,
+                busTracking = busState
+            )
+            WearSyncBridge.pushStatus(
+                context = ctx,
+                appointments = _appointments.value,
+                busTracking = busState,
+                smartBusAdvice = advice
+            )
+            WidgetUpdater.updateAllWidgets(ctx)
+        }
     }
 
     suspend fun loadMessageDetail(messageId: String): String? {
@@ -446,6 +544,22 @@ class AgendaRepository(private val context: Context? = null) {
             refreshAll()
         }
         return res
+    }
+
+    suspend fun fetchKwtSlotForAppointment(appointment: Appointment): KwtSlot? {
+        val cached = _kwtSlots.value.firstOrNull { it.appointmentId == appointment.id }
+        if (cached != null && cached.options.isNotEmpty()) return cached
+        if (isEffectivelyOffline()) return cached
+        val session = _currentSession.value
+        val tenant = session.school ?: return cached
+        val token = session.accessToken ?: return cached
+        val live = magisterClient.fetchKwtSlotForAppointment(tenant, token, session.personId, appointment)
+        if (live != null) {
+            val merged = (_kwtSlots.value.filterNot { it.appointmentId == live.appointmentId } + live)
+            _kwtSlots.value = merged
+            prefs?.saveKwtSlots(merged)
+        }
+        return live ?: cached
     }
 
     fun completeOnboarding(style: AgendaStyle, scale: Float) {
@@ -609,6 +723,116 @@ class AgendaRepository(private val context: Context? = null) {
         updateMonitorSchedule()
     }
 
+    fun setQuietHoursEnabled(enabled: Boolean) {
+        prefs?.setQuietHoursEnabled(enabled)
+        _quietHoursConfig.value = prefs?.getQuietHoursConfig() ?: QuietHoursConfig(enabled = enabled)
+    }
+
+    fun setQuietHoursStartMinutes(minutes: Int) {
+        prefs?.setQuietHoursStartMinutes(minutes)
+        _quietHoursConfig.value = prefs?.getQuietHoursConfig() ?: _quietHoursConfig.value.copy(startMinutes = minutes)
+    }
+
+    fun setQuietHoursEndMinutes(minutes: Int) {
+        prefs?.setQuietHoursEndMinutes(minutes)
+        _quietHoursConfig.value = prefs?.getQuietHoursConfig() ?: _quietHoursConfig.value.copy(endMinutes = minutes)
+    }
+
+    fun toggleMutedSubject(subjectName: String) {
+        val clean = subjectName.trim()
+        if (clean.isBlank()) return
+        val current = _mutedSubjects.value
+        val existingMatch = current.firstOrNull { it.equals(clean, ignoreCase = true) }
+        val updated = if (existingMatch != null) current - existingMatch else current + clean
+        _mutedSubjects.value = updated
+        prefs?.setMutedSubjects(updated)
+    }
+
+    fun setSmartBusAlertsEnabled(enabled: Boolean) {
+        _smartBusAlertsEnabled.value = enabled
+        prefs?.setSmartBusAlertsEnabled(enabled)
+        recalculateSmartBusAndBridges()
+    }
+
+    fun setBusWalkMinutes(minutes: Int) {
+        val clamped = minutes.coerceIn(1, 30)
+        _busWalkMinutes.value = clamped
+        prefs?.setBusWalkMinutes(clamped)
+        recalculateSmartBusAndBridges()
+    }
+
+    fun setBusArrivalBufferMinutes(minutes: Int) {
+        val clamped = minutes.coerceIn(2, 30)
+        _busArrivalBufferMinutes.value = clamped
+        prefs?.setBusArrivalBufferMinutes(clamped)
+        recalculateSmartBusAndBridges()
+    }
+
+    fun openOrCreateTestPrepChecklist(
+        key: String,
+        subject: String,
+        title: String,
+        toetsstof: String
+    ): TestPrepChecklist {
+        val existing = _testPrepChecklists.value[key]
+        if (existing != null) return existing
+        val topics = AppPreferencesStore.splitToetsstofIntoTopics(toetsstof, subject, title)
+        val created = TestPrepChecklist(
+            key = key,
+            subject = subject,
+            title = title,
+            topics = topics
+        )
+        val updated = _testPrepChecklists.value.toMutableMap().apply { put(key, created) }
+        _testPrepChecklists.value = updated
+        prefs?.saveTestPrepChecklist(created)
+        return created
+    }
+
+    fun toggleTestPrepTopic(key: String, topicId: String) {
+        val list = _testPrepChecklists.value[key] ?: return
+        val updatedList = list.copy(
+            topics = list.topics.map { t ->
+                if (t.id == topicId) t.copy(isChecked = !t.isChecked) else t
+            }
+        )
+        _testPrepChecklists.value = _testPrepChecklists.value.toMutableMap().apply { put(key, updatedList) }
+        prefs?.saveTestPrepChecklist(updatedList)
+    }
+
+    fun addTestPrepTopic(key: String, label: String) {
+        val clean = label.trim()
+        if (clean.isBlank()) return
+        val list = _testPrepChecklists.value[key] ?: return
+        val newTopic = TestPrepSubtopic(
+            id = "custom_${UUID.randomUUID().toString().take(8)}",
+            title = clean,
+            isChecked = false
+        )
+        val updatedList = list.copy(topics = list.topics + newTopic)
+        _testPrepChecklists.value = _testPrepChecklists.value.toMutableMap().apply { put(key, updatedList) }
+        prefs?.saveTestPrepChecklist(updatedList)
+    }
+
+    fun removeTestPrepTopic(key: String, topicId: String) {
+        val list = _testPrepChecklists.value[key] ?: return
+        val updatedList = list.copy(topics = list.topics.filterNot { it.id == topicId })
+        _testPrepChecklists.value = _testPrepChecklists.value.toMutableMap().apply { put(key, updatedList) }
+        prefs?.saveTestPrepChecklist(updatedList)
+    }
+
+    suspend fun upsertCustomScheduleItem(item: CustomScheduleItem) {
+        customScheduleRepo?.upsert(item)
+    }
+
+    suspend fun setCustomScheduleItemCompleted(id: Long, completed: Boolean) {
+        customScheduleRepo?.setCompleted(id, completed)
+    }
+
+    suspend fun deleteCustomScheduleItem(id: Long) {
+        customScheduleRepo?.delete(id)
+    }
+
     fun setGradeUnboxingEnabled(enabled: Boolean) {
         _gradeUnboxingEnabled.value = enabled
         prefs?.setGradeUnboxingEnabled(enabled)
@@ -649,13 +873,18 @@ class AgendaRepository(private val context: Context? = null) {
             _uitvalNotificationsEnabled.value = store.isUitvalNotificationsEnabled()
             _gradeNotificationsEnabled.value = store.isGradeNotificationsEnabled()
             _testNotificationsEnabled.value = store.isTestNotificationsEnabled()
+            _quietHoursConfig.value = store.getQuietHoursConfig()
+            _mutedSubjects.value = store.getMutedSubjects()
+            _smartBusAlertsEnabled.value = store.isSmartBusAlertsEnabled()
+            _busWalkMinutes.value = store.getBusWalkMinutes()
+            _busArrivalBufferMinutes.value = store.getBusArrivalBufferMinutes()
             _gradeUnboxingEnabled.value = store.isGradeUnboxingEnabled()
             _gradeUnboxingMode.value = store.getGradeUnboxingMode()
             _schoolAddress.value = store.loadSchoolAddress()
             _todayBlocks.value = store.loadTodayBlocksConfig()
             _studySites.value = store.loadStudySites()
             updateMonitorSchedule()
-            context?.let { WidgetUpdater.updateAllWidgets(it) }
+            recalculateSmartBusAndBridges()
         }
         return result
     }
@@ -663,12 +892,15 @@ class AgendaRepository(private val context: Context? = null) {
     fun resetAppAndLogout() {
         _currentSession.value = AuthSession()
         _appointments.value = emptyList()
+        previousAppointmentsSnapshot = emptyList()
         _disruptions.value = emptyList()
         _tasks.value = emptyList()
         _gradeSummaries.value = emptyList()
         _messages.value = emptyList()
         _studyGuides.value = emptyList()
         _kwtSlots.value = emptyList()
+        _absences.value = emptyList()
+        _smartBusAdvice.value = null
         _unboxedGradeIds.value = emptySet()
         _lastSyncTime.value = "Uitgelogd"
         prefs?.clearSession()

@@ -22,6 +22,7 @@ import com.example.model.TaskCategory
 import com.example.model.cleanSchoolText
 import com.example.model.isTestKeywordMatch
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -52,13 +53,49 @@ object UitvalNotificationHelper {
     private const val TESTS_CHANNEL_NAME = "Nieuwe toetsen"
     private const val TESTS_CHANNEL_DESC = "Meldingen zodra een nieuwe toets, PW, SO of MO wordt ingepland."
 
+    const val SMART_BUS_CHANNEL_ID = "smart_bus_alerts_channel"
+    private const val SMART_BUS_CHANNEL_NAME = "Slimme Busmeldingen"
+    private const val SMART_BUS_CHANNEL_DESC = "Directe vertrektijd-updates wanneer het 1e uur uitvalt."
+
+    fun isWithinQuietHours(nowMinutes: Int, startMinutes: Int, endMinutes: Int): Boolean {
+        val wrappedNow = ((nowMinutes % 1440) + 1440) % 1440
+        val start = ((startMinutes % 1440) + 1440) % 1440
+        val end = ((endMinutes % 1440) + 1440) % 1440
+        if (start == end) return false
+        return if (start < end) {
+            wrappedNow in start until end
+        } else {
+            wrappedNow >= start || wrappedNow < end
+        }
+    }
+
+    fun isSubjectMuted(subjectName: String?, mutedSubjects: Set<String>): Boolean {
+        val clean = subjectName?.trim()?.lowercase(Locale.getDefault()) ?: return false
+        if (clean.isEmpty() || mutedSubjects.isEmpty()) return false
+        return mutedSubjects.any { muted ->
+            val m = muted.trim().lowercase(Locale.getDefault())
+            m.isNotEmpty() && (clean == m || clean.contains(m))
+        }
+    }
+
+    fun isQuietHoursActive(store: AppPreferencesStore, nowMinutes: Int = currentClockMinutes()): Boolean {
+        val cfg = store.getQuietHoursConfig()
+        return cfg.enabled && isWithinQuietHours(nowMinutes, cfg.startMinutes, cfg.endMinutes)
+    }
+
+    private fun currentClockMinutes(): Int {
+        val cal = Calendar.getInstance()
+        return cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+    }
+
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             val channels = listOf(
                 Triple(CHANNEL_ID, CHANNEL_NAME, CHANNEL_DESC),
                 Triple(GRADES_CHANNEL_ID, GRADES_CHANNEL_NAME, GRADES_CHANNEL_DESC),
-                Triple(TESTS_CHANNEL_ID, TESTS_CHANNEL_NAME, TESTS_CHANNEL_DESC)
+                Triple(TESTS_CHANNEL_ID, TESTS_CHANNEL_NAME, TESTS_CHANNEL_DESC),
+                Triple(SMART_BUS_CHANNEL_ID, SMART_BUS_CHANNEL_NAME, SMART_BUS_CHANNEL_DESC)
             )
             for ((id, name, desc) in channels) {
                 if (manager.getNotificationChannel(id) == null) {
@@ -244,20 +281,22 @@ object UitvalNotificationHelper {
         previousAppointments: List<Appointment>,
         newAppointments: List<Appointment>,
         newGrades: List<SubjectGradeSummary>,
-        newTasks: List<HomeworkTask>
+        newTasks: List<HomeworkTask>,
+        nowMinutes: Int = currentClockMinutes()
     ) {
         val store = AppPreferencesStore(context)
         val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val mutedSubjects = store.getMutedSubjects()
 
-        // 1. Uitval & Roosterwijzigingen
-        val (newlyCanceled, updatedCancelKeys) = findNewlyCanceledLessons(
+        // 1. Uitval & Roosterwijzigingen (altijd eerst baselines bijwerken)
+        val (newlyCanceledRaw, updatedCancelKeys) = findNewlyCanceledLessons(
             appointments = newAppointments,
             previouslyNotifiedKeys = store.getNotifiedCanceledKeys(),
             todayIso = todayIso
         )
         store.setNotifiedCanceledKeys(updatedCancelKeys)
 
-        val (scheduleChanges, updatedChangeKeys) = findScheduleChanges(
+        val (scheduleChangesRaw, updatedChangeKeys) = findScheduleChanges(
             previousAppointments = previousAppointments,
             newAppointments = newAppointments,
             previouslyNotifiedChangeKeys = store.getNotifiedChangeKeys(),
@@ -266,7 +305,7 @@ object UitvalNotificationHelper {
         store.setNotifiedChangeKeys(updatedChangeKeys)
 
         // 2. Nieuwe cijfers
-        val (newGradeItems, updatedGradeIds) = findNewGrades(
+        val (newGradeItemsRaw, updatedGradeIds) = findNewGrades(
             newGradeSummaries = newGradeSummariesOrEmpty(newGrades),
             knownGradeIds = store.getKnownGradeIds(),
             hasBaseline = store.hasGradesBaseline()
@@ -276,7 +315,7 @@ object UitvalNotificationHelper {
         }
 
         // 3. Nieuwe toetsen
-        val (newTestItems, updatedTestKeys) = findNewTests(
+        val (newTestItemsRaw, updatedTestKeys) = findNewTests(
             appointments = newAppointments,
             tasks = newTasks,
             knownTestKeys = store.getKnownTestKeys(),
@@ -287,8 +326,24 @@ object UitvalNotificationHelper {
             store.setKnownTestKeys(updatedTestKeys)
         }
 
+        // Stille uren: baselines zijn bijgewerkt, maar we sturen nu geen meldingen uit
+        if (isQuietHoursActive(store, nowMinutes)) return
         if (!hasNotificationPermission(context)) return
         ensureChannel(context)
+
+        val newlyCanceled = newlyCanceledRaw.filterNot { appt ->
+            isSubjectMuted(appt.subjectName, mutedSubjects) || isSubjectMuted(appt.title, mutedSubjects)
+        }
+        val scheduleChanges = scheduleChangesRaw.filterNot { alert ->
+            isSubjectMuted(alert.appointment.subjectName, mutedSubjects) ||
+                isSubjectMuted(alert.appointment.title, mutedSubjects)
+        }
+        val newGradeItems = newGradeItemsRaw.filterNot { grade ->
+            isSubjectMuted(grade.subjectName, mutedSubjects) || isSubjectMuted(grade.subjectCode, mutedSubjects)
+        }
+        val newTestItems = newTestItemsRaw.filterNot { item ->
+            isSubjectMuted(item.subject, mutedSubjects)
+        }
 
         if (store.isUitvalNotificationsEnabled()) {
             if (newlyCanceled.isNotEmpty()) {
@@ -330,19 +385,29 @@ object UitvalNotificationHelper {
 
     fun evaluateAndNotifyCancellations(
         context: Context,
-        appointments: List<Appointment>
+        appointments: List<Appointment>,
+        nowMinutes: Int = currentClockMinutes()
     ): List<Appointment> {
         val store = AppPreferencesStore(context)
         val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
         val previousKeys = store.getNotifiedCanceledKeys()
 
-        val (newlyCanceled, updatedKeys) = findNewlyCanceledLessons(
+        val (newlyCanceledRaw, updatedKeys) = findNewlyCanceledLessons(
             appointments = appointments,
             previouslyNotifiedKeys = previousKeys,
             todayIso = todayIso
         )
 
         store.setNotifiedCanceledKeys(updatedKeys)
+
+        if (isQuietHoursActive(store, nowMinutes)) {
+            return emptyList()
+        }
+
+        val mutedSubjects = store.getMutedSubjects()
+        val newlyCanceled = newlyCanceledRaw.filterNot { appt ->
+            isSubjectMuted(appt.subjectName, mutedSubjects) || isSubjectMuted(appt.title, mutedSubjects)
+        }
 
         if (newlyCanceled.isEmpty() || !store.isUitvalNotificationsEnabled()) {
             return emptyList()
@@ -363,6 +428,34 @@ object UitvalNotificationHelper {
         }
 
         return newlyCanceled
+    }
+
+    fun postSmartBusNotification(
+        context: Context,
+        title: String,
+        body: String,
+        nowMinutes: Int = currentClockMinutes()
+    ) {
+        val store = AppPreferencesStore(context)
+        if (!store.isSmartBusAlertsEnabled() || isQuietHoursActive(store, nowMinutes)) return
+        if (!hasNotificationPermission(context)) return
+        ensureChannel(context)
+
+        val notification = NotificationCompat.Builder(context, SMART_BUS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification_uitval)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setAutoCancel(true)
+            .setContentIntent(mainPendingIntent(context, 81001))
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context).notify(81001, notification)
+        } catch (_: SecurityException) {
+        }
     }
 
     fun sendTestUitvalNotification(context: Context): Boolean {

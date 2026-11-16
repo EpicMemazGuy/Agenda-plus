@@ -7,4 +7,12 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="oneui_widget_bg">#FFF9FAFC</color>
+    <color name="oneui_widget_border">#14000000</color>
+    <color name="oneui_widget_row_bg">#FFF0F2F7</color>
+    <color name="oneui_widget_pill_bg">#1F0381FE</color>
+    <color name="oneui_widget_error_pill_bg">#1FE53935</color>
+    <color name="oneui_widget_text_primary">#FF101318</color>
+    <color name="oneui_widget_text_secondary">#FF5D6472</color>
+    <color name="oneui_widget_accent">#FF0381FE</color>
 </resources>

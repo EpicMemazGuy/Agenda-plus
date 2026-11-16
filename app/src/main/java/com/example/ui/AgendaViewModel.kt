@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AgendaRepository
+import com.example.data.db.CustomScheduleItem
 import com.example.model.*
 import com.example.network.AuthResult
 import com.example.network.CitySearchResult
@@ -24,6 +25,7 @@ enum class AppTab(val title: String) {
 enum class MeerSection(val titleDutch: String) {
     HOME("Meer"),
     BERICHTEN("Magister Berichten"),
+    AFWEZIGHEID("Afwezigheid"),
     STUDIEWIJZERS("Studiewijzers & Bronnen"),
     KWT("Keuzelessen (KWT)"),
     INSTELLINGEN("Instellingen")
@@ -53,6 +55,16 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
     val messageFolders: StateFlow<List<MessageFolderInfo>> = repository.messageFolders
     val studyGuides: StateFlow<List<StudyGuide>> = repository.studyGuides
     val kwtSlots: StateFlow<List<KwtSlot>> = repository.kwtSlots
+    val absences: StateFlow<List<AbsenceRecord>> = repository.absences
+    val customScheduleItems: StateFlow<List<CustomScheduleItem>> = repository.customScheduleItems
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val testPrepChecklists: StateFlow<Map<String, TestPrepChecklist>> = repository.testPrepChecklists
+    val quietHoursConfig: StateFlow<QuietHoursConfig> = repository.quietHoursConfig
+    val mutedSubjects: StateFlow<Set<String>> = repository.mutedSubjects
+    val smartBusAlertsEnabled: StateFlow<Boolean> = repository.smartBusAlertsEnabled
+    val busWalkMinutes: StateFlow<Int> = repository.busWalkMinutes
+    val busArrivalBufferMinutes: StateFlow<Int> = repository.busArrivalBufferMinutes
+    val smartBusAdvice: StateFlow<SmartBusAdvice?> = repository.smartBusAdvice
     val isRefreshing: StateFlow<Boolean> = repository.isRefreshing
     val lastSyncTime: StateFlow<String> = repository.lastSyncTime
 
@@ -142,6 +154,18 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _activeKwtSlotForSheet = MutableStateFlow<KwtSlot?>(null)
     val activeKwtSlotForSheet: StateFlow<KwtSlot?> = _activeKwtSlotForSheet.asStateFlow()
+
+    private val _isKwtSheetLoading = MutableStateFlow(false)
+    val isKwtSheetLoading: StateFlow<Boolean> = _isKwtSheetLoading.asStateFlow()
+
+    private val _activeChecklistKey = MutableStateFlow<String?>(null)
+    val activeChecklistKey: StateFlow<String?> = _activeChecklistKey.asStateFlow()
+
+    private val _showCustomScheduleDialog = MutableStateFlow(false)
+    val showCustomScheduleDialog: StateFlow<Boolean> = _showCustomScheduleDialog.asStateFlow()
+
+    private val _editingCustomScheduleItem = MutableStateFlow<CustomScheduleItem?>(null)
+    val editingCustomScheduleItem: StateFlow<CustomScheduleItem?> = _editingCustomScheduleItem.asStateFlow()
 
     private fun currentSchoolDay(): Int {
         return when (java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_WEEK)) {
@@ -318,10 +342,71 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
             periodIndex = appointment.periodIndex,
             options = emptyList()
         )
+        if (existing == null || existing.options.isEmpty()) {
+            viewModelScope.launch {
+                _isKwtSheetLoading.value = true
+                val live = repository.fetchKwtSlotForAppointment(appointment)
+                if (live != null && _activeKwtSlotForSheet.value?.appointmentId == appointment.id) {
+                    _activeKwtSlotForSheet.value = live
+                }
+                _isKwtSheetLoading.value = false
+            }
+        }
     }
 
     fun closeKwtSlotSheet() {
         _activeKwtSlotForSheet.value = null
+        _isKwtSheetLoading.value = false
+    }
+
+    fun openTestPrepChecklist(key: String, subject: String, title: String, toetsstof: String) {
+        repository.openOrCreateTestPrepChecklist(key, subject, title, toetsstof)
+        _activeChecklistKey.value = key
+    }
+
+    fun closeTestPrepChecklist() {
+        _activeChecklistKey.value = null
+    }
+
+    fun toggleTestPrepTopic(key: String, topicId: String) {
+        repository.toggleTestPrepTopic(key, topicId)
+    }
+
+    fun addTestPrepTopic(key: String, label: String) {
+        repository.addTestPrepTopic(key, label)
+    }
+
+    fun removeTestPrepTopic(key: String, topicId: String) {
+        repository.removeTestPrepTopic(key, topicId)
+    }
+
+    fun openCustomScheduleDialog(item: CustomScheduleItem? = null) {
+        _editingCustomScheduleItem.value = item
+        _showCustomScheduleDialog.value = true
+    }
+
+    fun closeCustomScheduleDialog() {
+        _showCustomScheduleDialog.value = false
+        _editingCustomScheduleItem.value = null
+    }
+
+    fun saveCustomScheduleItem(item: CustomScheduleItem) {
+        viewModelScope.launch {
+            repository.upsertCustomScheduleItem(item)
+            closeCustomScheduleDialog()
+        }
+    }
+
+    fun toggleCustomScheduleItem(id: Long, completed: Boolean) {
+        viewModelScope.launch {
+            repository.setCustomScheduleItemCompleted(id, completed)
+        }
+    }
+
+    fun deleteCustomScheduleItem(id: Long) {
+        viewModelScope.launch {
+            repository.deleteCustomScheduleItem(id)
+        }
     }
 
     suspend fun enrollKwtOption(appointmentId: Long, optionId: Long): Result<Unit> {
@@ -346,6 +431,34 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setTestNotificationsEnabled(enabled: Boolean) {
         repository.setTestNotificationsEnabled(enabled)
+    }
+
+    fun setQuietHoursEnabled(enabled: Boolean) {
+        repository.setQuietHoursEnabled(enabled)
+    }
+
+    fun setQuietHoursStartMinutes(minutes: Int) {
+        repository.setQuietHoursStartMinutes(minutes)
+    }
+
+    fun setQuietHoursEndMinutes(minutes: Int) {
+        repository.setQuietHoursEndMinutes(minutes)
+    }
+
+    fun toggleMutedSubject(subjectName: String) {
+        repository.toggleMutedSubject(subjectName)
+    }
+
+    fun setSmartBusAlertsEnabled(enabled: Boolean) {
+        repository.setSmartBusAlertsEnabled(enabled)
+    }
+
+    fun setBusWalkMinutes(minutes: Int) {
+        repository.setBusWalkMinutes(minutes)
+    }
+
+    fun setBusArrivalBufferMinutes(minutes: Int) {
+        repository.setBusArrivalBufferMinutes(minutes)
     }
 
     fun setGradeUnboxingEnabled(enabled: Boolean) {

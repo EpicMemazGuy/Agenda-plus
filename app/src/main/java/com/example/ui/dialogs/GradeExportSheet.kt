@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -25,6 +26,7 @@ import com.example.model.GradeItem
 import com.example.model.SubjectGradeSummary
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.theme.LocalDarkThemeActive
 import com.example.util.GradeExporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -298,6 +300,9 @@ fun GradeExportSheet(
                 }
             }
 
+            val isDarkModeActive = LocalDarkThemeActive.current
+            val primaryColorArgb = MaterialTheme.colorScheme.primary.toArgb()
+
             Button(
                 onClick = {
                     val chosen = allGrades.filter { it.id in selectedIds }
@@ -310,7 +315,9 @@ fun GradeExportSheet(
                                 selectedGrades = chosen,
                                 overallAverage = overallAverage,
                                 studentName = studentName,
-                                appThemeStyle = appThemeStyle
+                                appThemeStyle = appThemeStyle,
+                                isDarkMode = isDarkModeActive,
+                                dynamicPrimaryArgb = primaryColorArgb
                             )
                         }
                         isWorking = false

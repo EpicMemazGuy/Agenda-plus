@@ -355,6 +355,9 @@ class AppPreferencesStore(context: Context) {
             .remove(KEY_MESSAGES_JSON)
             .remove(KEY_STUDY_GUIDES_JSON)
             .remove(KEY_KWT_SLOTS_JSON)
+            .remove(KEY_ABSENCES_JSON)
+            .remove(KEY_BUS_SNAPSHOT_JSON)
+            .remove(KEY_LAST_SMART_BUS_KEY)
             .remove(KEY_LAST_SYNC)
             .remove(KEY_NOTIFIED_CANCELED_KEYS)
             .remove(KEY_NOTIFIED_CHANGE_KEYS)
@@ -450,6 +453,7 @@ class AppPreferencesStore(context: Context) {
                     put("description", g.description)
                     put("date", g.date)
                     put("period", g.period)
+                    put("isPta", g.isPta)
                 })
             }
             arr.put(JSONObject().apply {
@@ -482,7 +486,8 @@ class AppPreferencesStore(context: Context) {
                                     weight = go.optDouble("weight", 1.0),
                                     description = go.optString("description", "Toets"),
                                     date = go.optString("date", ""),
-                                    period = go.optInt("period", 1)
+                                    period = go.optInt("period", 1),
+                                    isPta = go.optBoolean("isPta", false)
                                 )
                             )
                         }
@@ -809,9 +814,193 @@ class AppPreferencesStore(context: Context) {
         }
     }
 
+    fun isQuietHoursEnabled(): Boolean = prefs.getBoolean(KEY_QUIET_HOURS_ENABLED, true)
+
+    fun setQuietHoursEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_QUIET_HOURS_ENABLED, enabled).apply()
+    }
+
+    fun getQuietHoursStartMinutes(): Int =
+        prefs.getInt(KEY_QUIET_HOURS_START, 22 * 60).coerceIn(0, 23 * 60 + 59)
+
+    fun setQuietHoursStartMinutes(minutes: Int) {
+        prefs.edit().putInt(KEY_QUIET_HOURS_START, minutes.coerceIn(0, 23 * 60 + 59)).apply()
+    }
+
+    fun getQuietHoursEndMinutes(): Int =
+        prefs.getInt(KEY_QUIET_HOURS_END, 7 * 60).coerceIn(0, 23 * 60 + 59)
+
+    fun setQuietHoursEndMinutes(minutes: Int) {
+        prefs.edit().putInt(KEY_QUIET_HOURS_END, minutes.coerceIn(0, 23 * 60 + 59)).apply()
+    }
+
+    fun getQuietHoursConfig(): QuietHoursConfig = QuietHoursConfig(
+        enabled = isQuietHoursEnabled(),
+        startMinutes = getQuietHoursStartMinutes(),
+        endMinutes = getQuietHoursEndMinutes()
+    )
+
+    fun getMutedSubjects(): Set<String> =
+        prefs.getStringSet(KEY_MUTED_SUBJECTS, emptySet())?.toSet() ?: emptySet()
+
+    fun setMutedSubjects(subjects: Set<String>) {
+        prefs.edit().putStringSet(KEY_MUTED_SUBJECTS, subjects).apply()
+    }
+
+    fun isSmartBusAlertsEnabled(): Boolean = prefs.getBoolean(KEY_SMART_BUS_ALERTS, true)
+
+    fun setSmartBusAlertsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SMART_BUS_ALERTS, enabled).apply()
+    }
+
+    fun getBusWalkMinutes(): Int = prefs.getInt(KEY_BUS_WALK_MINUTES, 5).coerceIn(1, 30)
+
+    fun setBusWalkMinutes(minutes: Int) {
+        prefs.edit().putInt(KEY_BUS_WALK_MINUTES, minutes.coerceIn(1, 30)).apply()
+    }
+
+    fun getBusArrivalBufferMinutes(): Int = prefs.getInt(KEY_BUS_BUFFER_MINUTES, 10).coerceIn(2, 30)
+
+    fun setBusArrivalBufferMinutes(minutes: Int) {
+        prefs.edit().putInt(KEY_BUS_BUFFER_MINUTES, minutes.coerceIn(2, 30)).apply()
+    }
+
+    fun getLastSmartBusAlertKey(): String = prefs.getString(KEY_LAST_SMART_BUS_KEY, "") ?: ""
+
+    fun setLastSmartBusAlertKey(key: String) {
+        prefs.edit().putString(KEY_LAST_SMART_BUS_KEY, key).apply()
+    }
+
+    fun saveAbsences(absences: List<AbsenceRecord>) {
+        val arr = JSONArray()
+        absences.forEach { a ->
+            arr.put(JSONObject().apply {
+                put("id", a.id)
+                put("date", a.date)
+                put("period", a.period)
+                put("type", a.type.name)
+                put("reason", a.reason)
+                put("isApproved", a.isApproved)
+            })
+        }
+        prefs.edit().putString(KEY_ABSENCES_JSON, arr.toString()).apply()
+    }
+
+    fun loadAbsences(): List<AbsenceRecord> {
+        val raw = prefs.getString(KEY_ABSENCES_JSON, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val type = runCatching { AbsenceType.valueOf(o.optString("type")) }
+                        .getOrDefault(AbsenceType.EXCUSED)
+                    add(
+                        AbsenceRecord(
+                            id = o.optString("id", "abs_$i"),
+                            date = o.optString("date", ""),
+                            period = o.optString("period", "Hele dag"),
+                            type = type,
+                            reason = o.optString("reason", "Verzuim"),
+                            isApproved = o.optBoolean("isApproved", true)
+                        )
+                    )
+                }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun saveBusWidgetSnapshot(snapshot: BusWidgetSnapshot) {
+        val json = JSONObject().apply {
+            put("busLine", snapshot.busLine)
+            put("stopName", snapshot.stopName)
+            put("expectedTime", snapshot.expectedTime)
+            put("delayMinutes", snapshot.delayMinutes)
+            put("smartAdviceText", snapshot.smartAdviceText)
+            put("updatedLabel", snapshot.updatedLabel)
+        }
+        prefs.edit().putString(KEY_BUS_SNAPSHOT_JSON, json.toString()).apply()
+    }
+
+    fun loadBusWidgetSnapshot(): BusWidgetSnapshot? {
+        val raw = prefs.getString(KEY_BUS_SNAPSHOT_JSON, null) ?: return null
+        return try {
+            val o = JSONObject(raw)
+            BusWidgetSnapshot(
+                busLine = o.optString("busLine", ""),
+                stopName = o.optString("stopName", ""),
+                expectedTime = o.optString("expectedTime", ""),
+                delayMinutes = o.optInt("delayMinutes", 0),
+                smartAdviceText = o.optString("smartAdviceText", ""),
+                updatedLabel = o.optString("updatedLabel", "")
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun loadTestPrepChecklists(): Map<String, TestPrepChecklist> {
+        val raw = prefs.getString(KEY_TEST_PREP_JSON, null) ?: return emptyMap()
+        return try {
+            val root = JSONObject(raw)
+            val result = mutableMapOf<String, TestPrepChecklist>()
+            val keys = root.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val obj = root.optJSONObject(key) ?: continue
+                val topicsArr = obj.optJSONArray("topics") ?: JSONArray()
+                val topics = buildList {
+                    for (i in 0 until topicsArr.length()) {
+                        val to = topicsArr.optJSONObject(i) ?: continue
+                        add(
+                            TestPrepSubtopic(
+                                id = to.optString("id", "tp_$i"),
+                                title = to.optString("title", "Onderdeel"),
+                                isChecked = to.optBoolean("isChecked", false)
+                            )
+                        )
+                    }
+                }
+                result[key] = TestPrepChecklist(
+                    key = key,
+                    subject = obj.optString("subject", "Toets"),
+                    title = obj.optString("title", "Voorbereiding"),
+                    topics = topics
+                )
+            }
+            result
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    fun saveTestPrepChecklist(checklist: TestPrepChecklist) {
+        val current = loadTestPrepChecklists().toMutableMap()
+        current[checklist.key] = checklist
+        val root = JSONObject()
+        current.forEach { (key, list) ->
+            val topicsArr = JSONArray()
+            list.topics.forEach { t ->
+                topicsArr.put(JSONObject().apply {
+                    put("id", t.id)
+                    put("title", t.title)
+                    put("isChecked", t.isChecked)
+                })
+            }
+            root.put(key, JSONObject().apply {
+                put("subject", list.subject)
+                put("title", list.title)
+                put("topics", topicsArr)
+            })
+        }
+        prefs.edit().putString(KEY_TEST_PREP_JSON, root.toString()).apply()
+    }
+
     fun exportChoicesBackupJson(): String {
         val root = JSONObject().apply {
-            put("backupVersion", 1)
+            put("backupVersion", 2)
             put("appThemeStyle", getAppThemeStyle().name)
             put("darkModePreference", getDarkModePreference().name)
             put("agendaStyle", getAgendaStyle().name)
@@ -826,6 +1015,13 @@ class AppPreferencesStore(context: Context) {
             put("testNotificationsEnabled", isTestNotificationsEnabled())
             put("gradeUnboxingEnabled", isGradeUnboxingEnabled())
             put("gradeUnboxingMode", getGradeUnboxingMode().name)
+            put("quietHoursEnabled", isQuietHoursEnabled())
+            put("quietHoursStartMinutes", getQuietHoursStartMinutes())
+            put("quietHoursEndMinutes", getQuietHoursEndMinutes())
+            put("mutedSubjects", JSONArray(getMutedSubjects().toList()))
+            put("smartBusAlertsEnabled", isSmartBusAlertsEnabled())
+            put("busWalkMinutes", getBusWalkMinutes())
+            put("busArrivalBufferMinutes", getBusArrivalBufferMinutes())
 
             val weather = getWeatherLocation()
             put("weatherLocation", JSONObject().apply {
@@ -934,6 +1130,40 @@ class AppPreferencesStore(context: Context) {
                 setGradeUnboxingMode(it)
                 restoredCount++
             }
+        }
+        if (root.has("quietHoursEnabled")) {
+            setQuietHoursEnabled(root.optBoolean("quietHoursEnabled", true))
+            restoredCount++
+        }
+        if (root.has("quietHoursStartMinutes")) {
+            setQuietHoursStartMinutes(root.optInt("quietHoursStartMinutes", 22 * 60))
+            restoredCount++
+        }
+        if (root.has("quietHoursEndMinutes")) {
+            setQuietHoursEndMinutes(root.optInt("quietHoursEndMinutes", 7 * 60))
+            restoredCount++
+        }
+        root.optJSONArray("mutedSubjects")?.let { arr ->
+            val set = buildSet {
+                for (i in 0 until arr.length()) {
+                    val s = arr.optString(i).trim()
+                    if (s.isNotBlank()) add(s)
+                }
+            }
+            setMutedSubjects(set)
+            restoredCount++
+        }
+        if (root.has("smartBusAlertsEnabled")) {
+            setSmartBusAlertsEnabled(root.optBoolean("smartBusAlertsEnabled", true))
+            restoredCount++
+        }
+        if (root.has("busWalkMinutes")) {
+            setBusWalkMinutes(root.optInt("busWalkMinutes", 5))
+            restoredCount++
+        }
+        if (root.has("busArrivalBufferMinutes")) {
+            setBusArrivalBufferMinutes(root.optInt("busArrivalBufferMinutes", 10))
+            restoredCount++
         }
 
         root.optJSONObject("weatherLocation")?.let { w ->
@@ -1044,7 +1274,37 @@ class AppPreferencesStore(context: Context) {
         private const val KEY_HAS_UNBOXED_BASELINE = "has_unboxed_baseline"
         private const val KEY_OVAPI_CATALOG_JSON = "ovapi_catalog_json"
         private const val KEY_OVAPI_CATALOG_TIMESTAMP = "ovapi_catalog_timestamp"
+        private const val KEY_ABSENCES_JSON = "absences_json"
+        private const val KEY_BUS_SNAPSHOT_JSON = "bus_snapshot_json"
+        private const val KEY_TEST_PREP_JSON = "test_prep_json"
+        private const val KEY_QUIET_HOURS_ENABLED = "quiet_hours_enabled"
+        private const val KEY_QUIET_HOURS_START = "quiet_hours_start_minutes"
+        private const val KEY_QUIET_HOURS_END = "quiet_hours_end_minutes"
+        private const val KEY_MUTED_SUBJECTS = "muted_subjects"
+        private const val KEY_SMART_BUS_ALERTS = "smart_bus_alerts_enabled"
+        private const val KEY_BUS_WALK_MINUTES = "bus_walk_minutes"
+        private const val KEY_BUS_BUFFER_MINUTES = "bus_buffer_minutes"
+        private const val KEY_LAST_SMART_BUS_KEY = "last_smart_bus_key"
         const val DEFAULT_ELO_URL = "https://www.itslearning.com"
+
+        fun splitToetsstofIntoTopics(rawText: String, subject: String = "", fallbackTitle: String = ""): List<TestPrepSubtopic> {
+            val cleaned = rawText
+                .replace("\r\n", "\n")
+                .trim()
+            val rawParts = cleaned
+                .split(Regex("[,;\n•]+|\\s+en\\s+"))
+                .map { it.trim().trimStart('-', '*', '•', ' ').trim() }
+                .filter { it.length >= 2 }
+                .distinct()
+            val items = if (rawParts.isNotEmpty()) {
+                rawParts
+            } else {
+                listOf(fallbackTitle.ifBlank { "Leerdoelen $subject".trim() })
+            }
+            return items.mapIndexed { idx, label ->
+                TestPrepSubtopic(id = "topic_$idx", title = label, isChecked = false)
+            }
+        }
 
         fun defaultTodayBlocks(): List<TodayBlockConfig> = listOf(
             TodayBlockConfig(TodayBlockType.WEATHER, true),

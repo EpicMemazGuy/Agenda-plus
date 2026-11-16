@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.model.GradeItem
+import com.example.model.GradeScopeFilter
 import com.example.model.SubjectGradeSummary
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.NothingConcentricGradeRing
@@ -31,6 +32,32 @@ import com.example.ui.components.nothingCardBorder
 import com.example.ui.components.oneUiPillContainerColor
 import com.example.ui.components.oneUiPillContentColor
 import kotlin.math.round
+
+fun filterGradeSummariesByScope(
+    summaries: List<SubjectGradeSummary>,
+    filter: GradeScopeFilter
+): List<SubjectGradeSummary> {
+    if (filter == GradeScopeFilter.ALL) return summaries
+    return summaries.mapNotNull { summary ->
+        val matchingGrades = summary.grades.filter { grade ->
+            when (filter) {
+                GradeScopeFilter.ALL -> true
+                GradeScopeFilter.REGULAR -> !grade.isPta
+                GradeScopeFilter.PTA -> grade.isPta
+            }
+        }
+        if (matchingGrades.isEmpty()) {
+            null
+        } else {
+            val weightSum = matchingGrades.sumOf { it.weight }.coerceAtLeast(0.01)
+            val weightedAvg = round((matchingGrades.sumOf { it.score * it.weight } / weightSum) * 10) / 10.0
+            summary.copy(
+                weightedAverage = weightedAvg,
+                grades = matchingGrades
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,24 +79,30 @@ fun CijfersScreen(
     LaunchedEffect(isScrolled, oneUiMode) {
         onHeaderCollapsedChange(oneUiMode && isScrolled)
     }
+
+    var selectedScope by remember { mutableStateOf(GradeScopeFilter.ALL) }
+    val filteredSummaries = remember(summaries, selectedScope) {
+        filterGradeSummariesByScope(summaries, selectedScope)
+    }
+
     // Overall GPA calculation
-    val overallAverage = remember(summaries) {
-        if (summaries.isNotEmpty()) {
-            val total = summaries.sumOf { it.weightedAverage }
-            round((total / summaries.size) * 10) / 10.0
+    val overallAverage = remember(filteredSummaries) {
+        if (filteredSummaries.isNotEmpty()) {
+            val total = filteredSummaries.sumOf { it.weightedAverage }
+            round((total / filteredSummaries.size) * 10) / 10.0
         } else 0.0
     }
 
-    val allGradesSorted = remember(summaries) {
-        summaries.flatMap { it.grades }.sortedByDescending { it.date }
+    val allGradesSorted = remember(filteredSummaries) {
+        filteredSummaries.flatMap { it.grades }.sortedByDescending { it.date }
     }
     val nextUnrevealedGrade = remember(allGradesSorted, unboxedGradeIds, gradeUnboxingEnabled) {
         if (gradeUnboxingEnabled) allGradesSorted.firstOrNull { it.id !in unboxedGradeIds } else null
     }
     val latestGrade = nextUnrevealedGrade ?: allGradesSorted.firstOrNull()
 
-    val failingSubjects = summaries.count { !it.isPassingAverage }
-    val passingSubjects = summaries.count { it.isPassingAverage }
+    val failingSubjects = filteredSummaries.count { !it.isPassingAverage }
+    val passingSubjects = filteredSummaries.count { it.isPassingAverage }
 
     LazyColumn(
         state = listState,
@@ -204,8 +237,28 @@ fun CijfersScreen(
             }
         }
 
+        // Scope Filter: Alle / Regulier / PTA
+        item(key = "cijfers_scope_filter") {
+            SingleChoiceSegmentedButtonRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("grade_scope_filter_row")
+            ) {
+                GradeScopeFilter.entries.forEachIndexed { idx, scopeFilter ->
+                    SegmentedButton(
+                        selected = selectedScope == scopeFilter,
+                        onClick = { selectedScope = scopeFilter },
+                        shape = SegmentedButtonDefaults.itemShape(idx, GradeScopeFilter.entries.size),
+                        modifier = Modifier.testTag("grade_scope_${scopeFilter.name}")
+                    ) {
+                        Text(scopeFilter.labelDutch, maxLines = 1)
+                    }
+                }
+            }
+        }
+
         // Action Bar: Exporteer Cijfers + Cijfer Unboxing
-        if (summaries.isNotEmpty()) {
+        if (filteredSummaries.isNotEmpty()) {
             item(key = "cijfers_actions_row") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -277,7 +330,7 @@ fun CijfersScreen(
             }
         }
 
-        if (summaries.isEmpty()) {
+        if (filteredSummaries.isEmpty()) {
             item {
                 Surface(
                     shape = appCardShape(standard = 20.dp, nothing = 20.dp),
@@ -297,7 +350,7 @@ fun CijfersScreen(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Geen cijfers gevonden",
+                            text = if (selectedScope == GradeScopeFilter.ALL) "Geen cijfers gevonden" else "Geen ${selectedScope.labelDutch.lowercase()}-cijfers gevonden",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -311,7 +364,7 @@ fun CijfersScreen(
                 }
             }
         } else {
-            items(summaries) { summary ->
+            items(filteredSummaries, key = { it.subjectCode + "_" + it.subjectName }) { summary ->
                 SubjectGradeCard(
                     summary = summary,
                     gradeUnboxingEnabled = gradeUnboxingEnabled,
@@ -426,12 +479,19 @@ fun SubjectGradeCard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = grade.description,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = grade.description,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    if (grade.isPta) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        OneUiPillBadge(text = "PTA")
+                                    }
+                                }
                                 Text(
                                     text = if (isUnrevealed) {
                                         "Tik om dit nieuwe cijfer te unboxen"

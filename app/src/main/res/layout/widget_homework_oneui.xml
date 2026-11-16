@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_hw_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_oneui_bg"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/widget_hw_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_oneui_pill_bg"
+            android:paddingStart="11dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="11dp"
+            android:paddingBottom="4dp"
+            android:text="HUISWERK"
+            android:textColor="@color/oneui_widget_accent"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_hw_count"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="0 open"
+            android:textColor="@color/oneui_widget_text_secondary"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/widget_hw_refresh_btn"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:background="@drawable/widget_oneui_row_bg"
+            android:contentDescription="Vernieuwen"
+            android:padding="6dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_widget_refresh"
+            android:tint="@color/oneui_widget_text_secondary" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_hw_empty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="Geen openstaand huiswerk"
+        android:textColor="@color/oneui_widget_text_secondary"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/widget_hw_row_1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/widget_oneui_row_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="7dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="7dp">
+
+        <TextView
+            android:id="@+id/widget_hw_title_1"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="Taak"
+            android:textColor="@color/oneui_widget_text_primary"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/widget_hw_meta_1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/widget_oneui_pill_bg"
+            android:paddingStart="8dp"
+            android:paddingTop="3dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="3dp"
+            android:text="VAK"
+            android:textColor="@color/oneui_widget_accent"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/widget_hw_row_2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/widget_oneui_row_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="7dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="7dp">
+
+        <TextView
+            android:id="@+id/widget_hw_title_2"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="Taak"
+            android:textColor="@color/oneui_widget_text_primary"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/widget_hw_meta_2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/widget_oneui_pill_bg"
+            android:paddingStart="8dp"
+            android:paddingTop="3dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="3dp"
+            android:text="VAK"
+            android:textColor="@color/oneui_widget_accent"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/widget_hw_row_3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/widget_oneui_row_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="7dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="7dp">
+
+        <TextView
+            android:id="@+id/widget_hw_title_3"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="Taak"
+            android:textColor="@color/oneui_widget_text_primary"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/widget_hw_meta_3"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/widget_oneui_pill_bg"
+            android:paddingStart="8dp"
+            android:paddingTop="3dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="3dp"
+            android:text="VAK"
+            android:textColor="@color/oneui_widget_accent"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+</LinearLayout>

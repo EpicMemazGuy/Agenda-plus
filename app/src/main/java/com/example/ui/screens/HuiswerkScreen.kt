@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import com.example.model.HomeworkTask
 import com.example.model.TaskCategory
 import com.example.model.TaskPriority
+import com.example.model.TestPrepChecklist
+import com.example.model.isTestKeywordMatch
 import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
 import com.example.ui.components.appCardShape
@@ -33,9 +35,11 @@ import com.example.ui.components.nothingCardBorder
 fun HuiswerkScreen(
     tasks: List<HomeworkTask>,
     selectedCategory: TaskCategory?,
+    testPrepChecklists: Map<String, TestPrepChecklist> = emptyMap(),
     onSelectCategory: (TaskCategory?) -> Unit,
     onToggleTask: (String) -> Unit,
     onAddTaskClick: () -> Unit,
+    onOpenTestPrep: (key: String, subject: String, title: String, toetsstof: String) -> Unit = { _, _, _, _ -> },
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -206,10 +210,26 @@ fun HuiswerkScreen(
                     }
                 }
             } else {
-                items(filteredTasks) { task ->
+                items(filteredTasks, key = { it.id }) { task ->
+                    val isTest = task.category == TaskCategory.EXAM ||
+                        task.category == TaskCategory.MAJOR_TEST ||
+                        isTestKeywordMatch(task.title) ||
+                        isTestKeywordMatch(task.description)
+                    val checklistKey = "task_${task.id}"
+                    val checklist = testPrepChecklists[checklistKey]
                     TaskCard(
                         task = task,
-                        onToggle = { onToggleTask(task.id) }
+                        isTest = isTest,
+                        checklistProgressText = checklist?.let { "${it.completedCount}/${it.topics.size} klaar" },
+                        onToggle = { onToggleTask(task.id) },
+                        onOpenStudyMode = if (isTest) {
+                            {
+                                val combinedStof = listOf(task.title, task.description)
+                                    .filter { it.isNotBlank() }
+                                    .joinToString("\n")
+                                onOpenTestPrep(checklistKey, task.subject, task.title, combinedStof)
+                            }
+                        } else null
                     )
                 }
             }
@@ -220,14 +240,23 @@ fun HuiswerkScreen(
 @Composable
 fun TaskCard(
     task: HomeworkTask,
+    isTest: Boolean = false,
+    checklistProgressText: String? = null,
     onToggle: () -> Unit,
+    onOpenStudyMode: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val cardShape = appCardShape(standard = 22.dp, nothing = 24.dp)
     Card(
         modifier = modifier
             .fillMaxWidth()
+            .then(
+                if (onOpenStudyMode != null) {
+                    Modifier.clip(cardShape).clickable(onClick = onOpenStudyMode)
+                } else Modifier
+            )
             .testTag("task_card_${task.id}"),
-        shape = appCardShape(standard = 22.dp, nothing = 24.dp),
+        shape = cardShape,
         border = nothingCardBorder(isAlert = task.priority == TaskPriority.HIGH && !task.isCompleted),
         colors = CardDefaults.cardColors(
             containerColor = if (task.isCompleted) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerLow
@@ -330,19 +359,31 @@ fun TaskCard(
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Event,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Inleveren: ${task.dueDate}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Event,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Inleveren: ${task.dueDate}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (isTest && onOpenStudyMode != null) {
+                        OneUiPillBadge(
+                            text = checklistProgressText ?: "Studiechecklist",
+                            modifier = Modifier.testTag("open_study_mode_${task.id}")
+                        )
+                    }
                 }
             }
         }

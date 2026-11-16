@@ -123,6 +123,20 @@
                 android:resource="@xml/homework_widget_info" />
         </receiver>
 
+        <!-- Home Screen Widget 4: Rooster + Live Bus -->
+        <receiver
+            android:name=".widget.RoosterBusWidgetProvider"
+            android:exported="true"
+            android:label="Rooster + Live Bus">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.widget.ACTION_REFRESH_ROOSTER_BUS" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/rooster_bus_widget_info" />
+        </receiver>
+
         <!-- Background Schedule Monitor for Uitval, Grade & Test Notifications -->
         <service
             android:name=".notifications.ScheduleMonitorJobService"

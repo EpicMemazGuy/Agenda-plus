@@ -612,10 +612,11 @@ class MagisterClient {
         val messages = extendedApi.fetchMessages(tenant, token, folders)
         val studyGuides = extendedApi.fetchStudyGuides(tenant, token, pId)
         val kwtSlots = extendedApi.fetchKwtSlots(tenant, token, pId, appointmentsAndDisruptions.first)
+        val absences = fetchAbsences(tenant, token, pId)
 
         com.example.util.RawConsoleLogger.info(
             "Magister-Sync",
-            "Sync voltooid: ${appointmentsAndDisruptions.first.size} lessen, ${grades.size} vakken, ${tasks.size} taken, ${messages.size} berichten, ${studyGuides.size} studiewijzers"
+            "Sync voltooid: ${appointmentsAndDisruptions.first.size} lessen, ${grades.size} vakken, ${tasks.size} taken, ${messages.size} berichten, ${studyGuides.size} studiewijzers, ${absences.size} absenties"
         )
 
         MagisterDataBundle(
@@ -623,7 +624,7 @@ class MagisterClient {
             disruptions = appointmentsAndDisruptions.second,
             grades = grades,
             tasks = tasks,
-            absences = emptyList(),
+            absences = absences,
             announcements = emptyList(),
             messages = messages,
             messageFolders = folders,
@@ -646,6 +647,15 @@ class MagisterClient {
         optionId: Long
     ): Result<Unit> = withContext(Dispatchers.IO) {
         extendedApi.enrollKwtOption(tenant, token, personId, appointmentId, optionId)
+    }
+
+    suspend fun fetchKwtSlotForAppointment(
+        tenant: SchoolTenant,
+        token: String,
+        personId: Long,
+        appointment: Appointment
+    ): KwtSlot? = withContext(Dispatchers.IO) {
+        extendedApi.fetchKwtSlotForAppointment(tenant, token, personId, appointment)
     }
 
     private fun parseMagisterDateTime(raw: String): Date? {
@@ -1004,6 +1014,13 @@ class MagisterClient {
             val id = item.optCleanString("CijferId", "cijferId", "kolomId", "KolomId", "Id", "id")
                 ?: item.optLong("kolomId", item.optLong("cijferId", i.toLong())).toString()
 
+            val kolomSoort = kolomObj?.optCleanString("kolomSoort", "KolomSoort", "soort", "Soort") ?: ""
+            val isPta = item.optBoolean("isPta", item.optBoolean("IsPta", false)) ||
+                (kolomObj?.optBoolean("isPta", kolomObj.optBoolean("IsPta", false)) == true) ||
+                kolomSoort.equals("PTA", ignoreCase = true) ||
+                description.contains("PTA", ignoreCase = true) ||
+                description.contains("Schoolexamen", ignoreCase = true)
+
             val gradeItem = GradeItem(
                 id = id,
                 subjectCode = subjectCode,
@@ -1012,7 +1029,8 @@ class MagisterClient {
                 weight = weight,
                 description = description,
                 date = date,
-                period = period
+                period = period,
+                isPta = isPta
             )
 
             val list = summariesMap.getOrPut(subjectName) { mutableListOf() }
@@ -1131,46 +1149,78 @@ class MagisterClient {
     /**
      * GET /api/personen/{id}/absenties
      */
-    private fun fetchAbsences(
+    internal fun fetchAbsences(
         tenant: SchoolTenant,
         token: String,
         personId: Long
     ): List<AbsenceRecord> {
         val records = mutableListOf<AbsenceRecord>()
         try {
-            val url = "${tenant.apiBaseUrl}/personen/$personId/absenties"
+            val cal = Calendar.getInstance()
+            val isoFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            cal.add(Calendar.DAY_OF_YEAR, 7)
+            val totStr = isoFormat.format(cal.time)
+            cal.add(Calendar.DAY_OF_YEAR, -67)
+            val vanStr = isoFormat.format(cal.time)
+
+            val url = "${tenant.apiBaseUrl}/personen/$personId/absenties?van=$vanStr&tot=$totStr"
             val request = newApiRequest(url, token)
 
             val response = client.newCall(request).execute()
             val bodyStr = response.body?.string() ?: "{}"
             com.example.util.RawConsoleLogger.http("Magister-Api", "GET absenties -> ${response.code}")
             if (response.isSuccessful) {
-                val json = JSONObject(bodyStr)
-                val items = json.optJSONArray("Items") ?: json.optJSONArray("items") ?: JSONArray()
-                for (i in 0 until items.length()) {
-                    val item = items.getJSONObject(i)
-                    val desc = item.optString("Omschrijving", "Verzuim")
-                    val date = item.optString("Start").take(10)
-                    val type = when {
-                        desc.contains("ziek", ignoreCase = true) -> AbsenceType.SICK
-                        desc.contains("laat", ignoreCase = true) -> AbsenceType.TARDY
-                        else -> AbsenceType.EXCUSED
-                    }
-
-                    records.add(
-                        AbsenceRecord(
-                            id = item.optString("Id", "abs_$i"),
-                            date = date,
-                            period = item.optString("Lesuur", "Hele dag"),
-                            type = type,
-                            reason = desc,
-                            isApproved = item.optBoolean("Geoorloofd", true)
-                        )
-                    )
-                }
+                records.addAll(parseAbsencesJson(bodyStr))
             }
         } catch (e: Exception) {
             com.example.util.RawConsoleLogger.error("Magister-Api", "Absenties fout: ${e.message}")
+        }
+        return records
+    }
+
+    internal fun parseAbsencesJson(bodyStr: String): List<AbsenceRecord> {
+        val records = mutableListOf<AbsenceRecord>()
+        val trimmed = bodyStr.trim()
+        if (trimmed.isBlank()) return emptyList()
+        val items = if (trimmed.startsWith("[")) {
+            JSONArray(trimmed)
+        } else {
+            val json = JSONObject(trimmed)
+            json.optJSONArray("Items") ?: json.optJSONArray("items") ?: JSONArray()
+        }
+        for (i in 0 until items.length()) {
+            val item = items.optJSONObject(i) ?: continue
+            val desc = item.optCleanString("Omschrijving", "omschrijving", "Reden", "reden") ?: "Verzuim"
+            val date = (item.optCleanString("Start", "start", "Datum", "datum") ?: "").take(10)
+            val isApproved = if (item.has("Geoorloofd")) {
+                item.optBoolean("Geoorloofd", true)
+            } else if (item.has("geoorloofd")) {
+                item.optBoolean("geoorloofd", true)
+            } else {
+                !desc.contains("ongeoorloofd", ignoreCase = true)
+            }
+            val type = when {
+                desc.contains("ziek", ignoreCase = true) -> AbsenceType.SICK
+                desc.contains("laat", ignoreCase = true) -> AbsenceType.TARDY
+                !isApproved -> AbsenceType.UNEXCUSED
+                else -> AbsenceType.EXCUSED
+            }
+            val periodRaw = item.optCleanString("Lesuur", "lesuur")
+                ?: item.optInt("LesuurVan", item.optInt("lesuurVan", -1)).takeIf { it > 0 }?.let { "${it}e uur" }
+                ?: "Hele dag"
+            val id = item.optCleanString("Id", "id")
+                ?: item.optLong("Id", item.optLong("id", i.toLong())).toString()
+
+            records.add(
+                AbsenceRecord(
+                    id = id,
+                    date = date,
+                    period = periodRaw,
+                    type = type,
+                    reason = desc,
+                    isApproved = isApproved
+                )
+            )
         }
         return records
     }

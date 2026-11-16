@@ -269,6 +269,7 @@ private fun KwtOptionRow(
 fun KwtPickerBottomSheet(
     slot: KwtSlot,
     isOffline: Boolean,
+    isLoading: Boolean = false,
     onEnrollOption: suspend (appointmentId: Long, optionId: Long) -> Result<Unit>,
     onDismiss: () -> Unit
 ) {
@@ -327,7 +328,14 @@ fun KwtPickerBottomSheet(
                 }
             }
 
-            if (slot.options.isEmpty()) {
+            if (isLoading) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text(
+                    text = "Beschikbare KWT-keuzes ophalen uit Magister...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else if (slot.options.isEmpty()) {
                 Text(
                     text = "Voor dit lesuur zijn geen inschrijfbare KWT-opties gevonden.",
                     style = MaterialTheme.typography.bodyMedium,

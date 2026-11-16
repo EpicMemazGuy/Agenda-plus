@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -53,6 +54,7 @@ fun MeerScreen(
     messageFolders: List<MessageFolderInfo>,
     studyGuides: List<StudyGuide>,
     kwtSlots: List<KwtSlot>,
+    absences: List<AbsenceRecord> = emptyList(),
     eloUrl: String,
     studySites: List<StudySite>,
     agendaStyle: AgendaStyle,
@@ -62,6 +64,12 @@ fun MeerScreen(
     uitvalNotificationsEnabled: Boolean,
     gradeNotificationsEnabled: Boolean = true,
     testNotificationsEnabled: Boolean = true,
+    quietHoursConfig: QuietHoursConfig = QuietHoursConfig(),
+    mutedSubjects: Set<String> = emptySet(),
+    availableSubjects: List<String> = emptyList(),
+    smartBusAlertsEnabled: Boolean = true,
+    busWalkMinutes: Int = 5,
+    busArrivalBufferMinutes: Int = 10,
     gradeUnboxingEnabled: Boolean = true,
     gradeUnboxingMode: GradeUnboxingMode = GradeUnboxingMode.CASE_OPENING,
     onSelectSection: (MeerSection) -> Unit,
@@ -77,6 +85,13 @@ fun MeerScreen(
     onSetUitvalNotifications: (Boolean) -> Unit,
     onSetGradeNotifications: (Boolean) -> Unit = {},
     onSetTestNotifications: (Boolean) -> Unit = {},
+    onSetQuietHoursEnabled: (Boolean) -> Unit = {},
+    onSetQuietHoursStartMinutes: (Int) -> Unit = {},
+    onSetQuietHoursEndMinutes: (Int) -> Unit = {},
+    onToggleMutedSubject: (String) -> Unit = {},
+    onSetSmartBusAlertsEnabled: (Boolean) -> Unit = {},
+    onSetBusWalkMinutes: (Int) -> Unit = {},
+    onSetBusArrivalBufferMinutes: (Int) -> Unit = {},
     onSetGradeUnboxingEnabled: (Boolean) -> Unit = {},
     onSetGradeUnboxingMode: (GradeUnboxingMode) -> Unit = {},
     onTestUitvalNotification: () -> Boolean,
@@ -281,6 +296,17 @@ fun MeerScreen(
                         )
                     }
 
+                    item(key = "meer_afwezigheid") {
+                        MeerMenuTile(
+                            title = "Afwezigheid",
+                            subtitle = if (absences.isEmpty()) "Bekijk verzuim, ziekmeldingen en te laat" else "${absences.size} registratie(s) gevonden",
+                            icon = Icons.Default.EventBusy,
+                            badgeText = if (absences.isNotEmpty()) absences.size.toString() else null,
+                            onClick = { onSelectSection(MeerSection.AFWEZIGHEID) },
+                            tag = "meer_tile_afwezigheid"
+                        )
+                    }
+
                     item(key = "meer_vandaag_customize") {
                         MeerMenuTile(
                             title = "Vandaag, Bustijd & Schoolnavigatie",
@@ -410,6 +436,10 @@ fun MeerScreen(
                 )
             }
 
+            MeerSection.AFWEZIGHEID -> {
+                AfwezigheidView(absences = absences)
+            }
+
             MeerSection.INSTELLINGEN -> {
                 MeerSettingsView(
                     session = session,
@@ -420,6 +450,12 @@ fun MeerScreen(
                     uitvalNotificationsEnabled = uitvalNotificationsEnabled,
                     gradeNotificationsEnabled = gradeNotificationsEnabled,
                     testNotificationsEnabled = testNotificationsEnabled,
+                    quietHoursConfig = quietHoursConfig,
+                    mutedSubjects = mutedSubjects,
+                    availableSubjects = availableSubjects,
+                    smartBusAlertsEnabled = smartBusAlertsEnabled,
+                    busWalkMinutes = busWalkMinutes,
+                    busArrivalBufferMinutes = busArrivalBufferMinutes,
                     gradeUnboxingEnabled = gradeUnboxingEnabled,
                     gradeUnboxingMode = gradeUnboxingMode,
                     onSetAgendaStyle = onSetAgendaStyle,
@@ -429,6 +465,13 @@ fun MeerScreen(
                     onSetUitvalNotifications = onSetUitvalNotifications,
                     onSetGradeNotifications = onSetGradeNotifications,
                     onSetTestNotifications = onSetTestNotifications,
+                    onSetQuietHoursEnabled = onSetQuietHoursEnabled,
+                    onSetQuietHoursStartMinutes = onSetQuietHoursStartMinutes,
+                    onSetQuietHoursEndMinutes = onSetQuietHoursEndMinutes,
+                    onToggleMutedSubject = onToggleMutedSubject,
+                    onSetSmartBusAlertsEnabled = onSetSmartBusAlertsEnabled,
+                    onSetBusWalkMinutes = onSetBusWalkMinutes,
+                    onSetBusArrivalBufferMinutes = onSetBusArrivalBufferMinutes,
                     onSetGradeUnboxingEnabled = onSetGradeUnboxingEnabled,
                     onSetGradeUnboxingMode = onSetGradeUnboxingMode,
                     onTestUitvalNotification = onTestUitvalNotification,
@@ -574,6 +617,7 @@ private fun MeerMenuTile(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MeerSettingsView(
     session: AuthSession,
@@ -584,6 +628,12 @@ private fun MeerSettingsView(
     uitvalNotificationsEnabled: Boolean,
     gradeNotificationsEnabled: Boolean,
     testNotificationsEnabled: Boolean,
+    quietHoursConfig: QuietHoursConfig,
+    mutedSubjects: Set<String>,
+    availableSubjects: List<String>,
+    smartBusAlertsEnabled: Boolean,
+    busWalkMinutes: Int,
+    busArrivalBufferMinutes: Int,
     gradeUnboxingEnabled: Boolean,
     gradeUnboxingMode: GradeUnboxingMode,
     onSetAgendaStyle: (AgendaStyle) -> Unit,
@@ -593,6 +643,13 @@ private fun MeerSettingsView(
     onSetUitvalNotifications: (Boolean) -> Unit,
     onSetGradeNotifications: (Boolean) -> Unit,
     onSetTestNotifications: (Boolean) -> Unit,
+    onSetQuietHoursEnabled: (Boolean) -> Unit,
+    onSetQuietHoursStartMinutes: (Int) -> Unit,
+    onSetQuietHoursEndMinutes: (Int) -> Unit,
+    onToggleMutedSubject: (String) -> Unit,
+    onSetSmartBusAlertsEnabled: (Boolean) -> Unit,
+    onSetBusWalkMinutes: (Int) -> Unit,
+    onSetBusArrivalBufferMinutes: (Int) -> Unit,
     onSetGradeUnboxingEnabled: (Boolean) -> Unit,
     onSetGradeUnboxingMode: (GradeUnboxingMode) -> Unit,
     onTestUitvalNotification: () -> Boolean,
@@ -830,6 +887,116 @@ private fun MeerSettingsView(
                         onCheckedChange = onSetTestNotifications,
                         tag = "settings_test_notifs_switch"
                     )
+
+                    NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+                    SettingsSwitchRow(
+                        title = "Stille uren",
+                        subtitle = "Onderdruk meldingen tussen ${com.example.notifications.SmartBusPlanner.formatMinutes(quietHoursConfig.startMinutes)} en ${com.example.notifications.SmartBusPlanner.formatMinutes(quietHoursConfig.endMinutes)}",
+                        checked = quietHoursConfig.enabled,
+                        onCheckedChange = onSetQuietHoursEnabled,
+                        tag = "settings_quiet_hours_switch"
+                    )
+
+                    if (quietHoursConfig.enabled) {
+                        Text(
+                            text = "Start stille uren",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(21 * 60 to "21:00", 22 * 60 to "22:00", 23 * 60 to "23:00").forEach { (mins, lbl) ->
+                                FilterChip(
+                                    selected = quietHoursConfig.startMinutes == mins,
+                                    onClick = { onSetQuietHoursStartMinutes(mins) },
+                                    label = { Text(lbl) }
+                                )
+                            }
+                        }
+                        Text(
+                            text = "Einde stille uren",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(6 * 60 + 30 to "06:30", 7 * 60 to "07:00", 8 * 60 to "08:00").forEach { (mins, lbl) ->
+                                FilterChip(
+                                    selected = quietHoursConfig.endMinutes == mins,
+                                    onClick = { onSetQuietHoursEndMinutes(mins) },
+                                    label = { Text(lbl) }
+                                )
+                            }
+                        }
+                    }
+
+                    if (availableSubjects.isNotEmpty()) {
+                        NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                        Text(
+                            text = "Vakken dempen",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Kies vakken waarvoor je geen meldingen wilt ontvangen",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            availableSubjects.forEach { subj ->
+                                val isMuted = mutedSubjects.any { it.equals(subj, ignoreCase = true) }
+                                FilterChip(
+                                    selected = isMuted,
+                                    onClick = { onToggleMutedSubject(subj) },
+                                    label = { Text(subj) },
+                                    modifier = Modifier.testTag("mute_subject_chip_$subj")
+                                )
+                            }
+                        }
+                    }
+
+                    NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+                    SettingsSwitchRow(
+                        title = "Slimme Busmelding",
+                        subtitle = "Waarschuwing wanneer 1e uur uitvalt en je later kunt vertrekken",
+                        checked = smartBusAlertsEnabled,
+                        onCheckedChange = onSetSmartBusAlertsEnabled,
+                        tag = "settings_smart_bus_switch"
+                    )
+
+                    if (smartBusAlertsEnabled) {
+                        Text(
+                            text = "Looptijd naar bushalte",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(3, 5, 8, 10).forEach { mins ->
+                                FilterChip(
+                                    selected = busWalkMinutes == mins,
+                                    onClick = { onSetBusWalkMinutes(mins) },
+                                    label = { Text("$mins min") }
+                                )
+                            }
+                        }
+                        Text(
+                            text = "Marge voor eerste les",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(5, 10, 15).forEach { mins ->
+                                FilterChip(
+                                    selected = busArrivalBufferMinutes == mins,
+                                    onClick = { onSetBusArrivalBufferMinutes(mins) },
+                                    label = { Text("$mins min") }
+                                )
+                            }
+                        }
+                    }
 
                     OutlinedButton(
                         onClick = {
@@ -1123,4 +1290,132 @@ private fun SettingsSwitchRow(
         )
     }
 }
+
+@Composable
+private fun AfwezigheidView(
+    absences: List<AbsenceRecord>,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+            .testTag("afwezigheid_view"),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(top = 12.dp, bottom = 28.dp)
+    ) {
+        if (absences.isEmpty()) {
+            item(key = "absences_empty") {
+                Surface(
+                    shape = appCardShape(standard = 20.dp, nothing = 24.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = nothingCardBorder(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("afwezigheid_empty_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(28.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.EventAvailable,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "Geen afwezigheid geregistreerd",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Eventuele ziekmeldingen, te-laatmeldingen en geoorloofd verzuim uit de afgelopen 60 dagen verschijnen hier.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            items(absences, key = { it.id }) { record ->
+                val isAlert = record.type == AbsenceType.UNEXCUSED || !record.isApproved
+                Card(
+                    shape = appCardShape(standard = 20.dp, nothing = 24.dp),
+                    border = nothingCardBorder(isAlert = isAlert),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("absence_record_${record.id}")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isAlert) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(42.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = when (record.type) {
+                                        AbsenceType.SICK -> Icons.Default.LocalHospital
+                                        AbsenceType.TARDY -> Icons.Default.Schedule
+                                        AbsenceType.EXCUSED -> Icons.Default.Verified
+                                        AbsenceType.UNEXCUSED -> Icons.Default.WarningAmber
+                                    },
+                                    contentDescription = record.type.labelDutch,
+                                    tint = if (isAlert) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = record.type.labelDutch,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                OneUiPillBadge(
+                                    text = if (record.isApproved) "Geoorloofd" else "Ongeoorloofd",
+                                    isError = !record.isApproved
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "${record.date} • ${record.period}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (record.reason.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = record.reason,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 

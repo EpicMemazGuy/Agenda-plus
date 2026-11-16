@@ -1,6 +1,7 @@
 package com.example.network
 
 import com.example.data.AppPreferencesStore
+import com.example.model.BusDeparture
 import com.example.model.BusStopInfo
 import com.example.model.BusTrackingState
 import com.example.model.BusVehiclePoint
@@ -589,9 +590,7 @@ class TransitClient(private val prefs: AppPreferencesStore? = null) {
             val tpcObj = root.optJSONObject(stop.timingPointCode) ?: return null
             val passes = tpcObj.optJSONObject("Passes") ?: return null
 
-            var bestExpected: String? = null
-            var bestScheduled: String? = null
-            var bestDest: String? = null
+            val departures = mutableListOf<BusDeparture>()
 
             val pKeys = passes.keys()
             while (pKeys.hasNext()) {
@@ -605,20 +604,29 @@ class TransitClient(private val prefs: AppPreferencesStore? = null) {
                 val sched = extractTimeHHmm(
                     pass.optString("TargetDepartureTime").ifBlank { pass.optString("TargetArrivalTime") }
                 )
-                if (bestExpected == null || exp < bestExpected) {
-                    bestExpected = exp
-                    bestScheduled = sched
-                    bestDest = pass.optString("DestinationName50").cleanSchoolText()
-                }
+                val dest = pass.optString("DestinationName50").cleanSchoolText()
+                departures.add(
+                    BusDeparture(
+                        expectedTime = exp,
+                        scheduledTime = sched,
+                        destination = dest
+                    )
+                )
             }
 
-            if (bestExpected != null) {
+            val sortedDepartures = departures
+                .distinctBy { it.expectedTime }
+                .sortedBy { it.expectedTime }
+            val earliest = sortedDepartures.firstOrNull()
+
+            if (earliest != null) {
                 return stop.copy(
-                    expectedArrival = bestExpected,
-                    scheduledArrival = bestScheduled,
-                    destination = bestDest ?: stop.destination,
+                    expectedArrival = earliest.expectedTime,
+                    scheduledArrival = earliest.scheduledTime,
+                    destination = earliest.destination ?: stop.destination,
                     isRealtime = true,
-                    delayMinutes = computeDelayMinutes(bestScheduled, bestExpected)
+                    delayMinutes = computeDelayMinutes(earliest.scheduledTime, earliest.expectedTime),
+                    upcomingDepartures = sortedDepartures
                 )
             }
         } catch (_: Exception) {

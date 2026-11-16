@@ -350,34 +350,9 @@ internal class MagisterExtendedApi(
         // 1. Check appointment-linked KWT choices for appointments flagged as KWT
         val kwtAppointments = appointments.filter { it.isKwt }
         for (appt in kwtAppointments.take(10)) {
-            val candidateUrls = listOf(
-                "${tenant.apiBaseUrl}/personen/$personId/afspraken/${appt.id}/keuzewerktijd",
-                "${tenant.apiBaseUrl}/afspraken/${appt.id}/kwt",
-                "${tenant.apiBaseUrl}/personen/$personId/keuzelessen/${appt.id}"
-            )
-            for (url in candidateUrls) {
-                try {
-                    val resp = client.newCall(requestBuilder(url, token)).execute()
-                    val body = resp.body?.string() ?: "{}"
-                    com.example.util.RawConsoleLogger.http("Magister-KWT", "GET kwt ${appt.id} -> ${resp.code}")
-                    if (!resp.isSuccessful) continue
-                    val parsedOpts = parseKwtOptions(body)
-                    if (parsedOpts.isNotEmpty()) {
-                        slots.add(
-                            KwtSlot(
-                                appointmentId = appt.id,
-                                title = appt.title.ifBlank { "Keuzewerktijd" },
-                                dateIso = appt.dateIso,
-                                startTime = appt.startTime,
-                                endTime = appt.endTime,
-                                periodIndex = appt.periodIndex,
-                                options = parsedOpts
-                            )
-                        )
-                        break
-                    }
-                } catch (_: Exception) {
-                }
+            val fetched = fetchKwtSlotForAppointment(tenant, token, personId, appt)
+            if (fetched != null) {
+                slots.add(fetched)
             }
         }
 
@@ -397,7 +372,11 @@ internal class MagisterExtendedApi(
                 val items = json.optJSONArray("items") ?: json.optJSONArray("Items") ?: JSONArray()
                 for (i in 0 until items.length()) {
                     val o = items.optJSONObject(i) ?: continue
-                    val optsArr = o.optJSONArray("keuzes") ?: o.optJSONArray("Keuzes") ?: continue
+                    val optsArr = o.optJSONArray("keuzes")
+                        ?: o.optJSONArray("Keuzes")
+                        ?: o.optJSONArray("opties")
+                        ?: o.optJSONArray("keuzeMogelijkheden")
+                        ?: continue
                     val parsedOpts = parseKwtOptionsFromArray(optsArr)
                     if (parsedOpts.isNotEmpty()) {
                         slots.add(
@@ -421,12 +400,56 @@ internal class MagisterExtendedApi(
         return emptyList()
     }
 
+    fun fetchKwtSlotForAppointment(
+        tenant: SchoolTenant,
+        token: String,
+        personId: Long,
+        appt: Appointment
+    ): KwtSlot? {
+        val candidateUrls = listOf(
+            "${tenant.apiBaseUrl}/personen/$personId/afspraken/${appt.id}/keuzes",
+            "${tenant.apiBaseUrl}/personen/$personId/afspraken/${appt.id}/keuzewerktijd",
+            "${tenant.apiBaseUrl}/afspraken/${appt.id}/kwt",
+            "${tenant.apiBaseUrl}/personen/$personId/keuzelessen/${appt.id}"
+        )
+        for (url in candidateUrls) {
+            try {
+                val resp = client.newCall(requestBuilder(url, token)).execute()
+                val body = resp.body?.string() ?: "{}"
+                com.example.util.RawConsoleLogger.http("Magister-KWT", "GET kwt ${appt.id} -> ${resp.code}")
+                if (!resp.isSuccessful) continue
+                val parsedOpts = parseKwtOptions(body)
+                if (parsedOpts.isNotEmpty()) {
+                    return KwtSlot(
+                        appointmentId = appt.id,
+                        title = appt.title.ifBlank { "Keuzewerktijd" },
+                        dateIso = appt.dateIso,
+                        startTime = appt.startTime,
+                        endTime = appt.endTime,
+                        periodIndex = appt.periodIndex,
+                        options = parsedOpts
+                    )
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return null
+    }
+
     private fun parseKwtOptions(bodyStr: String): List<KwtOption> {
-        val json = runCatching { JSONObject(bodyStr) }.getOrNull() ?: return emptyList()
+        val trimmed = bodyStr.trim()
+        if (trimmed.startsWith("[")) {
+            return runCatching { parseKwtOptionsFromArray(JSONArray(trimmed)) }.getOrDefault(emptyList())
+        }
+        val json = runCatching { JSONObject(trimmed) }.getOrNull() ?: return emptyList()
         val arr = json.optJSONArray("items")
             ?: json.optJSONArray("Items")
             ?: json.optJSONArray("keuzes")
             ?: json.optJSONArray("Keuzes")
+            ?: json.optJSONArray("opties")
+            ?: json.optJSONArray("Opties")
+            ?: json.optJSONArray("keuzeMogelijkheden")
+            ?: json.optJSONArray("KeuzeMogelijkheden")
             ?: return emptyList()
         return parseKwtOptionsFromArray(arr)
     }
@@ -474,6 +497,7 @@ internal class MagisterExtendedApi(
         }.toString()
 
         val urls = listOf(
+            "${tenant.apiBaseUrl}/personen/$personId/afspraken/$appointmentId/keuzes",
             "${tenant.apiBaseUrl}/personen/$personId/afspraken/$appointmentId/keuzewerktijd",
             "${tenant.apiBaseUrl}/personen/$personId/keuzewerktijd/$optionId",
             "${tenant.apiBaseUrl}/personen/$personId/keuzelessen/$appointmentId"

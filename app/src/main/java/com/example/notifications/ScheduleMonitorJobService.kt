@@ -76,6 +76,7 @@ class ScheduleMonitorJobService : JobService() {
                 store.saveMessages(bundle.messages)
                 store.saveStudyGuides(bundle.studyGuides)
                 store.saveKwtSlots(bundle.kwtSlots)
+                store.saveAbsences(bundle.absences)
                 UitvalNotificationHelper.evaluateAllNotifications(
                     context = appContext,
                     previousAppointments = previousAppointments,
@@ -102,6 +103,7 @@ class ScheduleMonitorJobService : JobService() {
         private const val INTERVAL_MS = 15L * 60L * 1000L
 
         fun schedule(context: Context) {
+            WorkManagerScheduler.schedule(context)
             val scheduler = context.getSystemService(Context.JOB_SCHEDULER_SERVICE) as? JobScheduler ?: return
             if (scheduler.getPendingJob(JOB_ID) != null) return
 
@@ -114,6 +116,7 @@ class ScheduleMonitorJobService : JobService() {
         }
 
         fun cancel(context: Context) {
+            WorkManagerScheduler.cancel(context)
             val scheduler = context.getSystemService(Context.JOB_SCHEDULER_SERVICE) as? JobScheduler ?: return
             scheduler.cancel(JOB_ID)
         }

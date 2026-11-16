@@ -53,8 +53,14 @@ class HomeworkWidgetProvider : AppWidgetProvider() {
             appWidgetId: Int
         ) {
             val store = AppPreferencesStore(context)
-            val isNothing = store.getAppThemeStyle() == AppThemeStyle.NOTHING_OS
-            val layoutId = if (isNothing) R.layout.widget_homework_nothing else R.layout.widget_homework
+            val themeStyle = store.getAppThemeStyle()
+            val isNothing = themeStyle == AppThemeStyle.NOTHING_OS
+            val isOneUi = themeStyle == AppThemeStyle.ONE_UI
+            val layoutId = when (themeStyle) {
+                AppThemeStyle.NOTHING_OS -> R.layout.widget_homework_nothing
+                AppThemeStyle.ONE_UI -> R.layout.widget_homework_oneui
+                AppThemeStyle.STANDARD -> R.layout.widget_homework
+            }
             val views = RemoteViews(context.packageName, layoutId)
             val session = store.loadSession()
             val tasks = store.loadTasks()
@@ -141,18 +147,32 @@ class HomeworkWidgetProvider : AppWidgetProvider() {
                         views.setTextViewText(titleId, title)
                         views.setTextViewText(metaId, if (isExam) "TOETS • $subj" else subj.take(10))
 
-                        if (isNothing) {
-                            views.setInt(
-                                metaId,
-                                "setBackgroundResource",
-                                if (isExam) R.drawable.widget_nothing_red_pill_bg else R.drawable.widget_nothing_pill_bg
-                            )
-                            views.setTextColor(metaId, Color.WHITE)
-                        } else {
-                            views.setTextColor(
-                                metaId,
-                                if (isExam) Color.parseColor("#FCA5A5") else Color.parseColor("#CBD5E1")
-                            )
+                        when {
+                            isNothing -> {
+                                views.setInt(
+                                    metaId,
+                                    "setBackgroundResource",
+                                    if (isExam) R.drawable.widget_nothing_red_pill_bg else R.drawable.widget_nothing_pill_bg
+                                )
+                                views.setTextColor(metaId, Color.WHITE)
+                            }
+                            isOneUi -> {
+                                views.setInt(
+                                    metaId,
+                                    "setBackgroundResource",
+                                    if (isExam) R.drawable.widget_oneui_error_pill_bg else R.drawable.widget_oneui_pill_bg
+                                )
+                                views.setTextColor(
+                                    metaId,
+                                    if (isExam) Color.parseColor("#E53935") else context.getColor(R.color.oneui_widget_accent)
+                                )
+                            }
+                            else -> {
+                                views.setTextColor(
+                                    metaId,
+                                    if (isExam) Color.parseColor("#FCA5A5") else Color.parseColor("#CBD5E1")
+                                )
+                            }
                         }
                     }
                 }

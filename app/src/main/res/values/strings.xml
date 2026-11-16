@@ -3,4 +3,5 @@
     <string name="widget_next_lesson_description">Toont je eerstvolgende les, tijd en lokaal op je startscherm.</string>
     <string name="widget_grades_description">Toont je nieuwste cijfers en gewogen gemiddelde op je startscherm.</string>
     <string name="widget_homework_description">Toont je openstaande huiswerk en aankomende toetsen op je startscherm.</string>
+    <string name="widget_rooster_bus_description">Toont je volgende les, lokaal en live OVapi-bustijd op één widget.</string>
 </resources>

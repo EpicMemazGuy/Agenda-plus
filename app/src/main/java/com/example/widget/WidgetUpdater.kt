@@ -9,5 +9,6 @@ object WidgetUpdater {
         NextLessonWidgetProvider.updateAllWidgets(context)
         GradesWidgetProvider.updateAllWidgets(context)
         HomeworkWidgetProvider.updateAllWidgets(context)
+        RoosterBusWidgetProvider.updateAllWidgets(context)
     }
 }

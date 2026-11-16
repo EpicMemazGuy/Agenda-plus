@@ -54,8 +54,14 @@ class GradesWidgetProvider : AppWidgetProvider() {
             appWidgetId: Int
         ) {
             val store = AppPreferencesStore(context)
-            val isNothing = store.getAppThemeStyle() == AppThemeStyle.NOTHING_OS
-            val layoutId = if (isNothing) R.layout.widget_grades_nothing else R.layout.widget_grades
+            val themeStyle = store.getAppThemeStyle()
+            val isNothing = themeStyle == AppThemeStyle.NOTHING_OS
+            val isOneUi = themeStyle == AppThemeStyle.ONE_UI
+            val layoutId = when (themeStyle) {
+                AppThemeStyle.NOTHING_OS -> R.layout.widget_grades_nothing
+                AppThemeStyle.ONE_UI -> R.layout.widget_grades_oneui
+                AppThemeStyle.STANDARD -> R.layout.widget_grades
+            }
             val views = RemoteViews(context.packageName, layoutId)
             val session = store.loadSession()
             val summaries = store.loadGrades()
@@ -145,18 +151,32 @@ class GradesWidgetProvider : AppWidgetProvider() {
                         views.setTextViewText(scoreId, scoreStr)
 
                         val isLow = entry.second < 5.5
-                        if (isNothing) {
-                            views.setInt(
-                                scoreId,
-                                "setBackgroundResource",
-                                if (isLow) R.drawable.widget_nothing_red_pill_bg else R.drawable.widget_nothing_pill_bg
-                            )
-                            views.setTextColor(scoreId, Color.WHITE)
-                        } else {
-                            views.setTextColor(
-                                scoreId,
-                                if (isLow) Color.parseColor("#FCA5A5") else Color.parseColor("#93C5FD")
-                            )
+                        when {
+                            isNothing -> {
+                                views.setInt(
+                                    scoreId,
+                                    "setBackgroundResource",
+                                    if (isLow) R.drawable.widget_nothing_red_pill_bg else R.drawable.widget_nothing_pill_bg
+                                )
+                                views.setTextColor(scoreId, Color.WHITE)
+                            }
+                            isOneUi -> {
+                                views.setInt(
+                                    scoreId,
+                                    "setBackgroundResource",
+                                    if (isLow) R.drawable.widget_oneui_error_pill_bg else R.drawable.widget_oneui_pill_bg
+                                )
+                                views.setTextColor(
+                                    scoreId,
+                                    if (isLow) Color.parseColor("#E53935") else context.getColor(R.color.oneui_widget_accent)
+                                )
+                            }
+                            else -> {
+                                views.setTextColor(
+                                    scoreId,
+                                    if (isLow) Color.parseColor("#FCA5A5") else Color.parseColor("#93C5FD")
+                                )
+                            }
                         }
                     }
                 }

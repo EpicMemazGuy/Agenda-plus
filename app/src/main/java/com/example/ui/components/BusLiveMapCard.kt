@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.example.model.BusTrackingState
+import com.example.model.SmartBusAdvice
 import com.example.ui.theme.LocalDarkThemeActive
 import org.json.JSONArray
 import org.json.JSONObject
@@ -45,6 +46,7 @@ fun BusLiveMapCard(
     busTrackingState: BusTrackingState,
     savedBusLine: String,
     isOffline: Boolean,
+    smartBusAdvice: SmartBusAdvice? = null,
     onSetBusLine: (line: String, userLat: Double?, userLon: Double?) -> Unit,
     onRefreshBus: (userLat: Double?, userLon: Double?) -> Unit,
     modifier: Modifier = Modifier
@@ -231,6 +233,47 @@ fun BusLiveMapCard(
                             .testTag("bus_line_save_button")
                     ) {
                         Text("Volgen")
+                    }
+                }
+            }
+
+            // Smart Leave-Home Bus Advice Banner
+            smartBusAdvice?.let { advice ->
+                Spacer(modifier = Modifier.height(10.dp))
+                val isShiftPriority = !advice.shiftReasonMessage.isNullOrBlank()
+                Surface(
+                    shape = appCardShape(standard = 16.dp, nothing = 20.dp),
+                    color = if (isShiftPriority) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+                    border = nothingCardBorder(isAlert = isShiftPriority),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("smart_bus_advice_banner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (isShiftPriority) Icons.Default.WarningAmber else Icons.Default.Schedule,
+                            contentDescription = null,
+                            tint = if (isShiftPriority) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = advice.shiftReasonMessage
+                                    ?: "Vertrek thuis om ${advice.leaveHomeTime}",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isShiftPriority) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "Lijn ${advice.busLine} (${advice.busDepartureTime}) • ${advice.stopName} • Eerste les ${advice.firstActiveLesson.startTime}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isShiftPriority) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
                 }
             }

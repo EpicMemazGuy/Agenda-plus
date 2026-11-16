@@ -26,6 +26,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.model.AppThemeStyle
+import com.example.model.cleanSchoolText
 import com.example.notifications.UitvalNotificationHelper
 import com.example.ui.AgendaViewModel
 import com.example.ui.AppTab
@@ -33,11 +35,13 @@ import com.example.ui.MeerSection
 import com.example.ui.components.AppBottomNavigationBar
 import com.example.ui.components.AppTopBar
 import com.example.ui.dialogs.AddTaskDialog
+import com.example.ui.dialogs.CustomScheduleItemDialog
 import com.example.ui.dialogs.GradeExportSheet
 import com.example.ui.dialogs.GradeUnboxingDialog
 import com.example.ui.dialogs.InAppWebViewDialog
 import com.example.ui.dialogs.LoginDialog
 import com.example.ui.dialogs.MagisterOAuthWebViewDialog
+import com.example.ui.dialogs.TestPrepChecklistSheet
 import com.example.ui.dialogs.TodayModifySheet
 import com.example.ui.dialogs.TutorialDialog
 import com.example.ui.screens.*
@@ -59,8 +63,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel: AgendaViewModel = viewModel()
             val appThemeStyle by viewModel.appThemeStyle.collectAsStateWithLifecycle()
+            val darkModePreference by viewModel.darkModePreference.collectAsStateWithLifecycle()
 
-            AgendaPlusTheme(appThemeStyle = appThemeStyle) {
+            AgendaPlusTheme(
+                appThemeStyle = appThemeStyle,
+                darkModePreference = darkModePreference
+            ) {
                 LaunchedEffect(pendingWidgetTab) {
                     pendingWidgetTab?.let { tab ->
                         viewModel.selectTab(tab)
@@ -125,6 +133,7 @@ fun AgendaPlusApp(
     val agendaStyle by viewModel.agendaStyle.collectAsStateWithLifecycle()
     val uiScale by viewModel.uiScale.collectAsStateWithLifecycle()
     val appThemeStyle by viewModel.appThemeStyle.collectAsStateWithLifecycle()
+    val darkModePreference by viewModel.darkModePreference.collectAsStateWithLifecycle()
     val eloUrl by viewModel.eloUrl.collectAsStateWithLifecycle()
     val studySites by viewModel.studySites.collectAsStateWithLifecycle()
     val weatherInfo by viewModel.weatherInfo.collectAsStateWithLifecycle()
@@ -135,6 +144,15 @@ fun AgendaPlusApp(
     val messageFolders by viewModel.messageFolders.collectAsStateWithLifecycle()
     val studyGuides by viewModel.studyGuides.collectAsStateWithLifecycle()
     val kwtSlots by viewModel.kwtSlots.collectAsStateWithLifecycle()
+    val absences by viewModel.absences.collectAsStateWithLifecycle()
+    val customScheduleItems by viewModel.customScheduleItems.collectAsStateWithLifecycle()
+    val testPrepChecklists by viewModel.testPrepChecklists.collectAsStateWithLifecycle()
+    val quietHoursConfig by viewModel.quietHoursConfig.collectAsStateWithLifecycle()
+    val mutedSubjects by viewModel.mutedSubjects.collectAsStateWithLifecycle()
+    val smartBusAlertsEnabled by viewModel.smartBusAlertsEnabled.collectAsStateWithLifecycle()
+    val busWalkMinutes by viewModel.busWalkMinutes.collectAsStateWithLifecycle()
+    val busArrivalBufferMinutes by viewModel.busArrivalBufferMinutes.collectAsStateWithLifecycle()
+    val smartBusAdvice by viewModel.smartBusAdvice.collectAsStateWithLifecycle()
     val offlineModeEnabled by viewModel.offlineModeEnabled.collectAsStateWithLifecycle()
     val isDeviceOnline by viewModel.isDeviceOnline.collectAsStateWithLifecycle()
     val isEffectivelyOffline = offlineModeEnabled || !isDeviceOnline
@@ -147,6 +165,10 @@ fun AgendaPlusApp(
     val showTutorialDialog by viewModel.showTutorialDialog.collectAsStateWithLifecycle()
     val showTodayModifySheet by viewModel.showTodayModifySheet.collectAsStateWithLifecycle()
     val activeKwtSlotForSheet by viewModel.activeKwtSlotForSheet.collectAsStateWithLifecycle()
+    val isKwtSheetLoading by viewModel.isKwtSheetLoading.collectAsStateWithLifecycle()
+    val activeChecklistKey by viewModel.activeChecklistKey.collectAsStateWithLifecycle()
+    val showCustomScheduleDialog by viewModel.showCustomScheduleDialog.collectAsStateWithLifecycle()
+    val editingCustomScheduleItem by viewModel.editingCustomScheduleItem.collectAsStateWithLifecycle()
     val updateInfo by viewModel.updateInfo.collectAsStateWithLifecycle()
     val isCheckingUpdate by viewModel.isCheckingUpdate.collectAsStateWithLifecycle()
     val manualUpdateMessage by viewModel.manualUpdateMessage.collectAsStateWithLifecycle()
@@ -180,6 +202,19 @@ fun AgendaPlusApp(
     val unboxingTargetGrade by viewModel.unboxingTargetGrade.collectAsStateWithLifecycle()
     val isAuthenticating by viewModel.isAuthenticating.collectAsStateWithLifecycle()
     val authError by viewModel.authError.collectAsStateWithLifecycle()
+
+    var isHeaderCollapsed by remember(currentTab, currentMeerSection, roosterViewMode) { mutableStateOf(false) }
+    var customDialogDateIso by remember {
+        mutableStateOf(java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date()))
+    }
+    var customDialogDayOfWeek by remember { mutableIntStateOf(1) }
+
+    val availableSubjects = remember(appointments, gradeSummaries) {
+        (appointments.mapNotNull { it.subjectName.cleanSchoolText() } +
+            gradeSummaries.mapNotNull { it.subjectName.cleanSchoolText() })
+            .distinct()
+            .sorted()
+    }
 
     val baseDensity = LocalDensity.current
     val scaledDensity = remember(baseDensity, uiScale) {
@@ -253,6 +288,14 @@ fun AgendaPlusApp(
                 }
             }
 
+            val collapsedTitle = if (appThemeStyle == AppThemeStyle.ONE_UI && isHeaderCollapsed) {
+                when {
+                    currentTab == AppTab.MEER && currentMeerSection == MeerSection.INSTELLINGEN -> "Instellingen"
+                    currentTab == AppTab.ROOSTER && roosterViewMode == 3 -> "Toetsen"
+                    else -> currentTab.title
+                }
+            } else null
+
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
                 topBar = {
@@ -263,6 +306,8 @@ fun AgendaPlusApp(
                         agendaStyle = agendaStyle,
                         uiScale = uiScale,
                         appThemeStyle = appThemeStyle,
+                        darkModePreference = darkModePreference,
+                        collapsedTitle = collapsedTitle,
                         uitvalNotificationsEnabled = uitvalNotificationsEnabled,
                         gradeNotificationsEnabled = gradeNotificationsEnabled,
                         testNotificationsEnabled = testNotificationsEnabled,
@@ -274,6 +319,7 @@ fun AgendaPlusApp(
                         onSetAgendaStyle = { viewModel.setAgendaStyle(it) },
                         onSetUiScale = { viewModel.setUiScale(it) },
                         onSetAppThemeStyle = { viewModel.setAppThemeStyle(it) },
+                        onSetDarkModePreference = { viewModel.setDarkModePreference(it) },
                         onSetUitvalNotifications = { enabled ->
                             viewModel.setUitvalNotificationsEnabled(enabled)
                             if (enabled) requestNotifPermissionIfNeeded()
@@ -318,6 +364,8 @@ fun AgendaPlusApp(
                             schoolAddress = schoolAddress,
                             savedBusLine = savedBusLine,
                             busTrackingState = busTrackingState,
+                            smartBusAdvice = smartBusAdvice,
+                            customScheduleItems = customScheduleItems,
                             onNavigateToRooster = { viewModel.selectTab(AppTab.ROOSTER) },
                             onNavigateToTasks = { viewModel.selectTab(AppTab.HUISWERK) },
                             onNavigateToKwt = {
@@ -335,6 +383,25 @@ fun AgendaPlusApp(
                             onOpenTodayModifySheet = { viewModel.openTodayModifySheet() },
                             onSetBusLine = { line, lat, lon -> viewModel.setBusLineAndTrack(line, lat, lon) },
                             onRefreshBusTracking = { lat, lon -> viewModel.refreshBusTracking(lat, lon) },
+                            onAddCustomScheduleItem = {
+                                val cal = java.util.Calendar.getInstance()
+                                customDialogDateIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(cal.time)
+                                customDialogDayOfWeek = when (cal.get(java.util.Calendar.DAY_OF_WEEK)) {
+                                    java.util.Calendar.MONDAY -> 1
+                                    java.util.Calendar.TUESDAY -> 2
+                                    java.util.Calendar.WEDNESDAY -> 3
+                                    java.util.Calendar.THURSDAY -> 4
+                                    java.util.Calendar.FRIDAY -> 5
+                                    java.util.Calendar.SATURDAY -> 6
+                                    else -> 7
+                                }
+                                viewModel.openCustomScheduleDialog(null)
+                            },
+                            onEditCustomScheduleItem = { viewModel.openCustomScheduleDialog(it) },
+                            onToggleCustomScheduleItem = { id, done -> viewModel.toggleCustomScheduleItem(id, done) },
+                            onDeleteCustomScheduleItem = { id -> viewModel.deleteCustomScheduleItem(id) },
+                            onOpenKwtSlot = { appt -> viewModel.openKwtSlotSheet(appt) },
+                            onHeaderCollapsedChange = { isHeaderCollapsed = it },
                             modifier = contentModifier
                         )
                     }
@@ -347,9 +414,23 @@ fun AgendaPlusApp(
                             agendaStyle = agendaStyle,
                             isRefreshing = isRefreshing,
                             kwtSlots = kwtSlots,
+                            customScheduleItems = customScheduleItems,
+                            testPrepChecklists = testPrepChecklists,
                             onSelectDay = { viewModel.selectDay(it) },
                             onSelectViewMode = { viewModel.setRoosterViewMode(it) },
                             onOpenKwtSlot = { appt -> viewModel.openKwtSlotSheet(appt) },
+                            onAddCustomScheduleItem = { dateIso, dow ->
+                                customDialogDateIso = dateIso
+                                customDialogDayOfWeek = dow
+                                viewModel.openCustomScheduleDialog(null)
+                            },
+                            onEditCustomScheduleItem = { viewModel.openCustomScheduleDialog(it) },
+                            onToggleCustomScheduleItem = { id, done -> viewModel.toggleCustomScheduleItem(id, done) },
+                            onDeleteCustomScheduleItem = { id -> viewModel.deleteCustomScheduleItem(id) },
+                            onOpenTestPrep = { key, subj, title, stof ->
+                                viewModel.openTestPrepChecklist(key, subj, title, stof)
+                            },
+                            onHeaderCollapsedChange = { isHeaderCollapsed = it },
                             modifier = contentModifier
                         )
                     }
@@ -357,9 +438,14 @@ fun AgendaPlusApp(
                         HuiswerkScreen(
                             tasks = tasks,
                             selectedCategory = taskFilter,
+                            testPrepChecklists = testPrepChecklists,
                             onSelectCategory = { viewModel.setTaskFilter(it) },
                             onToggleTask = { viewModel.toggleTask(it) },
                             onAddTaskClick = { viewModel.openAddTaskDialog() },
+                            onOpenTestPrep = { key, subj, title, stof ->
+                                viewModel.openTestPrepChecklist(key, subj, title, stof)
+                            },
+                            onHeaderCollapsedChange = { isHeaderCollapsed = it },
                             modifier = contentModifier
                         )
                     }
@@ -371,6 +457,7 @@ fun AgendaPlusApp(
                             onOpenWhatIf = { viewModel.openWhatIf(it) },
                             onOpenExportSheet = { viewModel.openGradeExportSheet() },
                             onPlayGradeUnboxing = { grade -> viewModel.openGradeUnboxing(grade) },
+                            onHeaderCollapsedChange = { isHeaderCollapsed = it },
                             modifier = contentModifier
                         )
                     }
@@ -386,14 +473,22 @@ fun AgendaPlusApp(
                             messageFolders = messageFolders,
                             studyGuides = studyGuides,
                             kwtSlots = kwtSlots,
+                            absences = absences,
                             eloUrl = eloUrl,
                             studySites = studySites,
                             agendaStyle = agendaStyle,
                             uiScale = uiScale,
                             appThemeStyle = appThemeStyle,
+                            darkModePreference = darkModePreference,
                             uitvalNotificationsEnabled = uitvalNotificationsEnabled,
                             gradeNotificationsEnabled = gradeNotificationsEnabled,
                             testNotificationsEnabled = testNotificationsEnabled,
+                            quietHoursConfig = quietHoursConfig,
+                            mutedSubjects = mutedSubjects,
+                            availableSubjects = availableSubjects,
+                            smartBusAlertsEnabled = smartBusAlertsEnabled,
+                            busWalkMinutes = busWalkMinutes,
+                            busArrivalBufferMinutes = busArrivalBufferMinutes,
                             gradeUnboxingEnabled = gradeUnboxingEnabled,
                             gradeUnboxingMode = gradeUnboxingMode,
                             onSelectSection = { viewModel.selectMeerSection(it) },
@@ -405,6 +500,7 @@ fun AgendaPlusApp(
                             onSetAgendaStyle = { viewModel.setAgendaStyle(it) },
                             onSetUiScale = { viewModel.setUiScale(it) },
                             onSetAppThemeStyle = { viewModel.setAppThemeStyle(it) },
+                            onSetDarkModePreference = { viewModel.setDarkModePreference(it) },
                             onSetUitvalNotifications = { enabled ->
                                 viewModel.setUitvalNotificationsEnabled(enabled)
                                 if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -438,6 +534,13 @@ fun AgendaPlusApp(
                                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                 }
                             },
+                            onSetQuietHoursEnabled = { viewModel.setQuietHoursEnabled(it) },
+                            onSetQuietHoursStartMinutes = { viewModel.setQuietHoursStartMinutes(it) },
+                            onSetQuietHoursEndMinutes = { viewModel.setQuietHoursEndMinutes(it) },
+                            onToggleMutedSubject = { viewModel.toggleMutedSubject(it) },
+                            onSetSmartBusAlertsEnabled = { viewModel.setSmartBusAlertsEnabled(it) },
+                            onSetBusWalkMinutes = { viewModel.setBusWalkMinutes(it) },
+                            onSetBusArrivalBufferMinutes = { viewModel.setBusArrivalBufferMinutes(it) },
                             onSetGradeUnboxingEnabled = { viewModel.setGradeUnboxingEnabled(it) },
                             onSetGradeUnboxingMode = { viewModel.setGradeUnboxingMode(it) },
                             onTestUitvalNotification = { viewModel.sendTestUitvalNotification() },
@@ -454,6 +557,7 @@ fun AgendaPlusApp(
                             onCheckForUpdate = { viewModel.checkForUpdateManually() },
                             onExportBackupJson = { viewModel.exportChoicesBackupJson() },
                             onImportBackupJson = { raw -> viewModel.importChoicesBackupJson(raw) },
+                            onHeaderCollapsedChange = { isHeaderCollapsed = it },
                             modifier = contentModifier
                         )
                     }
@@ -514,6 +618,7 @@ fun AgendaPlusApp(
         selectedSubjectForWhatIf?.let { subject ->
             WhatIfBottomSheet(
                 subjectSummary = subject,
+                allSubjects = gradeSummaries,
                 onDismiss = { viewModel.closeWhatIf() }
             )
         }
@@ -568,8 +673,33 @@ fun AgendaPlusApp(
             KwtPickerBottomSheet(
                 slot = slot,
                 isOffline = isEffectivelyOffline,
+                isLoading = isKwtSheetLoading,
                 onEnrollOption = { apptId, optId -> viewModel.enrollKwtOption(apptId, optId) },
                 onDismiss = { viewModel.closeKwtSlotSheet() }
+            )
+        }
+
+        activeChecklistKey?.let { key ->
+            val checklist = testPrepChecklists[key]
+            if (checklist != null) {
+                TestPrepChecklistSheet(
+                    checklist = checklist,
+                    onToggleTopic = { topicId -> viewModel.toggleTestPrepTopic(key, topicId) },
+                    onAddTopic = { label -> viewModel.addTestPrepTopic(key, label) },
+                    onRemoveTopic = { topicId -> viewModel.removeTestPrepTopic(key, topicId) },
+                    onDismiss = { viewModel.closeTestPrepChecklist() }
+                )
+            }
+        }
+
+        if (showCustomScheduleDialog) {
+            CustomScheduleItemDialog(
+                existingItem = editingCustomScheduleItem,
+                initialDateIso = customDialogDateIso,
+                initialDayOfWeek = customDialogDayOfWeek,
+                onSave = { item -> viewModel.saveCustomScheduleItem(item) },
+                onDelete = { id -> viewModel.deleteCustomScheduleItem(id) },
+                onDismiss = { viewModel.closeCustomScheduleDialog() }
             )
         }
 

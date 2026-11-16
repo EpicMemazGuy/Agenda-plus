@@ -91,6 +91,12 @@ data class SchoolAddress(
     val longitude: Double
 )
 
+data class BusDeparture(
+    val expectedTime: String,
+    val scheduledTime: String? = null,
+    val destination: String? = null
+)
+
 data class BusStopInfo(
     val timingPointCode: String,
     val name: String,
@@ -101,7 +107,8 @@ data class BusStopInfo(
     val scheduledArrival: String? = null,
     val destination: String? = null,
     val isRealtime: Boolean = false,
-    val delayMinutes: Int = 0
+    val delayMinutes: Int = 0,
+    val upcomingDepartures: List<BusDeparture> = emptyList()
 )
 
 data class BusVehiclePoint(
@@ -188,6 +195,12 @@ data class HomeworkTask(
     val priority: TaskPriority = TaskPriority.MEDIUM
 )
 
+enum class GradeScopeFilter(val labelDutch: String) {
+    ALL("Alle"),
+    REGULAR("Regulier"),
+    PTA("PTA")
+}
+
 data class GradeItem(
     val id: String,
     val subjectCode: String,
@@ -196,7 +209,8 @@ data class GradeItem(
     val weight: Double,
     val description: String,
     val date: String,
-    val period: Int
+    val period: Int,
+    val isPta: Boolean = false
 ) {
     val isPassing: Boolean get() = score >= 5.5
 }
@@ -331,6 +345,48 @@ data class AuthSession(
     val refreshToken: String? = null,
     val personId: Long = 0L,
     val provider: SchoolProvider = SchoolProvider.MAGISTER
+)
+
+data class TestPrepSubtopic(
+    val id: String,
+    val title: String,
+    val isChecked: Boolean = false
+)
+
+data class TestPrepChecklist(
+    val key: String,
+    val subject: String,
+    val title: String,
+    val topics: List<TestPrepSubtopic> = emptyList()
+) {
+    val completedCount: Int get() = topics.count { it.isChecked }
+    val progress: Float get() = if (topics.isEmpty()) 0f else completedCount.toFloat() / topics.size.toFloat()
+}
+
+data class QuietHoursConfig(
+    val enabled: Boolean = true,
+    val startMinutes: Int = 22 * 60,
+    val endMinutes: Int = 7 * 60
+)
+
+data class SmartBusAdvice(
+    val busLine: String,
+    val stopName: String,
+    val busDepartureTime: String,
+    val leaveHomeTime: String,
+    val firstActiveLesson: Appointment,
+    val shiftReasonMessage: String? = null,
+    val alertKey: String = "",
+    val shouldNotifyPriority: Boolean = false
+)
+
+data class BusWidgetSnapshot(
+    val busLine: String = "",
+    val stopName: String = "",
+    val expectedTime: String = "",
+    val delayMinutes: Int = 0,
+    val smartAdviceText: String = "",
+    val updatedLabel: String = ""
 )
 
 fun String?.cleanSchoolText(): String? {

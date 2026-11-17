@@ -100,7 +100,7 @@ fun handleFirestoreError(
     return jsonString
 }
 
-class GoogleSignInCancelledException : Exception("Inloggen met Google geannuleerd.")
+class GoogleSignInCancelledException(message: String = "Inloggen met Google geannuleerd.") : Exception(message)
 
 @Keep
 @IgnoreExtraProperties
@@ -331,6 +331,38 @@ private const val FIREBASE_API_KEY = "AIzaSyA_DrnpNUuFTypcLGS20GrIYDbOcj2HZEg"
 private const val FIREBASE_PROJECT_ID = "smart-instrument-q9brs"
 private const val FIREBASE_GCM_SENDER_ID = "361465857069"
 private const val FIREBASE_STORAGE_BUCKET = "smart-instrument-q9brs.firebasestorage.app"
+const val EXPECTED_SIGNING_SHA1 = "CB:71:4D:A2:55:B0:9B:FD:9F:82:BE:F3:72:F2:30:E3:2F:F7:28:01"
+
+fun getAppSigningSha1(context: Context): String? {
+    return try {
+        val packageManager = context.packageManager
+        val packageName = context.packageName
+        val signatures = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            val signingInfo = packageManager.getPackageInfo(
+                packageName,
+                android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+            ).signingInfo
+            if (signingInfo?.hasMultipleSigners() == true) {
+                signingInfo.apkContentsSigners
+            } else {
+                signingInfo?.signingCertificateHistory
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(
+                packageName,
+                @Suppress("DEPRECATION") android.content.pm.PackageManager.GET_SIGNATURES
+            ).signatures
+        }
+        val firstSig = signatures?.firstOrNull() ?: return null
+        val md = java.security.MessageDigest.getInstance("SHA-1")
+        val digest = md.digest(firstSig.toByteArray())
+        digest.joinToString(":") { "%02X".format(it) }
+    } catch (_: Throwable) {
+        null
+    }
+}
+
 
 private fun ensureFirebaseAppInitialized(context: Context): FirebaseApp {
     val appCtx = context.applicationContext
@@ -469,11 +501,25 @@ class FirebaseService(
         } catch (e: CancellationException) {
             throw e
         } catch (e: GetCredentialCancellationException) {
-            Log.w("Auth", "Google Sign-In cancelled or dismissed: ${e.message}", e)
-            Result.failure(GoogleSignInCancelledException())
+            val actualSha1 = getAppSigningSha1(activity)
+            val isMismatched = actualSha1 != null && !actualSha1.equals(EXPECTED_SIGNING_SHA1, ignoreCase = true)
+            Log.w("Auth", "Google Sign-In cancelled: ${e.message}, actualSha1=$actualSha1, expected=$EXPECTED_SIGNING_SHA1", e)
+            val message = if (isMismatched) {
+                "Inloggen geannuleerd door Google Play Services. APK SHA-1 ($actualSha1) wijkt af van Firebase ($EXPECTED_SIGNING_SHA1). Installeer de nieuwste release-build via GitHub Actions."
+            } else {
+                "Inloggen met Google geannuleerd."
+            }
+            Result.failure(GoogleSignInCancelledException(message))
         } catch (e: Exception) {
             Log.e("Auth", "Google Sign-In failed", e)
-            Result.failure(e)
+            val actualSha1 = getAppSigningSha1(activity)
+            val isMismatched = actualSha1 != null && !actualSha1.equals(EXPECTED_SIGNING_SHA1, ignoreCase = true)
+            val msg = if (isMismatched) {
+                "Inloggen mislukt: APK SHA-1 ($actualSha1) wijkt af van Firebase ($EXPECTED_SIGNING_SHA1)."
+            } else {
+                e.localizedMessage ?: "Inloggen met Google mislukt."
+            }
+            Result.failure(Exception(msg, e))
         }
     }
 

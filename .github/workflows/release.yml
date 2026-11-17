@@ -30,6 +30,12 @@ on:
         description: 'Optionele korte toelichting bovenaan deze release'
         required: false
         default: ''
+      is_prerelease:
+        description: 'Upload als Pre-Release (vink aan voor pre-release, uit voor stabiel)'
+        required: false
+        type: boolean
+        default: true
+
 
 permissions:
   contents: write
@@ -73,6 +79,7 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_IS_PRERELEASE: ${{ github.event.inputs.is_prerelease }}
         run: |
           python3 - <<'PY'
           import json
@@ -491,4 +498,4 @@ jobs:
           body_path: .release_body.md
           files: ${{ env.FINAL_APK_PATH }}
           draft: false
-          prerelease: false
+          prerelease: ${{ env.IS_PRERELEASE == 'true' }}

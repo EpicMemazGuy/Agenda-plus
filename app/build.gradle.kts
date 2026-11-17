@@ -32,7 +32,7 @@ android {
 
     val googleWebClientId = providers.environmentVariable("GOOGLE_WEB_CLIENT_ID")
       .orElse(providers.gradleProperty("googleWebClientId"))
-      .orElse("REPLACE_WITH_WEB_CLIENT_ID_FROM_FIREBASE")
+      .orElse("361465857069-v8miibh69ffvuni8brea6gtug9thgucm.apps.googleusercontent.com")
     buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${googleWebClientId.get()}\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

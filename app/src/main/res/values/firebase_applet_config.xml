@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <resources>
     <string name="firestore_database_id" translatable="false">ai-studio-agendaplussite-6a81a79c-1603-4f73-8a9f-956af5b3139b</string>
+    <string name="google_web_client_id" translatable="false">361465857069-v8miibh69ffvuni8brea6gtug9thgucm.apps.googleusercontent.com</string>
 </resources>

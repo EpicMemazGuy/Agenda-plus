@@ -65,6 +65,8 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
     private val repository = AgendaRepository(application.applicationContext)
     private val firebaseService: FirebaseService? = runCatching {
         FirebaseService(application.applicationContext)
+    }.onFailure { err ->
+        android.util.Log.e("FirebaseService", "Fout bij initialiseren van FirebaseService: ${err.message}", err)
     }.getOrNull()
     private val credentialManager: CredentialManager = CredentialManager.create(application.applicationContext)
 

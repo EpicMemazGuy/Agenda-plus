@@ -322,16 +322,37 @@ data class UserCloudProfile(
     }
 }
 
+private const val DEFAULT_WEB_CLIENT_ID = "361465857069-v8miibh69ffvuni8brea6gtug9thgucm.apps.googleusercontent.com"
+private const val DEFAULT_DATABASE_ID = "ai-studio-agendaplussite-6a81a79c-1603-4f73-8a9f-956af5b3139b"
+
+private fun initFirestoreDb(context: Context): FirebaseFirestore {
+    val appCtx = context.applicationContext
+    if (com.google.firebase.FirebaseApp.getApps(appCtx).isEmpty()) {
+        com.google.firebase.FirebaseApp.initializeApp(appCtx)
+    }
+    val databaseId = runCatching { appCtx.getString(R.string.firestore_database_id) }.getOrNull()
+        ?.takeIf { it.isNotBlank() }
+        ?: DEFAULT_DATABASE_ID
+    return FirebaseFirestore.getInstance(databaseId)
+}
+
+private fun initFirebaseAuth(context: Context): FirebaseAuth {
+    val appCtx = context.applicationContext
+    if (com.google.firebase.FirebaseApp.getApps(appCtx).isEmpty()) {
+        com.google.firebase.FirebaseApp.initializeApp(appCtx)
+    }
+    return com.google.firebase.Firebase.auth
+}
+
 class FirebaseService(
     private val db: FirebaseFirestore,
     private val appContext: Context,
     private val auth: FirebaseAuth = Firebase.auth
 ) {
     constructor(context: Context) : this(
-        db = FirebaseFirestore.getInstance(
-            context.applicationContext.getString(R.string.firestore_database_id)
-        ),
-        appContext = context.applicationContext
+        db = initFirestoreDb(context),
+        appContext = context.applicationContext,
+        auth = initFirebaseAuth(context)
     )
 
     val currentUser: FirebaseUser?
@@ -350,11 +371,28 @@ class FirebaseService(
             ?: throw IllegalStateException("Gebruiker moet ingelogd zijn met Google voordat Firestore gebruikt kan worden.")
     }
 
+    private fun resolveWebClientId(): String {
+        val fromBuildConfig = runCatching { com.example.BuildConfig.GOOGLE_WEB_CLIENT_ID }.getOrNull()
+        if (!fromBuildConfig.isNullOrBlank() && !fromBuildConfig.contains("REPLACE")) {
+            return fromBuildConfig
+        }
+        val fromAppletConfig = runCatching { appContext.getString(R.string.google_web_client_id) }.getOrNull()
+        if (!fromAppletConfig.isNullOrBlank()) {
+            return fromAppletConfig
+        }
+        val fromGenerated = runCatching {
+            val resId = appContext.resources.getIdentifier("default_web_client_id", "string", appContext.packageName)
+            if (resId != 0) appContext.getString(resId) else null
+        }.getOrNull()
+        if (!fromGenerated.isNullOrBlank()) {
+            return fromGenerated
+        }
+        return DEFAULT_WEB_CLIENT_ID
+    }
+
     suspend fun attemptAutoSignIn(credentialManager: CredentialManager): FirebaseUser? {
         auth.currentUser?.let { return it }
-        val clientId = runCatching {
-            com.example.BuildConfig.GOOGLE_WEB_CLIENT_ID
-        }.getOrNull()?.takeIf { it.isNotBlank() && !it.contains("REPLACE") } ?: return null
+        val clientId = resolveWebClientId()
         val googleIdOption = GetGoogleIdOption.Builder()
             .setFilterByAuthorizedAccounts(true)
             .setServerClientId(clientId)
@@ -382,9 +420,7 @@ class FirebaseService(
         credentialManager: CredentialManager
     ): Result<FirebaseUser> {
         val clientId = try {
-            val buildConfigId = com.example.BuildConfig.GOOGLE_WEB_CLIENT_ID
-            buildConfigId.takeIf { it.isNotBlank() && !it.contains("REPLACE") }
-                ?: return Result.failure(IllegalStateException("Google Sign-In configuratie ontbreekt (GOOGLE_WEB_CLIENT_ID)."))
+            resolveWebClientId()
         } catch (e: Exception) {
             return Result.failure(e)
         }

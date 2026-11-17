@@ -890,7 +890,16 @@ class ExampleRobolectricTest {
             "ai-studio-agendaplussite-6a81a79c-1603-4f73-8a9f-956af5b3139b",
             context.getString(R.string.firestore_database_id)
         )
+        assertEquals(
+            "361465857069-v8miibh69ffvuni8brea6gtug9thgucm.apps.googleusercontent.com",
+            context.getString(R.string.google_web_client_id)
+        )
+        assertEquals(
+            "361465857069-v8miibh69ffvuni8brea6gtug9thgucm.apps.googleusercontent.com",
+            com.example.BuildConfig.GOOGLE_WEB_CLIENT_ID
+        )
         assertNotNull(androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_google_logo))
+        assertNotNull(com.example.services.FirebaseService(context))
 
         // 2. UserCloudSettings round-trip & bounds clamping
         val customSettings = com.example.services.UserCloudSettings(

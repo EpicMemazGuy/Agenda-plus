@@ -149,6 +149,7 @@ class ScheduleSyncWorker(
                 smartBusAdvice = advice
             )
             WidgetUpdater.updateAllWidgets(applicationContext)
+            com.example.services.SyncManager.pushIfChanged(applicationContext)
             Result.success()
         } catch (_: Exception) {
             Result.retry()

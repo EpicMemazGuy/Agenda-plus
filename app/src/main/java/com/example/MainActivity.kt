@@ -225,7 +225,7 @@ fun AgendaPlusApp(
     val unboxingTargetGrade by viewModel.unboxingTargetGrade.collectAsStateWithLifecycle()
     val isAuthenticating by viewModel.isAuthenticating.collectAsStateWithLifecycle()
     val authError by viewModel.authError.collectAsStateWithLifecycle()
-    val cloudSyncState by viewModel.cloudSyncState.collectAsStateWithLifecycle()
+    val webSyncState by viewModel.webSyncState.collectAsStateWithLifecycle()
 
     var isHeaderCollapsed by remember(currentTab, currentMeerSection, roosterViewMode) { mutableStateOf(false) }
     var customDialogDateIso by remember {
@@ -264,12 +264,7 @@ fun AgendaPlusApp(
                 onSelectProvider = { provider ->
                     viewModel.selectProviderAndOpenLogin(provider)
                 },
-                onOpenRawConsole = { viewModel.openRawConsole() },
-                cloudSyncState = cloudSyncState,
-                onGoogleCloudSignIn = { activity -> viewModel.signInWithGoogleAndSync(activity) },
-                onCloudSyncNow = { viewModel.syncToCloudNow() },
-                onCloudRestoreFromCloud = { viewModel.restoreFromCloudNow() },
-                onCloudSignOut = { viewModel.signOutFromCloud() }
+                onOpenRawConsole = { viewModel.openRawConsole() }
             )
         } else {
             // 3. Main Authenticated School Dashboard
@@ -364,11 +359,11 @@ fun AgendaPlusApp(
                     onTestUitvalNotification = { viewModel.sendTestUitvalNotification() },
                     onOpenSetupWizard = { viewModel.reopenOnboarding() },
                     onResetAndLogout = { viewModel.resetAppAndLogout() },
-                    cloudSyncState = cloudSyncState,
-                    onGoogleCloudSignIn = { activity -> viewModel.signInWithGoogleAndSync(activity) },
-                    onCloudSyncNow = { viewModel.syncToCloudNow() },
-                    onCloudRestoreFromCloud = { viewModel.restoreFromCloudNow() },
-                    onCloudSignOut = { viewModel.signOutFromCloud() },
+                    webSyncState = webSyncState,
+                    onPairUri = { uri -> viewModel.pairWithWebUri(uri) },
+                    onSyncNow = { viewModel.syncWithWebNow() },
+                    onPullLatest = { viewModel.pullFromWebNow() },
+                    onUnpair = { viewModel.unpairFromWeb() },
                     modifier = barMod
                 )
             }
@@ -591,11 +586,11 @@ fun AgendaPlusApp(
                             onCheckForUpdate = { viewModel.checkForUpdateManually() },
                             onExportBackupJson = { viewModel.exportChoicesBackupJson() },
                             onImportBackupJson = { raw -> viewModel.importChoicesBackupJson(raw) },
-                            cloudSyncState = cloudSyncState,
-                            onGoogleCloudSignIn = { activity -> viewModel.signInWithGoogleAndSync(activity) },
-                            onCloudSyncNow = { viewModel.syncToCloudNow() },
-                            onCloudRestoreFromCloud = { viewModel.restoreFromCloudNow() },
-                            onCloudSignOut = { viewModel.signOutFromCloud() },
+                            webSyncState = webSyncState,
+                            onPairUri = { uri -> viewModel.pairWithWebUri(uri) },
+                            onSyncNow = { viewModel.syncWithWebNow() },
+                            onPullLatest = { viewModel.pullFromWebNow() },
+                            onUnpair = { viewModel.unpairFromWeb() },
                             onHeaderCollapsedChange = { isHeaderCollapsed = it },
                             modifier = contentModifier
                         )

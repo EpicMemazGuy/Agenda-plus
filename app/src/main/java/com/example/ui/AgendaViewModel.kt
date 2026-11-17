@@ -1,8 +1,6 @@
 package com.example.ui
 
-import android.app.Activity
 import android.app.Application
-import androidx.credentials.CredentialManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AgendaRepository
@@ -11,9 +9,9 @@ import com.example.model.*
 import com.example.network.AuthResult
 import com.example.network.CitySearchResult
 import com.example.network.PkceHelper
-import com.example.services.FirebaseService
-import com.example.services.GoogleSignInCancelledException
-import com.example.services.UserCloudProfile
+import com.example.services.PullSyncOutcome
+import com.example.services.SyncManager
+import com.example.services.WebSyncStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -47,75 +45,10 @@ data class InAppBrowserTarget(
     val url: String
 )
 
-data class CloudSyncUiState(
-    val isSignedIn: Boolean = false,
-    val uid: String = "",
-    val displayName: String = "",
-    val email: String = "",
-    val schoolName: String = "",
-    val studentName: String = "",
-    val hasMagisterCloudBackup: Boolean = false,
-    val isBusy: Boolean = false,
-    val statusMessage: String? = null,
-    val isError: Boolean = false
-)
-
 class AgendaViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = AgendaRepository(application.applicationContext)
-    private var _cachedFirebaseService: FirebaseService? = null
-    private var _firebaseInitError: Throwable? = null
-    private var _authListenerJob: kotlinx.coroutines.Job? = null
-
-    private fun getFirebaseService(): FirebaseService? {
-        val existing = _cachedFirebaseService
-        if (existing != null) return existing
-        return try {
-            val service = FirebaseService(getApplication<Application>().applicationContext)
-            _cachedFirebaseService = service
-            _firebaseInitError = null
-            startObservingFirebaseAuth(service)
-            service
-        } catch (t: Throwable) {
-            _firebaseInitError = t
-            android.util.Log.e("FirebaseService", "Fout bij initialiseren van FirebaseService: ${t.message}", t)
-            null
-        }
-    }
-
-    private fun startObservingFirebaseAuth(fb: FirebaseService) {
-        if (_authListenerJob != null) return
-        _authListenerJob = viewModelScope.launch {
-            fb.authStateFlow().collect { user ->
-                if (user == null) {
-                    _cloudSyncState.value = CloudSyncUiState(
-                        statusMessage = _cloudSyncState.value.statusMessage.takeIf { _cloudSyncState.value.isError }
-                    )
-                } else {
-                    val currentSessionSnapshot = repository.currentSession.value
-                    _cloudSyncState.update { prev ->
-                        prev.copy(
-                            isSignedIn = true,
-                            uid = user.uid,
-                            displayName = user.displayName?.takeIf { it.isNotBlank() }
-                                ?: currentSessionSnapshot.studentName.cleanSchoolText()
-                                ?: user.email
-                                ?: "Google-account",
-                            email = user.email ?: "",
-                            studentName = currentSessionSnapshot.studentName.cleanSchoolText() ?: prev.studentName,
-                            schoolName = currentSessionSnapshot.school?.name?.cleanSchoolText() ?: prev.schoolName
-                        )
-                    }
-                    val fetched = fb.fetchUserCloudProfile().getOrNull()
-                    if (fetched != null) {
-                        applyFetchedMetadataToCloudUiState(fetched)
-                    }
-                }
-            }
-        }
-    }
-
-    private val credentialManager: CredentialManager = CredentialManager.create(application.applicationContext)
+    val webSyncState: StateFlow<WebSyncStatus> = SyncManager.status
 
     val currentSession: StateFlow<AuthSession> = repository.currentSession
     val appointments: StateFlow<List<Appointment>> = repository.appointments
@@ -297,9 +230,6 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
     private val _showRawConsole = MutableStateFlow(false)
     val showRawConsole: StateFlow<Boolean> = _showRawConsole.asStateFlow()
 
-    private val _cloudSyncState = MutableStateFlow(CloudSyncUiState())
-    val cloudSyncState: StateFlow<CloudSyncUiState> = _cloudSyncState.asStateFlow()
-
     var activeVerifier: String = PkceHelper.generateVerifier()
         private set
     var activeState: String = PkceHelper.generateRandomState()
@@ -309,9 +239,10 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
     private var lastResumeSyncMs = 0L
 
     init {
-        getFirebaseService()
+        SyncManager.init(application.applicationContext)
         viewModelScope.launch {
             repository.checkConnectivity()
+            repository.pullAndMergeWebSync()
             repository.refreshWeather()
             if (repository.savedBusLine.value.isNotBlank()) {
                 repository.refreshBusTracking(null, null)
@@ -341,6 +272,9 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
         lastResumeSyncMs = now
         viewModelScope.launch {
             repository.checkConnectivity()
+            if (!repository.isEffectivelyOffline()) {
+                repository.pullAndMergeWebSync()
+            }
             if (repository.currentSession.value.isAuthenticated && !repository.isEffectivelyOffline()) {
                 repository.refreshAll()
             }
@@ -778,16 +712,6 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
                     com.example.util.RawConsoleLogger.info("Auth", "Ingelogd: ${result.studentName}, Tenant: ${result.resolvedTenant?.subdomain}")
                     val fallbackTenant = tenant ?: result.resolvedTenant ?: repository.magisterTenants.first()
                     repository.applySuccessfulAuth(result, fallbackTenant)
-                    val fb = getFirebaseService()
-                    if (fb?.currentUser != null) {
-                        val saved = fb.saveUserCloudProfile(
-                            session = repository.currentSession.value,
-                            settings = repository.snapshotCloudSettings()
-                        ).getOrNull()
-                        if (saved != null) {
-                            applyFetchedMetadataToCloudUiState(saved, statusOverride = "Magister-sessie automatisch gesynchroniseerd met Firebase.")
-                        }
-                    }
                     _showLoginDialog.value = false
                     if (!repository.hasSeenTutorial.value) {
                         _showTutorialDialog.value = true
@@ -807,217 +731,37 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun applyFetchedMetadataToCloudUiState(
-        profile: UserCloudProfile,
-        statusOverride: String? = null
-    ) {
-        val localSession = repository.currentSession.value
-        val resolvedSchool = profile.schoolName.cleanSchoolText()
-            ?: localSession.school?.name?.cleanSchoolText()
-            ?: "Nog geen school gekoppeld"
-        val resolvedName = profile.displayName.cleanSchoolText()
-            ?: profile.studentName.cleanSchoolText()
-            ?: localSession.studentName.cleanSchoolText()
-            ?: profile.email.cleanSchoolText()
-            ?: "Google-account"
-        val resolvedStudent = profile.studentName.cleanSchoolText()
-            ?: localSession.studentName.cleanSchoolText()
-            ?: ""
-
-        _cloudSyncState.update { prev ->
-            prev.copy(
-                isSignedIn = true,
-                uid = profile.uid,
-                displayName = resolvedName,
-                email = profile.email.ifBlank { prev.email },
-                schoolName = resolvedSchool,
-                studentName = resolvedStudent,
-                hasMagisterCloudBackup = profile.magisterAuthenticated && profile.magisterAccessToken.isNotBlank(),
-                isBusy = false,
-                statusMessage = statusOverride ?: prev.statusMessage,
-                isError = false
-            )
-        }
-    }
-
-    fun signInWithGoogleAndSync(activity: Activity) {
-        val fb = getFirebaseService()
-        if (fb == null) {
-            val errDetails = _firebaseInitError?.localizedMessage
-                ?: _firebaseInitError?.message
-                ?: "Initialisatie mislukt"
-            _cloudSyncState.update {
-                it.copy(
-                    isBusy = false,
-                    isError = true,
-                    statusMessage = "Firebase kon niet worden gestart: $errDetails"
-                )
-            }
-            return
-        }
-        if (_cloudSyncState.value.isBusy) return
-        viewModelScope.launch {
-            _cloudSyncState.update { it.copy(isBusy = true, statusMessage = null, isError = false) }
-            val authResult = fb.signInWithGoogle(activity, credentialManager)
-            authResult.onFailure { err ->
-                if (err is GoogleSignInCancelledException) {
-                    _cloudSyncState.update {
-                        it.copy(
-                            isBusy = false,
-                            isError = false,
-                            statusMessage = "Inloggen met Google geannuleerd."
-                        )
-                    }
-                } else {
-                    _cloudSyncState.update {
-                        it.copy(
-                            isBusy = false,
-                            isError = true,
-                            statusMessage = err.localizedMessage ?: "Inloggen met Google mislukt."
-                        )
-                    }
-                }
-                return@launch
-            }
-
-            val existingCloud = fb.fetchUserCloudProfile().getOrNull()
-            val localSession = repository.currentSession.value
-
-            if (localSession.isAuthenticated && !localSession.accessToken.isNullOrBlank()) {
-                val saveRes = fb.saveUserCloudProfile(
-                    session = localSession,
-                    settings = repository.snapshotCloudSettings()
-                )
-                saveRes.onSuccess { saved ->
-                    applyFetchedMetadataToCloudUiState(
-                        saved,
-                        statusOverride = "Verbonden met Google! Magister-token en instellingen opgeslagen in Firestore."
-                    )
-                }.onFailure { err ->
-                    _cloudSyncState.update {
-                        it.copy(
-                            isBusy = false,
-                            isError = true,
-                            statusMessage = err.localizedMessage ?: "Opslaan naar Firestore mislukt."
-                        )
-                    }
-                }
-            } else if (existingCloud != null && existingCloud.toAuthSessionOrNull() != null) {
-                val restored = repository.applyCloudProfile(
-                    profile = existingCloud,
-                    restoreSession = true,
-                    restoreSettings = true
-                )
-                applyFetchedMetadataToCloudUiState(
-                    existingCloud,
-                    statusOverride = if (restored) {
-                        "Verbonden! Magister-sessie en instellingen hersteld vanuit Firebase."
-                    } else {
-                        "Verbonden met Google!"
-                    }
-                )
-            } else {
-                val saveRes = fb.saveUserCloudProfile(
-                    session = localSession,
-                    settings = repository.snapshotCloudSettings()
-                )
-                saveRes.onSuccess { saved ->
-                    applyFetchedMetadataToCloudUiState(
-                        saved,
-                        statusOverride = "Ingelogd met Google! Log in met Magister om je token te synchroniseren."
-                    )
-                }.onFailure { err ->
-                    _cloudSyncState.update {
-                        it.copy(
-                            isBusy = false,
-                            isError = true,
-                            statusMessage = err.localizedMessage ?: "Opslaan naar Firestore mislukt."
-                        )
-                    }
+    fun pairWithWebUri(uri: String): Result<Unit> {
+        val ctx = getApplication<Application>().applicationContext
+        val pairRes = SyncManager.pairWithUri(ctx, uri)
+        return pairRes.map {
+            viewModelScope.launch {
+                val pullOutcome = repository.pullAndMergeWebSync().getOrNull()
+                if (pullOutcome !is PullSyncOutcome.PulledPayload) {
+                    SyncManager.pushIfChanged(ctx, force = true)
                 }
             }
         }
     }
 
-    fun syncToCloudNow() {
-        val fb = getFirebaseService() ?: return
-        if (_cloudSyncState.value.isBusy) return
+    fun syncWithWebNow() {
+        val ctx = getApplication<Application>().applicationContext
+        if (webSyncState.value.isBusy) return
         viewModelScope.launch {
-            _cloudSyncState.update { it.copy(isBusy = true, statusMessage = null, isError = false) }
-            val res = fb.saveUserCloudProfile(
-                session = repository.currentSession.value,
-                settings = repository.snapshotCloudSettings()
-            )
-            res.onSuccess { saved ->
-                applyFetchedMetadataToCloudUiState(
-                    saved,
-                    statusOverride = "Magister-token en instellingen bijgewerkt in Firebase!"
-                )
-            }.onFailure { err ->
-                _cloudSyncState.update {
-                    it.copy(
-                        isBusy = false,
-                        isError = true,
-                        statusMessage = err.localizedMessage ?: "Synchronisatie met Firestore mislukt."
-                    )
-                }
-            }
+            repository.pullAndMergeWebSync()
+            SyncManager.pushIfChanged(ctx, force = true)
         }
     }
 
-    fun restoreFromCloudNow() {
-        val fb = getFirebaseService() ?: return
-        if (_cloudSyncState.value.isBusy) return
+    fun pullFromWebNow() {
+        if (webSyncState.value.isBusy) return
         viewModelScope.launch {
-            _cloudSyncState.update { it.copy(isBusy = true, statusMessage = null, isError = false) }
-            val fetchRes = fb.fetchUserCloudProfile()
-            val profile = fetchRes.getOrNull()
-            if (fetchRes.isFailure) {
-                _cloudSyncState.update {
-                    it.copy(
-                        isBusy = false,
-                        isError = true,
-                        statusMessage = fetchRes.exceptionOrNull()?.localizedMessage ?: "Ophalen uit Firestore mislukt."
-                    )
-                }
-                return@launch
-            }
-            if (profile == null) {
-                _cloudSyncState.update {
-                    it.copy(
-                        isBusy = false,
-                        isError = false,
-                        statusMessage = "Nog geen cloud-backup gevonden voor dit Google-account."
-                    )
-                }
-                return@launch
-            }
-            val restoredSession = repository.applyCloudProfile(
-                profile = profile,
-                restoreSession = profile.toAuthSessionOrNull() != null,
-                restoreSettings = true
-            )
-            applyFetchedMetadataToCloudUiState(
-                profile,
-                statusOverride = if (restoredSession) {
-                    "Instellingen en Magister-token hersteld vanuit Firebase!"
-                } else {
-                    "App-instellingen hersteld vanuit Firebase!"
-                }
-            )
+            repository.pullAndMergeWebSync()
         }
     }
 
-    fun signOutFromCloud() {
-        val fb = getFirebaseService() ?: return
-        viewModelScope.launch {
-            _cloudSyncState.update { it.copy(isBusy = true, statusMessage = null, isError = false) }
-            fb.signOut(credentialManager)
-            _cloudSyncState.value = CloudSyncUiState(
-                isSignedIn = false,
-                statusMessage = "Uitgelogd bij Google Cloud Sync."
-            )
-        }
+    fun unpairFromWeb() {
+        SyncManager.unpair(getApplication<Application>().applicationContext)
     }
 
     fun resetAppAndLogout() {

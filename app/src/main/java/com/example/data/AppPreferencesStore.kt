@@ -998,6 +998,38 @@ class AppPreferencesStore(context: Context) {
         prefs.edit().putString(KEY_TEST_PREP_JSON, root.toString()).apply()
     }
 
+    fun saveAllTestPrepChecklists(checklists: Map<String, TestPrepChecklist>) {
+        val root = JSONObject()
+        checklists.forEach { (key, list) ->
+            val topicsArr = JSONArray()
+            list.topics.forEach { t ->
+                topicsArr.put(JSONObject().apply {
+                    put("id", t.id)
+                    put("title", t.title)
+                    put("isChecked", t.isChecked)
+                })
+            }
+            root.put(key, JSONObject().apply {
+                put("subject", list.subject)
+                put("title", list.title)
+                put("topics", topicsArr)
+            })
+        }
+        prefs.edit().putString(KEY_TEST_PREP_JSON, root.toString()).apply()
+    }
+
+    fun getLocalSyncUpdatedAt(): Long = prefs.getLong(KEY_LOCAL_SYNC_UPDATED_AT, 0L)
+
+    fun setLocalSyncUpdatedAt(timestampMs: Long) {
+        prefs.edit().putLong(KEY_LOCAL_SYNC_UPDATED_AT, timestampMs).apply()
+    }
+
+    fun touchLocalSyncUpdatedAt(): Long {
+        val next = maxOf(System.currentTimeMillis(), getLocalSyncUpdatedAt() + 1L)
+        setLocalSyncUpdatedAt(next)
+        return next
+    }
+
     fun exportChoicesBackupJson(): String {
         val root = JSONObject().apply {
             put("backupVersion", 2)
@@ -1285,6 +1317,7 @@ class AppPreferencesStore(context: Context) {
         private const val KEY_BUS_WALK_MINUTES = "bus_walk_minutes"
         private const val KEY_BUS_BUFFER_MINUTES = "bus_buffer_minutes"
         private const val KEY_LAST_SMART_BUS_KEY = "last_smart_bus_key"
+        private const val KEY_LOCAL_SYNC_UPDATED_AT = "local_sync_updated_at"
         const val DEFAULT_ELO_URL = "https://www.itslearning.com"
 
         fun splitToetsstofIntoTopics(rawText: String, subject: String = "", fallbackTitle: String = ""): List<TestPrepSubtopic> {

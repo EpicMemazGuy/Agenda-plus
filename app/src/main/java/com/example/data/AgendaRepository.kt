@@ -15,8 +15,8 @@ import com.example.network.WeatherClient
 import com.example.notifications.ScheduleMonitorJobService
 import com.example.notifications.SmartBusPlanner
 import com.example.notifications.UitvalNotificationHelper
-import com.example.services.UserCloudProfile
-import com.example.services.UserCloudSettings
+import com.example.services.PullSyncOutcome
+import com.example.services.SyncManager
 import com.example.util.LauncherIconManager
 import com.example.util.NetworkStatusHelper
 import com.example.widget.WidgetUpdater
@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -338,6 +339,10 @@ class AgendaRepository(private val context: Context? = null) {
                 )
             }
             recalculateSmartBusAndBridges()
+            prefs?.touchLocalSyncUpdatedAt()
+            context?.let { ctx ->
+                SyncManager.pushIfChanged(ctx)
+            }
         } catch (e: Exception) {
             com.example.util.RawConsoleLogger.warn("Sync", "Sync probleem: ${e.message}")
             _lastSyncTime.value = if (_appointments.value.isNotEmpty()) {
@@ -400,6 +405,7 @@ class AgendaRepository(private val context: Context? = null) {
         prefs?.saveSchoolAddress(address)
         // Automatically enable SCHOOL_NAV block when user saves a school address
         toggleTodayBlock(TodayBlockType.SCHOOL_NAV, true)
+        notifyLocalDataChanged()
     }
 
     suspend fun setBusLineAndTrack(lineNumber: String, userLat: Double?, userLon: Double?) {
@@ -409,6 +415,7 @@ class AgendaRepository(private val context: Context? = null) {
         if (clean.isNotBlank()) {
             toggleTodayBlock(TodayBlockType.BUS_TIME, true)
         }
+        notifyLocalDataChanged()
         refreshBusTracking(userLat, userLon)
     }
 
@@ -581,12 +588,14 @@ class AgendaRepository(private val context: Context? = null) {
     fun setAgendaStyle(style: AgendaStyle) {
         _agendaStyle.value = style
         prefs?.setAgendaStyle(style)
+        notifyLocalDataChanged()
     }
 
     fun setUiScale(scale: Float) {
         val clamped = scale.coerceIn(0.85f, 1.20f)
         _uiScale.value = clamped
         prefs?.setUiScale(clamped)
+        notifyLocalDataChanged()
     }
 
     fun setAppThemeStyle(style: AppThemeStyle) {
@@ -596,12 +605,14 @@ class AgendaRepository(private val context: Context? = null) {
             LauncherIconManager.applyThemeIcon(ctx, style)
             WidgetUpdater.updateAllWidgets(ctx)
         }
+        notifyLocalDataChanged()
     }
 
     fun setDarkModePreference(pref: DarkModePreference) {
         _darkModePreference.value = pref
         prefs?.setDarkModePreference(pref)
         context?.let { WidgetUpdater.updateAllWidgets(it) }
+        notifyLocalDataChanged()
     }
 
     fun setEloUrl(url: String) {
@@ -637,12 +648,14 @@ class AgendaRepository(private val context: Context? = null) {
         ) + _studySites.value
         _studySites.value = updated
         prefs?.saveStudySites(updated)
+        notifyLocalDataChanged()
     }
 
     fun removeStudySite(siteId: String) {
         val updated = _studySites.value.filterNot { it.id == siteId }
         _studySites.value = updated
         prefs?.saveStudySites(updated)
+        notifyLocalDataChanged()
     }
 
     suspend fun refreshWeather() {
@@ -666,6 +679,7 @@ class AgendaRepository(private val context: Context? = null) {
 
     suspend fun selectWeatherCity(city: String, lat: Double, lon: Double) {
         prefs?.setWeatherLocation(city, lat, lon)
+        notifyLocalDataChanged()
         if (isEffectivelyOffline()) return
         _isWeatherLoading.value = true
         try {
@@ -685,6 +699,7 @@ class AgendaRepository(private val context: Context? = null) {
         _tasks.value = updated
         prefs?.saveTasks(updated)
         context?.let { WidgetUpdater.updateAllWidgets(it) }
+        notifyLocalDataChanged()
     }
 
     fun addTask(task: HomeworkTask) {
@@ -692,6 +707,7 @@ class AgendaRepository(private val context: Context? = null) {
         _tasks.value = updated
         prefs?.saveTasks(updated)
         context?.let { WidgetUpdater.updateAllWidgets(it) }
+        notifyLocalDataChanged()
     }
 
     fun isAnyNotificationEnabled(): Boolean =
@@ -788,6 +804,7 @@ class AgendaRepository(private val context: Context? = null) {
         val updated = _testPrepChecklists.value.toMutableMap().apply { put(key, created) }
         _testPrepChecklists.value = updated
         prefs?.saveTestPrepChecklist(created)
+        notifyLocalDataChanged()
         return created
     }
 
@@ -800,6 +817,7 @@ class AgendaRepository(private val context: Context? = null) {
         )
         _testPrepChecklists.value = _testPrepChecklists.value.toMutableMap().apply { put(key, updatedList) }
         prefs?.saveTestPrepChecklist(updatedList)
+        notifyLocalDataChanged()
     }
 
     fun addTestPrepTopic(key: String, label: String) {
@@ -814,6 +832,7 @@ class AgendaRepository(private val context: Context? = null) {
         val updatedList = list.copy(topics = list.topics + newTopic)
         _testPrepChecklists.value = _testPrepChecklists.value.toMutableMap().apply { put(key, updatedList) }
         prefs?.saveTestPrepChecklist(updatedList)
+        notifyLocalDataChanged()
     }
 
     fun removeTestPrepTopic(key: String, topicId: String) {
@@ -821,28 +840,34 @@ class AgendaRepository(private val context: Context? = null) {
         val updatedList = list.copy(topics = list.topics.filterNot { it.id == topicId })
         _testPrepChecklists.value = _testPrepChecklists.value.toMutableMap().apply { put(key, updatedList) }
         prefs?.saveTestPrepChecklist(updatedList)
+        notifyLocalDataChanged()
     }
 
     suspend fun upsertCustomScheduleItem(item: CustomScheduleItem) {
         customScheduleRepo?.upsert(item)
+        notifyLocalDataChanged()
     }
 
     suspend fun setCustomScheduleItemCompleted(id: Long, completed: Boolean) {
         customScheduleRepo?.setCompleted(id, completed)
+        notifyLocalDataChanged()
     }
 
     suspend fun deleteCustomScheduleItem(id: Long) {
         customScheduleRepo?.delete(id)
+        notifyLocalDataChanged()
     }
 
     fun setGradeUnboxingEnabled(enabled: Boolean) {
         _gradeUnboxingEnabled.value = enabled
         prefs?.setGradeUnboxingEnabled(enabled)
+        notifyLocalDataChanged()
     }
 
     fun setGradeUnboxingMode(mode: GradeUnboxingMode) {
         _gradeUnboxingMode.value = mode
         prefs?.setGradeUnboxingMode(mode)
+        notifyLocalDataChanged()
     }
 
     fun markGradeUnboxed(gradeId: String) {
@@ -887,93 +912,217 @@ class AgendaRepository(private val context: Context? = null) {
             _studySites.value = store.loadStudySites()
             updateMonitorSchedule()
             recalculateSmartBusAndBridges()
+            notifyLocalDataChanged()
         }
         return result
     }
 
-    fun snapshotCloudSettings(): UserCloudSettings {
-        val quiet = _quietHoursConfig.value
-        return UserCloudSettings(
-            appThemeStyle = _appThemeStyle.value.name,
-            darkModePreference = _darkModePreference.value.name,
-            agendaStyle = _agendaStyle.value.name,
-            uiScale = _uiScale.value.toDouble().coerceIn(0.85, 1.20),
-            eloUrl = _eloUrl.value,
-            savedBusLine = _savedBusLine.value,
-            uitvalNotificationsEnabled = _uitvalNotificationsEnabled.value,
-            gradeNotificationsEnabled = _gradeNotificationsEnabled.value,
-            testNotificationsEnabled = _testNotificationsEnabled.value,
-            quietHoursEnabled = quiet.enabled,
-            quietHoursStartMinutes = quiet.startMinutes.coerceIn(0, 1439),
-            quietHoursEndMinutes = quiet.endMinutes.coerceIn(0, 1439),
-            mutedSubjects = _mutedSubjects.value.toList().take(50),
-            smartBusAlertsEnabled = _smartBusAlertsEnabled.value,
-            busWalkMinutes = _busWalkMinutes.value.coerceIn(1, 30),
-            busArrivalBufferMinutes = _busArrivalBufferMinutes.value.coerceIn(2, 30),
-            gradeUnboxingEnabled = _gradeUnboxingEnabled.value,
-            gradeUnboxingMode = _gradeUnboxingMode.value.name
-        )
+    private fun notifyLocalDataChanged() {
+        prefs?.touchLocalSyncUpdatedAt()
+        context?.let { SyncManager.pushIfChangedAsync(it) }
     }
 
-    suspend fun applyCloudProfile(
-        profile: UserCloudProfile,
-        restoreSession: Boolean,
-        restoreSettings: Boolean
-    ): Boolean {
-        if (restoreSettings) {
-            val s = profile.settings
-            setAppThemeStyle(s.resolvedAppThemeStyle())
-            setDarkModePreference(s.resolvedDarkModePreference())
-            setAgendaStyle(s.resolvedAgendaStyle())
-            setUiScale(s.uiScale.toFloat())
-            if (s.eloUrl.isNotBlank()) setEloUrl(s.eloUrl)
-            if (s.savedBusLine != _savedBusLine.value) {
-                _savedBusLine.value = s.savedBusLine.trim()
-                prefs?.setSavedBusLine(s.savedBusLine.trim())
-            }
-            _uitvalNotificationsEnabled.value = s.uitvalNotificationsEnabled
-            prefs?.setUitvalNotificationsEnabled(s.uitvalNotificationsEnabled)
-            _gradeNotificationsEnabled.value = s.gradeNotificationsEnabled
-            prefs?.setGradeNotificationsEnabled(s.gradeNotificationsEnabled)
-            _testNotificationsEnabled.value = s.testNotificationsEnabled
-            prefs?.setTestNotificationsEnabled(s.testNotificationsEnabled)
-            prefs?.setQuietHoursEnabled(s.quietHoursEnabled)
-            prefs?.setQuietHoursStartMinutes(s.quietHoursStartMinutes)
-            prefs?.setQuietHoursEndMinutes(s.quietHoursEndMinutes)
-            _quietHoursConfig.value = QuietHoursConfig(
-                enabled = s.quietHoursEnabled,
-                startMinutes = s.quietHoursStartMinutes,
-                endMinutes = s.quietHoursEndMinutes
-            )
-            val mutedSet = s.mutedSubjects.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-            _mutedSubjects.value = mutedSet
-            prefs?.setMutedSubjects(mutedSet)
-            _smartBusAlertsEnabled.value = s.smartBusAlertsEnabled
-            prefs?.setSmartBusAlertsEnabled(s.smartBusAlertsEnabled)
-            _busWalkMinutes.value = s.busWalkMinutes.coerceIn(1, 30)
-            prefs?.setBusWalkMinutes(_busWalkMinutes.value)
-            _busArrivalBufferMinutes.value = s.busArrivalBufferMinutes.coerceIn(2, 30)
-            prefs?.setBusArrivalBufferMinutes(_busArrivalBufferMinutes.value)
-            _gradeUnboxingEnabled.value = s.gradeUnboxingEnabled
-            prefs?.setGradeUnboxingEnabled(s.gradeUnboxingEnabled)
-            _gradeUnboxingMode.value = s.resolvedGradeUnboxingMode()
-            prefs?.setGradeUnboxingMode(_gradeUnboxingMode.value)
-            updateMonitorSchedule()
-            recalculateSmartBusAndBridges()
+    suspend fun pullAndMergeWebSync(): Result<PullSyncOutcome> {
+        val ctx = context ?: return Result.success(PullSyncOutcome.NotPaired)
+        val pullResult = SyncManager.pullLatest(ctx)
+        val outcome = pullResult.getOrElse { return Result.failure(it) }
+        if (outcome is PullSyncOutcome.PulledPayload) {
+            mergeWebSyncPayload(outcome.payloadJson)
+        }
+        return Result.success(outcome)
+    }
+
+    suspend fun mergeWebSyncPayload(payloadJson: JSONObject): Boolean {
+        val incomingUpdatedAt = payloadJson.optLong("updatedAt", 0L)
+        val localUpdatedAt = prefs?.getLocalSyncUpdatedAt() ?: 0L
+        if (incomingUpdatedAt <= localUpdatedAt && localUpdatedAt > 0L) {
+            return false
         }
 
-        val cloudSession = if (restoreSession) profile.toAuthSessionOrNull() else null
-        if (cloudSession != null && cloudSession.school != null && !cloudSession.accessToken.isNullOrBlank()) {
-            _currentSession.value = cloudSession
-            prefs?.saveSession(cloudSession)
-            prefs?.setOnboardingCompleted(true)
-            _hasCompletedOnboarding.value = true
-            context?.let { ScheduleMonitorJobService.schedule(it) }
-            syncLiveSchoolData(cloudSession.school, cloudSession.accessToken, cloudSession.personId)
-            refreshWeather()
-            return true
+        // 1. Settings
+        payloadJson.optJSONObject("settings")?.let { s ->
+            SyncManager.themeFromWire(s.optString("theme", ""))?.let { theme ->
+                _appThemeStyle.value = theme
+                prefs?.setAppThemeStyle(theme)
+                context?.let { LauncherIconManager.applyThemeIcon(it, theme) }
+            }
+            SyncManager.darkModeFromWire(s.optString("darkMode", ""))?.let { dm ->
+                _darkModePreference.value = dm
+                prefs?.setDarkModePreference(dm)
+            }
+            SyncManager.agendaStyleFromWire(s.optString("agendaDensity", ""))?.let { density ->
+                _agendaStyle.value = density
+                prefs?.setAgendaStyle(density)
+            }
+            if (s.has("uiScale")) {
+                val rawScale = s.optDouble("uiScale", 100.0)
+                val factor = if (rawScale > 10.0) (rawScale / 100.0).toFloat() else rawScale.toFloat()
+                val clamped = factor.coerceIn(0.85f, 1.20f)
+                _uiScale.value = clamped
+                prefs?.setUiScale(clamped)
+            }
+            SyncManager.unboxingFromWire(s.optString("unboxingMode", ""))?.let { mode ->
+                _gradeUnboxingMode.value = mode
+                prefs?.setGradeUnboxingMode(mode)
+            }
+            if (s.has("busLine")) {
+                val busLine = s.optString("busLine", "").trim()
+                _savedBusLine.value = busLine
+                prefs?.setSavedBusLine(busLine)
+            }
+            if (s.has("schoolAddress")) {
+                val addrStr = s.optString("schoolAddress", "").trim()
+                if (addrStr.isBlank()) {
+                    _schoolAddress.value = null
+                    prefs?.saveSchoolAddress(null)
+                } else if (_schoolAddress.value?.streetAndCity != addrStr && _schoolAddress.value?.displayName != addrStr) {
+                    val existingLat = _schoolAddress.value?.latitude ?: 0.0
+                    val existingLon = _schoolAddress.value?.longitude ?: 0.0
+                    val updatedAddr = SchoolAddress(
+                        displayName = addrStr,
+                        streetAndCity = addrStr,
+                        latitude = existingLat,
+                        longitude = existingLon
+                    )
+                    _schoolAddress.value = updatedAddr
+                    prefs?.saveSchoolAddress(updatedAddr)
+                }
+            }
+            if (s.has("weatherCity")) {
+                val city = s.optString("weatherCity", "").trim()
+                if (city.isNotBlank()) {
+                    val currentWeather = prefs?.getWeatherLocation()
+                    if (currentWeather?.cityName != city) {
+                        val match = runCatching { weatherClient.searchCity(city).firstOrNull() }.getOrNull()
+                        if (match != null) {
+                            prefs?.setWeatherLocation(match.name, match.latitude, match.longitude)
+                        } else {
+                            prefs?.setWeatherLocation(
+                                city,
+                                currentWeather?.latitude ?: 52.0907,
+                                currentWeather?.longitude ?: 5.1214
+                            )
+                        }
+                    }
+                }
+            }
         }
-        return false
+
+        // 2. Custom Schedule Items
+        payloadJson.optJSONArray("customScheduleItems")?.let { arr ->
+            val items = buildList {
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val title = obj.optString("title", "").trim()
+                    if (title.isBlank()) continue
+                    add(
+                        CustomScheduleItem(
+                            id = obj.optLong("id", 0L),
+                            title = title,
+                            description = obj.optString("description", ""),
+                            startTime = obj.optString("startTime", "08:30"),
+                            endTime = obj.optString("endTime", "09:15"),
+                            dateIso = obj.optString("dateIso", ""),
+                            daysOfWeekCsv = obj.optString("daysOfWeekCsv", ""),
+                            isRecurring = obj.optBoolean("isRecurring", false),
+                            colorKey = obj.optString("colorKey", "BLUE"),
+                            isCompleted = obj.optBoolean("isCompleted", false),
+                            createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+                        )
+                    )
+                }
+            }
+            customScheduleRepo?.replaceAll(items)
+        }
+
+        // 3. Completed Homework IDs
+        payloadJson.optJSONArray("completedHomeworkIds")?.let { arr ->
+            val completedIds = buildSet {
+                for (i in 0 until arr.length()) {
+                    val id = arr.optString(i, "").trim()
+                    if (id.isNotEmpty()) add(id)
+                }
+            }
+            val currentTasks = _tasks.value
+            if (currentTasks.isNotEmpty()) {
+                val updatedTasks = currentTasks.map { task ->
+                    val shouldBeCompleted = task.id in completedIds
+                    if (task.isCompleted != shouldBeCompleted) {
+                        task.copy(isCompleted = shouldBeCompleted)
+                    } else {
+                        task
+                    }
+                }
+                _tasks.value = updatedTasks
+                prefs?.saveTasks(updatedTasks)
+            }
+        }
+
+        // 4. Test Checklists
+        payloadJson.optJSONObject("testChecklists")?.let { obj ->
+            val parsedMap = mutableMapOf<String, TestPrepChecklist>()
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val co = obj.optJSONObject(key) ?: continue
+                val topicsArr = co.optJSONArray("topics") ?: org.json.JSONArray()
+                val topics = buildList {
+                    for (i in 0 until topicsArr.length()) {
+                        val to = topicsArr.optJSONObject(i) ?: continue
+                        add(
+                            TestPrepSubtopic(
+                                id = to.optString("id", "tp_$i"),
+                                title = to.optString("title", "Onderdeel"),
+                                isChecked = to.optBoolean("isChecked", false)
+                            )
+                        )
+                    }
+                }
+                parsedMap[key] = TestPrepChecklist(
+                    key = co.optString("key", key).ifBlank { key },
+                    subject = co.optString("subject", "Toets"),
+                    title = co.optString("title", "Voorbereiding"),
+                    topics = topics
+                )
+            }
+            _testPrepChecklists.value = parsedMap
+            prefs?.saveAllTestPrepChecklists(parsedMap)
+        }
+
+        // 5. Study Sites
+        payloadJson.optJSONArray("studySites")?.let { arr ->
+            val sites = buildList {
+                for (i in 0 until arr.length()) {
+                    val so = arr.optJSONObject(i) ?: continue
+                    val url = so.optString("url", "").trim()
+                    if (url.isNotEmpty()) {
+                        add(
+                            StudySite(
+                                id = so.optString("id", "site_$i"),
+                                name = so.optString("name", "Studie"),
+                                url = url,
+                                category = so.optString("category", "Oefenen"),
+                                isDefault = so.optBoolean("isDefault", false)
+                            )
+                        )
+                    }
+                }
+            }
+            if (sites.isNotEmpty()) {
+                _studySites.value = sites
+                prefs?.saveStudySites(sites)
+            }
+        }
+
+        if (incomingUpdatedAt > 0L) {
+            prefs?.setLocalSyncUpdatedAt(incomingUpdatedAt)
+        }
+        recalculateSmartBusAndBridges()
+        context?.let { ctx ->
+            WidgetUpdater.updateAllWidgets(ctx)
+            SyncManager.recordMergedHash(ctx)
+        }
+        return true
     }
 
     fun resetAppAndLogout() {

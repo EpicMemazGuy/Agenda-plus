@@ -24,7 +24,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import android.app.Activity
 import androidx.compose.ui.graphics.RectangleShape
 import com.example.model.AgendaStyle
 import com.example.model.AppThemeStyle
@@ -33,7 +32,7 @@ import com.example.model.DarkModePreference
 import com.example.model.GradeUnboxingMode
 import com.example.model.UiScalePreset
 import com.example.model.cleanSchoolText
-import com.example.ui.CloudSyncUiState
+import com.example.services.WebSyncStatus
 import com.example.ui.theme.LocalDarkThemeActive
 import com.example.ui.theme.NothingOutline
 import com.example.ui.theme.NothingRed
@@ -69,11 +68,11 @@ fun AppTopBar(
     onTestUitvalNotification: () -> Boolean = { false },
     onOpenSetupWizard: () -> Unit = {},
     onResetAndLogout: () -> Unit,
-    cloudSyncState: CloudSyncUiState = CloudSyncUiState(),
-    onGoogleCloudSignIn: (Activity) -> Unit = {},
-    onCloudSyncNow: () -> Unit = {},
-    onCloudRestoreFromCloud: () -> Unit = {},
-    onCloudSignOut: () -> Unit = {},
+    webSyncState: WebSyncStatus = WebSyncStatus(),
+    onPairUri: (String) -> Result<Unit> = { Result.success(Unit) },
+    onSyncNow: () -> Unit = {},
+    onPullLatest: () -> Unit = {},
+    onUnpair: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showAccountSheet by remember { mutableStateOf(false) }
@@ -108,222 +107,156 @@ fun AppTopBar(
                         size = if (oneUiMode) 36.dp else 40.dp,
                         modifier = Modifier.testTag("app_logo_badge")
                     )
-
-                    Spacer(modifier = Modifier.width(10.dp))
-
-                    AnimatedContent(
-                        targetState = if (oneUiMode && !collapsedTitle.isNullOrBlank()) collapsedTitle else null,
-                        transitionSpec = { fadeIn(oneUiTween(240)) togetherWith fadeOut(oneUiTween(180)) },
-                        label = "topbar_collapsed_title"
-                    ) { pinnedTitle ->
-                        if (pinnedTitle != null) {
-                            Column {
-                                Text(
-                                    text = pinnedTitle,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = if (isOffline) "Offline-cache • $lastSyncTime" else "Sync: $lastSyncTime",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        } else {
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = collapsedTitle ?: "AGENDA+",
+                                style = if (collapsedTitle != null) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (collapsedTitle == null) {
+                                Surface(
+                                    shape = RoundedCornerShape(percent = 50),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    border = if (nothingMode) BorderStroke(1.dp, NothingOutline) else null
+                                ) {
                                     Text(
-                                        text = if (nothingMode) "AGENDA+" else "Agenda+",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = if (oneUiMode) FontWeight.Medium else FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        text = session.provider.name,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Surface(
-                                        shape = RoundedCornerShape(percent = 50),
-                                        color = MaterialTheme.colorScheme.primaryContainer,
-                                        border = cardBorder
-                                    ) {
-                                        Text(
-                                            text = if (nothingMode) session.provider.displayName.uppercase() else session.provider.displayName,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = if (oneUiMode) FontWeight.Medium else FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                    if (isOffline) {
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Surface(
-                                            shape = RoundedCornerShape(percent = 50),
-                                            color = MaterialTheme.colorScheme.errorContainer,
-                                            modifier = Modifier.testTag("topbar_offline_badge")
-                                        ) {
-                                            Text(
-                                                text = "OFFLINE",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                    }
                                 }
-
-                                Text(
-                                    text = session.school?.name?.cleanSchoolText() ?: "Geen school geselecteerd",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
                             }
+                        }
+                        if (collapsedTitle == null) {
+                            Text(
+                                text = session.school?.name?.cleanSchoolText() ?: "Magister",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }
 
-                // Actions: Raw CLI Console + Refresh + Account Avatar Chip
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = onOpenRawConsole,
-                        modifier = Modifier
-                            .minimumInteractiveComponentSize()
-                            .testTag("topbar_raw_console_button")
-                    ) {
-                        Icon(
-                            imageVector = if (oneUiMode) OneUiIcons.Terminal else Icons.Default.Terminal,
-                            contentDescription = "Raw CLI Log",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                // Action Badges & Profile Trigger
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (isOffline) {
+                        Surface(
+                            shape = RoundedCornerShape(percent = 50),
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            modifier = Modifier.testTag("offline_badge")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudOff,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Offline",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
                     }
 
                     IconButton(
                         onClick = onRefreshClick,
+                        enabled = !isRefreshing,
                         modifier = Modifier
                             .minimumInteractiveComponentSize()
-                            .testTag("refresh_button")
+                            .testTag("topbar_refresh_button")
                     ) {
                         if (isRefreshing) {
-                            if (nothingMode) {
-                                NothingDotMatrixSpinner()
-                            } else {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         } else {
                             Icon(
-                                imageVector = if (oneUiMode) OneUiIcons.Refresh else Icons.Default.Refresh,
-                                contentDescription = "Synchroniseer met ${session.provider.displayName}",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Verversen",
+                                tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
 
+                    // Account & Settings Profile Trigger Pill
                     Surface(
                         shape = RoundedCornerShape(percent = 50),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        border = cardBorder,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        border = if (nothingMode) BorderStroke(1.dp, NothingOutline) else null,
                         modifier = Modifier
                             .clip(RoundedCornerShape(percent = 50))
                             .clickable { showAccountSheet = true }
-                            .testTag("account_chip")
+                            .testTag("topbar_account_pill")
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
-                            Icon(
-                                imageVector = if (oneUiMode) OneUiIcons.Account else Icons.Default.AccountCircle,
-                                contentDescription = "Account instellingen",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = firstName.take(1).uppercase(),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                }
+                            }
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = firstName,
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurface
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
                 }
             }
-
-            // Subtitle status row: Offline sync timestamp (hidden when One UI collapsed title already shows sync)
-            if (!(oneUiMode && !collapsedTitle.isNullOrBlank())) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(
-                                when {
-                                    !session.isAuthenticated || isOffline -> MaterialTheme.colorScheme.error
-                                    nothingMode -> NothingRed
-                                    else -> MaterialTheme.colorScheme.primary
-                                }
-                            )
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = when {
-                            !session.isAuthenticated -> "Niet verbonden"
-                            isOffline -> "Offline-cache actief • $lastSyncTime"
-                            else -> "Laatste sync: $lastSyncTime"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-            if (nothingMode) {
-                Spacer(modifier = Modifier.height(6.dp))
-                NothingDottedDivider()
-            } else if (oneUiMode && !collapsedTitle.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
-                NothingAwareDivider()
-            }
         }
     }
 
     if (oneUiMode) {
-        OneUiFrostedSurface(
-            shape = RectangleShape,
-            containerColor = if (!collapsedTitle.isNullOrBlank()) {
-                MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = if (isDark) 0.78f else 0.80f)
-            } else {
-                MaterialTheme.colorScheme.background.copy(alpha = if (isDark) 0.84f else 0.88f)
-            },
-            border = null,
-            enableBackdropBlur = !collapsedTitle.isNullOrBlank(),
-            modifier = modifier
-                .fillMaxWidth()
-                .testTag("app_top_bar")
-        ) {
+        Box(modifier = modifier.fillMaxWidth()) {
             topBarInner()
         }
     } else {
         Surface(
-            modifier = modifier
-                .fillMaxWidth()
-                .testTag("app_top_bar"),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = if (nothingMode) 0.dp else 2.dp
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+            modifier = modifier.fillMaxWidth()
         ) {
             topBarInner()
         }
@@ -331,64 +264,56 @@ fun AppTopBar(
 
     // Account & Settings Bottom Sheet
     if (showAccountSheet) {
-        val currentPreset = UiScalePreset.entries.minByOrNull { kotlin.math.abs(it.scaleFactor - uiScale) }
-            ?: UiScalePreset.NORMAL
-
         ModalBottomSheet(
             onDismissRequest = { showAccountSheet = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            shape = appSheetShape(),
-            tonalElevation = 0.dp,
-            containerColor = if (oneUiMode) {
-                MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = if (isDark) 0.94f else 0.96f)
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHigh
-            },
-            modifier = Modifier.testTag("account_bottom_sheet")
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 36.dp)
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
                         text = "Account & Instellingen",
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        fontWeight = FontWeight.Bold
                     )
                     IconButton(onClick = { showAccountSheet = false }) {
                         Icon(Icons.Default.Close, contentDescription = "Sluiten")
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
-
+                // Student Identity Card
                 Surface(
-                    shape = appCardShape(standard = 20.dp, nothing = 24.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = appCardShape(standard = 16.dp, nothing = 20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
                     border = cardBorder,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
                                 shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primaryContainer,
+                                color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(44.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.Person,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                    Text(
+                                        text = firstName.take(1).uppercase(),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimary
                                     )
                                 }
                             }
@@ -400,19 +325,19 @@ fun AppTopBar(
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                                if (cleanStudentClass != null) {
+                                if (!cleanStudentClass.isNullOrBlank()) {
                                     Text(
-                                        text = cleanStudentClass,
+                                        text = "Klas $cleanStudentClass",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -433,408 +358,40 @@ fun AppTopBar(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                CloudSyncCard(
-                    cloudState = cloudSyncState,
+                WebSyncCard(
+                    syncState = webSyncState,
                     session = session,
-                    onGoogleSignIn = onGoogleCloudSignIn,
-                    onSyncNow = onCloudSyncNow,
-                    onRestoreFromCloud = onCloudRestoreFromCloud,
-                    onSignOut = onCloudSignOut,
+                    onPairUri = onPairUri,
+                    onSyncNow = onSyncNow,
+                    onPullLatest = onPullLatest,
+                    onUnpair = onUnpair,
                     compactMode = true
                 )
 
                 Spacer(modifier = Modifier.height(18.dp))
 
-                // Weergave & Indeling section
-                Surface(
-                    shape = appCardShape(standard = 20.dp, nothing = 24.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    border = cardBorder,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Weergave & Indeling",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Text(
-                            text = "App, Widget & Icoon Thema",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        SingleChoiceSegmentedButtonRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("settings_app_theme_segmented")
-                        ) {
-                            AppThemeStyle.entries.forEachIndexed { index, style ->
-                                SegmentedButton(
-                                    selected = appThemeStyle == style,
-                                    onClick = { onSetAppThemeStyle(style) },
-                                    shape = SegmentedButtonDefaults.itemShape(
-                                        index = index,
-                                        count = AppThemeStyle.entries.size
-                                    ),
-                                    modifier = Modifier.testTag("settings_theme_${style.name}")
-                                ) {
-                                    Text(
-                                        text = style.labelDutch,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = appThemeStyle.subtitleDutch,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Text(
-                            text = "Donkere modus",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        SingleChoiceSegmentedButtonRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("settings_dark_mode_segmented")
-                        ) {
-                            DarkModePreference.entries.forEachIndexed { index, pref ->
-                                SegmentedButton(
-                                    selected = darkModePreference == pref,
-                                    onClick = { onSetDarkModePreference(pref) },
-                                    enabled = appThemeStyle != AppThemeStyle.NOTHING_OS,
-                                    shape = SegmentedButtonDefaults.itemShape(
-                                        index = index,
-                                        count = DarkModePreference.entries.size
-                                    ),
-                                    modifier = Modifier.testTag("settings_dark_mode_${pref.name}")
-                                ) {
-                                    Text(
-                                        text = pref.labelDutch,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-                        if (appThemeStyle == AppThemeStyle.NOTHING_OS) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Nothing OS gebruikt altijd OLED zwart.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Text(
-                            text = "Roosterstijl",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        SingleChoiceSegmentedButtonRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("settings_agenda_style_segmented")
-                        ) {
-                            AgendaStyle.entries.forEachIndexed { index, style ->
-                                SegmentedButton(
-                                    selected = agendaStyle == style,
-                                    onClick = { onSetAgendaStyle(style) },
-                                    shape = SegmentedButtonDefaults.itemShape(
-                                        index = index,
-                                        count = AgendaStyle.entries.size
-                                    ),
-                                    modifier = Modifier.testTag("settings_style_${style.name}")
-                                ) {
-                                    Text(style.labelDutch)
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Text(
-                            text = "Tekstgrootte",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        SingleChoiceSegmentedButtonRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("settings_ui_scale_segmented")
-                        ) {
-                            UiScalePreset.entries.forEachIndexed { index, preset ->
-                                SegmentedButton(
-                                    selected = currentPreset == preset,
-                                    onClick = { onSetUiScale(preset.scaleFactor) },
-                                    shape = SegmentedButtonDefaults.itemShape(
-                                        index = index,
-                                        count = UiScalePreset.entries.size
-                                    ),
-                                    modifier = Modifier.testTag("settings_scale_${preset.name}")
-                                ) {
-                                    Text(preset.labelDutch)
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        OutlinedButton(
-                            onClick = {
-                                showAccountSheet = false
-                                onOpenSetupWizard()
-                            },
-                            shape = RoundedCornerShape(percent = 50),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("reopen_setup_wizard_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Startscherm opnieuw openen")
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // Meldingen & Uitval section
-                Surface(
-                    shape = appCardShape(standard = 20.dp, nothing = 24.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    border = cardBorder,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Meldingen & Cijfer Unboxing",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("uitval_notifications_row"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text(
-                                    text = "Uitval & roosterwijzigingen",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "Bij lesuitval, lokaal- of tijdwijziging",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = uitvalNotificationsEnabled,
-                                onCheckedChange = onSetUitvalNotifications,
-                                modifier = Modifier.testTag("uitval_notifications_switch")
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text(
-                                    text = "Nieuwe cijfers",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "Directe melding bij nieuw cijfer",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = gradeNotificationsEnabled,
-                                onCheckedChange = onSetGradeNotifications,
-                                modifier = Modifier.testTag("topbar_grade_notifs_switch")
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text(
-                                    text = "Nieuwe toetsen",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "Melding bij nieuwe PW, SO of MO",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = testNotificationsEnabled,
-                                onCheckedChange = onSetTestNotifications,
-                                modifier = Modifier.testTag("topbar_test_notifs_switch")
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-                        NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text(
-                                    text = "Cijfer Unboxing inschakelen",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "Modus: ${gradeUnboxingMode.labelDutch}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = gradeUnboxingEnabled,
-                                onCheckedChange = onSetGradeUnboxingEnabled,
-                                modifier = Modifier.testTag("topbar_unboxing_switch")
-                            )
-                        }
-
-                        if (gradeUnboxingEnabled) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                GradeUnboxingMode.entries.forEach { mode ->
-                                    FilterChip(
-                                        selected = gradeUnboxingMode == mode,
-                                        onClick = { onSetGradeUnboxingMode(mode) },
-                                        label = {
-                                            Text(
-                                                text = mode.labelDutch.split(" ").first(),
-                                                style = MaterialTheme.typography.labelSmall
-                                            )
-                                        }
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        OutlinedButton(
-                            onClick = {
-                                val sent = onTestUitvalNotification()
-                                testNotificationFeedback = if (sent) {
-                                    "Testmelding verstuurd naar je statusbalk."
-                                } else {
-                                    "Geen meldingspermissie — sta meldingen toe in Android-instellingen."
-                                }
-                            },
-                            shape = RoundedCornerShape(percent = 50),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("test_uitval_notification_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.NotificationsActive,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Test Uitval Melding")
-                        }
-
-                        testNotificationFeedback?.let { feedback ->
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = feedback,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Button(
+                // Logout & Reset action
+                OutlinedButton(
                     onClick = {
                         showAccountSheet = false
                         onResetAndLogout()
                     },
                     shape = RoundedCornerShape(percent = 50),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp)
-                        .testTag("reset_app_logout_button")
+                        .heightIn(min = 48.dp)
+                        .testTag("logout_reset_button")
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Logout,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "App resetten & Uitloggen",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.labelLarge
-                    )
+                    Text("Inloggen / Account ontkoppelen")
                 }
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }

@@ -85,6 +85,7 @@ class ScheduleMonitorJobService : JobService() {
                     newTasks = bundle.tasks
                 )
                 WidgetUpdater.updateAllWidgets(appContext)
+                com.example.services.SyncManager.pushIfChanged(appContext)
             } catch (_: Exception) {
             } finally {
                 jobFinished(params, false)

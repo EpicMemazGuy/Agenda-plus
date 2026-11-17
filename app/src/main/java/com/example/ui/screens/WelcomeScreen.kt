@@ -20,12 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.app.Activity
-import com.example.model.AuthSession
 import com.example.model.SchoolProvider
-import com.example.ui.CloudSyncUiState
 import com.example.ui.components.AgendaPlusLogo
-import com.example.ui.components.CloudSyncCard
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.nothingCardBorder
 
@@ -33,11 +29,6 @@ import com.example.ui.components.nothingCardBorder
 fun WelcomeScreen(
     onSelectProvider: (SchoolProvider) -> Unit,
     onOpenRawConsole: (() -> Unit)? = null,
-    cloudSyncState: CloudSyncUiState = CloudSyncUiState(),
-    onGoogleCloudSignIn: ((Activity) -> Unit)? = null,
-    onCloudSyncNow: () -> Unit = {},
-    onCloudRestoreFromCloud: () -> Unit = {},
-    onCloudSignOut: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val nothingMode = isNothingOs
@@ -58,90 +49,53 @@ fun WelcomeScreen(
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            onOpenRawConsole?.let { openConsole ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    IconButton(
-                        onClick = openConsole,
-                        modifier = Modifier.testTag("welcome_open_cli_console_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Terminal,
-                            contentDescription = "Verbindingslogboek",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            } ?: Spacer(modifier = Modifier.height(16.dp))
-
-            AgendaPlusLogo(
-                size = 84.dp,
-                modifier = Modifier.testTag("welcome_app_logo")
-            )
-
+            Spacer(modifier = Modifier.height(16.dp))
+            AgendaPlusLogo(size = 72.dp)
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = if (nothingMode) "WELKOM BIJ AGENDA+" else "Welkom bij Agenda+",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+                text = "AGENDA+",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center
+                letterSpacing = 2.sp
             )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "De snelle, overzichtelijke Magister-agenda voor scholieren in Nederland.",
+                text = "Jouw schoolrooster, cijfers & huiswerk in één snelle app",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
-            Text(
-                text = "KOPPEL JE SCHOOLACCOUNT",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.sp
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Magister Primary Login Card (Somtoday removed)
-            Card(
+            // Magister Login Card
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                border = cardBorder,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
+                    .clip(RoundedCornerShape(22.dp))
                     .clickable { onSelectProvider(SchoolProvider.MAGISTER) }
-                    .testTag("select_magister_button"),
-                shape = RoundedCornerShape(24.dp),
-                border = cardBorder,
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = if (nothingMode) 0.dp else 2.dp)
+                    .testTag("magister_login_card")
             ) {
                 Row(
                     modifier = Modifier.padding(20.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(14.dp),
                         color = MaterialTheme.colorScheme.primaryContainer,
-                        border = cardBorder,
-                        modifier = Modifier.size(52.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.Default.School,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
@@ -183,19 +137,6 @@ fun WelcomeScreen(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            }
-
-            if (onGoogleCloudSignIn != null) {
-                Spacer(modifier = Modifier.height(18.dp))
-                CloudSyncCard(
-                    cloudState = cloudSyncState,
-                    session = AuthSession(),
-                    onGoogleSignIn = onGoogleCloudSignIn,
-                    onSyncNow = onCloudSyncNow,
-                    onRestoreFromCloud = onCloudRestoreFromCloud,
-                    onSignOut = onCloudSignOut,
-                    compactMode = true
-                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -248,7 +189,7 @@ private fun FeatureRow(
         Surface(
             shape = CircleShape,
             color = MaterialTheme.colorScheme.primaryContainer,
-            modifier = Modifier.size(28.dp)
+            modifier = Modifier.size(32.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
@@ -259,12 +200,12 @@ private fun FeatureRow(
                 )
             }
         }
-        Spacer(modifier = Modifier.width(10.dp))
-        Column {
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(

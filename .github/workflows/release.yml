@@ -256,6 +256,12 @@ jobs:
           with open(".release_body.md", "w", encoding="utf-8") as f:
               f.write("\n".join(body_lines))
 
+          raw_prerelease = (os.environ.get("INPUT_IS_PRERELEASE") or "").strip().lower()
+          if raw_prerelease in ("true", "false"):
+              is_prerelease = raw_prerelease
+          else:
+              is_prerelease = "true" if "-" in version_name else "false"
+
           gh_env = os.environ["GITHUB_ENV"]
           with open(gh_env, "a", encoding="utf-8") as f:
               f.write(f"RELEASE_TAG={raw_tag}\n")
@@ -264,6 +270,7 @@ jobs:
               f.write(f"APP_VERSION_NAME={version_name}\n")
               f.write(f"APP_VERSION_CODE={version_code}\n")
               f.write(f"APK_FILENAME={apk_filename}\n")
+              f.write(f"IS_PRERELEASE={is_prerelease}\n")
 
           print(f"Resolved RELEASE_TAG={raw_tag}")
           print(f"Resolved APP_NAME={app_name}")
@@ -271,6 +278,7 @@ jobs:
           print(f"Resolved APP_VERSION_NAME={version_name}")
           print(f"Resolved APP_VERSION_CODE={version_code}")
           print(f"Resolved APK_FILENAME={apk_filename}")
+          print(f"Resolved IS_PRERELEASE={is_prerelease}")
           print("New Features count:", len(feature_items))
           PY
 

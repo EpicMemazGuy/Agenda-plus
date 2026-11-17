@@ -26,9 +26,8 @@ import android.content.Intent
 import android.net.Uri
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.app.Activity
-import com.example.ui.CloudSyncUiState
-import com.example.ui.components.CloudSyncCard
+import com.example.services.WebSyncStatus
+import com.example.ui.components.WebSyncCard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
@@ -115,11 +114,11 @@ fun MeerScreen(
     onCheckForUpdate: () -> Unit = {},
     onExportBackupJson: () -> String = { "{}" },
     onImportBackupJson: (String) -> Result<Int> = { Result.failure(UnsupportedOperationException()) },
-    cloudSyncState: CloudSyncUiState = CloudSyncUiState(),
-    onGoogleCloudSignIn: (Activity) -> Unit = {},
-    onCloudSyncNow: () -> Unit = {},
-    onCloudRestoreFromCloud: () -> Unit = {},
-    onCloudSignOut: () -> Unit = {},
+    webSyncState: WebSyncStatus = WebSyncStatus(),
+    onPairUri: (String) -> Result<Unit> = { Result.success(Unit) },
+    onSyncNow: () -> Unit = {},
+    onPullLatest: () -> Unit = {},
+    onUnpair: () -> Unit = {},
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -283,15 +282,15 @@ fun MeerScreen(
                         }
                     }
 
-                    // Cloud Sync & Account section
-                    item(key = "meer_cloud_sync") {
-                        CloudSyncCard(
-                            cloudState = cloudSyncState,
+                    // Web Sync & Pairing section
+                    item(key = "meer_web_sync") {
+                        WebSyncCard(
+                            syncState = webSyncState,
                             session = session,
-                            onGoogleSignIn = onGoogleCloudSignIn,
-                            onSyncNow = onCloudSyncNow,
-                            onRestoreFromCloud = onCloudRestoreFromCloud,
-                            onSignOut = onCloudSignOut
+                            onPairUri = onPairUri,
+                            onSyncNow = onSyncNow,
+                            onPullLatest = onPullLatest,
+                            onUnpair = onUnpair
                         )
                     }
 
@@ -516,11 +515,11 @@ fun MeerScreen(
                     onCheckForUpdate = onCheckForUpdate,
                     onExportBackupJson = onExportBackupJson,
                     onImportBackupJson = onImportBackupJson,
-                    cloudSyncState = cloudSyncState,
-                    onGoogleCloudSignIn = onGoogleCloudSignIn,
-                    onCloudSyncNow = onCloudSyncNow,
-                    onCloudRestoreFromCloud = onCloudRestoreFromCloud,
-                    onCloudSignOut = onCloudSignOut,
+                    webSyncState = webSyncState,
+                    onPairUri = onPairUri,
+                    onSyncNow = onSyncNow,
+                    onPullLatest = onPullLatest,
+                    onUnpair = onUnpair,
                     onHeaderCollapsedChange = { collapsed ->
                         onHeaderCollapsedChange(oneUiMode && collapsed)
                     }
@@ -699,11 +698,11 @@ private fun MeerSettingsView(
     onCheckForUpdate: () -> Unit = {},
     onExportBackupJson: () -> String = { "{}" },
     onImportBackupJson: (String) -> Result<Int> = { Result.failure(UnsupportedOperationException()) },
-    cloudSyncState: CloudSyncUiState = CloudSyncUiState(),
-    onGoogleCloudSignIn: (Activity) -> Unit = {},
-    onCloudSyncNow: () -> Unit = {},
-    onCloudRestoreFromCloud: () -> Unit = {},
-    onCloudSignOut: () -> Unit = {},
+    webSyncState: WebSyncStatus = WebSyncStatus(),
+    onPairUri: (String) -> Result<Unit> = { Result.success(Unit) },
+    onSyncNow: () -> Unit = {},
+    onPullLatest: () -> Unit = {},
+    onUnpair: () -> Unit = {},
     onHeaderCollapsedChange: (Boolean) -> Unit = {}
 ) {
     val oneUiMode = isOneUi85
@@ -1228,15 +1227,15 @@ private fun MeerSettingsView(
             }
         }
 
-        // 5. Cloud Sync & Account
+        // 5. Web Sync & Pairing
         item {
-            CloudSyncCard(
-                cloudState = cloudSyncState,
+            WebSyncCard(
+                syncState = webSyncState,
                 session = session,
-                onGoogleSignIn = onGoogleCloudSignIn,
-                onSyncNow = onCloudSyncNow,
-                onRestoreFromCloud = onCloudRestoreFromCloud,
-                onSignOut = onCloudSignOut
+                onPairUri = onPairUri,
+                onSyncNow = onSyncNow,
+                onPullLatest = onPullLatest,
+                onUnpair = onUnpair
             )
         }
 

@@ -1,5 +1,6 @@
 package com.example
 
+import com.example.data.AgendaRepository
 import com.example.model.AgendaStyle
 import com.example.model.DisruptionType
 import com.example.model.TaskCategory
@@ -7,6 +8,8 @@ import com.example.model.TaskPriority
 import com.example.model.cleanSchoolText
 import com.example.network.MagisterClient
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -882,116 +885,150 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun test_firebase_cloud_profile_serialization_safe_fallbacks_and_config() {
+    fun test_web_sync_pairing_aes_gcm_protocol_and_merge() = runBlocking {
         val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
 
-        // 1. Provisioned named Firestore database ID & Google logo drawable exist
+        // 1. Valid agendaplus://pair URI parsing & 32-byte key validation
+        val rawKey = ByteArray(32) { idx -> (idx * 7 + 3).toByte() }
+        val urlSafeKey = android.util.Base64.encodeToString(
+            rawKey,
+            android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP
+        )
+        assertEquals(43, urlSafeKey.length)
+        val syncId = "550e8400-e29b-41d4-a716-446655440000"
+        val pairUri = "agendaplus://pair?id=$syncId&key=$urlSafeKey"
+
+        val parsed = com.example.services.SyncManager.parsePairingUri(pairUri).getOrThrow()
+        assertEquals(syncId, parsed.syncId)
+        assertArrayEquals(rawKey, parsed.aesKeyBytes)
+
+        assertTrue(com.example.services.SyncManager.parsePairingUri("https://agendaplus.nl/pair?id=$syncId&key=$urlSafeKey").isFailure)
+        assertTrue(com.example.services.SyncManager.parsePairingUri("agendaplus://pair?id=bad-id&key=$urlSafeKey").isFailure)
+        val shortKey = android.util.Base64.encodeToString(ByteArray(16), android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP)
+        assertTrue(com.example.services.SyncManager.parsePairingUri("agendaplus://pair?id=$syncId&key=$shortKey").isFailure)
+
+        // Pair and persist, then verify unpair
+        val pairState = com.example.services.SyncManager.pairWithUri(context, pairUri).getOrThrow()
+        assertTrue(pairState.isPaired)
+        assertEquals(syncId, pairState.syncId)
+
+        // 2. AES-256-GCM encryption/decryption byte-for-byte contract (12-byte IV + appended 16-byte tag, Base64.NO_WRAP)
+        val samplePlaintext = """{"schemaVersion":1,"source":"android","hello":"Agenda+"}"""
+        val blob = com.example.services.SyncManager.encryptPayload(rawKey, samplePlaintext)
+        assertFalse(blob.ivBase64.contains("\n"))
+        assertFalse(blob.ciphertextBase64.contains("\n"))
+        assertEquals(12, android.util.Base64.decode(blob.ivBase64, android.util.Base64.NO_WRAP).size)
+        val cipherBytes = android.util.Base64.decode(blob.ciphertextBase64, android.util.Base64.NO_WRAP)
+        assertEquals(samplePlaintext.toByteArray(Charsets.UTF_8).size + 16, cipherBytes.size)
+        val decrypted = com.example.services.SyncManager.decryptPayload(rawKey, blob.ivBase64, blob.ciphertextBase64).getOrThrow()
+        assertEquals(samplePlaintext, decrypted)
+
+        // 3. Exact SyncPayload schema & stable SHA-256 hash across volatile updatedAt timestamps
+        val customItem = com.example.data.db.CustomScheduleItem(
+            id = 42L,
+            title = "Bijles Wiskunde",
+            startTime = "15:30",
+            endTime = "16:30",
+            dateIso = "2026-11-18"
+        )
+        val task = com.example.model.HomeworkTask(
+            id = "hw_1",
+            subject = "Nederlands",
+            title = "Boekverslag",
+            description = "Hoofdstuk 3",
+            dueDay = "Morgen",
+            dueDate = "2026-11-18",
+            category = com.example.model.TaskCategory.HOMEWORK,
+            isCompleted = true
+        )
+        val payloadA = com.example.services.SyncManager.buildSyncPayloadJsonFromData(
+            updatedAt = 1731860000000L,
+            themeStyle = com.example.model.AppThemeStyle.NOTHING_OS,
+            darkMode = com.example.model.DarkModePreference.DARK,
+            agendaStyle = com.example.model.AgendaStyle.SPACIOUS,
+            uiScale = 1.12f,
+            unboxingMode = com.example.model.GradeUnboxingMode.PLINKO_DROP,
+            busLine = "306",
+            schoolAddress = "Elde College, Schijndel",
+            weatherCity = "Schijndel",
+            customScheduleItems = listOf(customItem),
+            tasks = listOf(task),
+            testChecklists = emptyMap(),
+            studySites = emptyList(),
+            appointments = emptyList(),
+            grades = emptyList(),
+            messages = emptyList()
+        )
+        val payloadB = com.example.services.SyncManager.buildSyncPayloadJsonFromData(
+            updatedAt = 1731869999999L,
+            themeStyle = com.example.model.AppThemeStyle.NOTHING_OS,
+            darkMode = com.example.model.DarkModePreference.DARK,
+            agendaStyle = com.example.model.AgendaStyle.SPACIOUS,
+            uiScale = 1.12f,
+            unboxingMode = com.example.model.GradeUnboxingMode.PLINKO_DROP,
+            busLine = "306",
+            schoolAddress = "Elde College, Schijndel",
+            weatherCity = "Schijndel",
+            customScheduleItems = listOf(customItem),
+            tasks = listOf(task),
+            testChecklists = emptyMap(),
+            studySites = emptyList(),
+            appointments = emptyList(),
+            grades = emptyList(),
+            messages = emptyList()
+        )
+        assertEquals(1, payloadA.getInt("schemaVersion"))
+        assertEquals("android", payloadA.getString("source"))
+        val settingsObj = payloadA.getJSONObject("settings")
+        assertEquals("nothing_os", settingsObj.getString("theme"))
+        assertEquals("dark", settingsObj.getString("darkMode"))
+        assertEquals("spacious", settingsObj.getString("agendaDensity"))
+        assertEquals(112, settingsObj.getInt("uiScale"))
+        assertEquals("plinko_drop", settingsObj.getString("unboxingMode"))
+        assertEquals("306", settingsObj.getString("busLine"))
+        assertTrue(payloadA.has("cachedData"))
         assertEquals(
-            "ai-studio-agendaplussite-6a81a79c-1603-4f73-8a9f-956af5b3139b",
-            context.getString(R.string.firestore_database_id)
+            com.example.services.SyncManager.computeContentHash(payloadA),
+            com.example.services.SyncManager.computeContentHash(payloadB)
         )
-        assertEquals(
-            "361465857069-v8miibh69ffvuni8brea6gtug9thgucm.apps.googleusercontent.com",
-            context.getString(R.string.google_web_client_id)
-        )
-        assertEquals(
-            "361465857069-v8miibh69ffvuni8brea6gtug9thgucm.apps.googleusercontent.com",
-            com.example.BuildConfig.GOOGLE_WEB_CLIENT_ID
-        )
-        assertNotNull(androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_google_logo))
-        assertNotNull(com.example.services.FirebaseService(context))
 
-        // 2. UserCloudSettings round-trip & bounds clamping
-        val customSettings = com.example.services.UserCloudSettings(
-            appThemeStyle = com.example.model.AppThemeStyle.ONE_UI.name,
-            darkModePreference = com.example.model.DarkModePreference.DARK.name,
-            agendaStyle = com.example.model.AgendaStyle.SPACIOUS.name,
-            uiScale = 1.15,
-            eloUrl = "https://elo.example.nl/portaal",
-            savedBusLine = "156",
-            uitvalNotificationsEnabled = false,
-            gradeNotificationsEnabled = true,
-            testNotificationsEnabled = true,
-            quietHoursEnabled = true,
-            quietHoursStartMinutes = 23 * 60,
-            quietHoursEndMinutes = 6 * 60 + 45,
-            mutedSubjects = listOf("LO", "Rekenen"),
-            smartBusAlertsEnabled = false,
-            busWalkMinutes = 8,
-            busArrivalBufferMinutes = 12,
-            gradeUnboxingEnabled = true,
-            gradeUnboxingMode = com.example.model.GradeUnboxingMode.PLINKO_DROP.name
-        )
-        val firestoreSettingsMap = customSettings.toFirestoreMap()
-        val parsedSettings = com.example.services.UserCloudSettings.fromMap(firestoreSettingsMap)
-        assertEquals(com.example.model.AppThemeStyle.ONE_UI, parsedSettings.resolvedAppThemeStyle())
-        assertEquals(com.example.model.DarkModePreference.DARK, parsedSettings.resolvedDarkModePreference())
-        assertEquals(com.example.model.AgendaStyle.SPACIOUS, parsedSettings.resolvedAgendaStyle())
-        assertEquals(com.example.model.GradeUnboxingMode.PLINKO_DROP, parsedSettings.resolvedGradeUnboxingMode())
-        assertEquals("156", parsedSettings.savedBusLine)
-        assertEquals(listOf("LO", "Rekenen"), parsedSettings.mutedSubjects)
-        assertEquals(8, parsedSettings.busWalkMinutes)
+        // 4. Merging incoming "web" payload updates AgendaRepository settings & ignores older timestamps
+        val repo = AgendaRepository(context)
+        val incomingWeb = org.json.JSONObject().apply {
+            put("schemaVersion", 1)
+            put("source", "web")
+            put("updatedAt", 2000000000000L)
+            put("settings", org.json.JSONObject().apply {
+                put("theme", "one_ui")
+                put("darkMode", "light")
+                put("agendaDensity", "compact")
+                put("uiScale", 90)
+                put("unboxingMode", "penalties")
+                put("busLine", "156")
+                put("schoolAddress", "Stadhuisplein 1, Eindhoven")
+            })
+        }
+        assertTrue(repo.mergeWebSyncPayload(incomingWeb))
+        assertEquals(com.example.model.AppThemeStyle.ONE_UI, repo.appThemeStyle.value)
+        assertEquals(com.example.model.DarkModePreference.LIGHT, repo.darkModePreference.value)
+        assertEquals(com.example.model.AgendaStyle.COMPACT, repo.agendaStyle.value)
+        assertEquals(0.90f, repo.uiScale.value, 0.001f)
+        assertEquals(com.example.model.GradeUnboxingMode.PENALTIES, repo.gradeUnboxingMode.value)
+        assertEquals("156", repo.savedBusLine.value)
+        assertEquals("Stadhuisplein 1, Eindhoven", repo.schoolAddress.value?.streetAndCity)
 
-        // 3. Safe enum fallback on unknown/corrupted string values
-        val invalidSettings = com.example.services.UserCloudSettings.fromMap(
-            mapOf(
-                "appThemeStyle" to "UNKNOWN_THEME",
-                "darkModePreference" to "INVALID_MODE",
-                "agendaStyle" to "NOPE",
-                "gradeUnboxingMode" to "BROKEN_MODE",
-                "uiScale" to 5.0
-            )
-        )
-        assertEquals(com.example.model.AppThemeStyle.STANDARD, invalidSettings.resolvedAppThemeStyle())
-        assertEquals(com.example.model.DarkModePreference.SYSTEM, invalidSettings.resolvedDarkModePreference())
-        assertEquals(com.example.model.AgendaStyle.COMPACT, invalidSettings.resolvedAgendaStyle())
-        assertEquals(com.example.model.GradeUnboxingMode.CASE_OPENING, invalidSettings.resolvedGradeUnboxingMode())
-        assertEquals(1.20, invalidSettings.uiScale, 0.001)
+        // Stale payload is skipped
+        val staleWeb = org.json.JSONObject().apply {
+            put("schemaVersion", 1)
+            put("source", "web")
+            put("updatedAt", 1000000000000L)
+            put("settings", org.json.JSONObject().apply { put("busLine", "999") })
+        }
+        assertFalse(repo.mergeWebSyncPayload(staleWeb))
+        assertEquals("156", repo.savedBusLine.value)
 
-        // 4. UserCloudProfile create/update map invariants (no "id", immutable "uid" & "createdAt" omitted on update)
-        val profile = com.example.services.UserCloudProfile(
-            uid = "uid_test_123",
-            email = "leerling@example.nl",
-            displayName = "Jan Jansen",
-            studentName = "Jan Jansen",
-            studentId = "123456",
-            studentClass = "4V2",
-            personId = 9876L,
-            schoolId = "elde",
-            schoolName = "Elde College",
-            schoolCity = "Schijndel",
-            schoolSubdomain = "elde",
-            magisterAccessToken = "token_abc_123",
-            magisterRefreshToken = "refresh_xyz_789",
-            magisterAuthenticated = true,
-            settings = customSettings
-        )
-        val createMap = profile.toCreateMap()
-        assertFalse(createMap.containsKey("id"))
-        assertEquals("uid_test_123", createMap["uid"])
-        assertTrue(createMap.containsKey("createdAt"))
-        assertTrue(createMap.containsKey("updatedAt"))
-
-        val updateMap = profile.toUpdateMap()
-        assertFalse(updateMap.containsKey("id"))
-        assertFalse(updateMap.containsKey("uid"))
-        assertFalse(updateMap.containsKey("createdAt"))
-        assertTrue(updateMap.containsKey("updatedAt"))
-        assertEquals("Elde College", updateMap["schoolName"])
-
-        // 5. toAuthSessionOrNull() returns null when unauthenticated/blank and valid AuthSession otherwise
-        assertNull(profile.copy(magisterAuthenticated = false).toAuthSessionOrNull())
-        assertNull(profile.copy(magisterAccessToken = "").toAuthSessionOrNull())
-
-        val restoredSession = profile.toAuthSessionOrNull()
-        assertNotNull(restoredSession)
-        assertTrue(restoredSession!!.isAuthenticated)
-        assertEquals("Jan Jansen", restoredSession.studentName)
-        assertEquals("Elde College", restoredSession.school?.name)
-        assertEquals("elde", restoredSession.school?.subdomain)
-        assertEquals("token_abc_123", restoredSession.accessToken)
-        assertEquals("refresh_xyz_789", restoredSession.refreshToken)
-        assertEquals(9876L, restoredSession.personId)
+        com.example.services.SyncManager.unpair(context)
+        assertFalse(com.example.services.SyncManager.isPaired(context))
     }
 }
 

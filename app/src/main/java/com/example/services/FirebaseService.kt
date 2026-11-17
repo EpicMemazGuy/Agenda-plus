@@ -352,8 +352,14 @@ class FirebaseService(
 
     suspend fun attemptAutoSignIn(credentialManager: CredentialManager): FirebaseUser? {
         auth.currentUser?.let { return it }
-        val clientId = runCatching { appContext.getString(R.string.default_web_client_id) }.getOrNull()
-            ?.takeIf { it.isNotBlank() } ?: return null
+        val clientId = runCatching {
+            val buildConfigId = com.example.BuildConfig.GOOGLE_WEB_CLIENT_ID
+            if (buildConfigId.isNotBlank() && !buildConfigId.contains("REPLACE")) {
+                buildConfigId
+            } else {
+                appContext.getString(R.string.default_web_client_id)
+            }
+        }.getOrNull()?.takeIf { it.isNotBlank() && !it.contains("REPLACE") } ?: return null
         val googleIdOption = GetGoogleIdOption.Builder()
             .setFilterByAuthorizedAccounts(true)
             .setServerClientId(clientId)
@@ -381,8 +387,14 @@ class FirebaseService(
         credentialManager: CredentialManager
     ): Result<FirebaseUser> {
         val clientId = try {
-            appContext.getString(R.string.default_web_client_id).takeIf { it.isNotBlank() }
-                ?: return Result.failure(IllegalStateException("Google Sign-In configuratie ontbreekt (default_web_client_id)."))
+            val buildConfigId = com.example.BuildConfig.GOOGLE_WEB_CLIENT_ID
+            val resId = if (buildConfigId.isNotBlank() && !buildConfigId.contains("REPLACE")) {
+                buildConfigId
+            } else {
+                runCatching { appContext.getString(R.string.default_web_client_id) }.getOrNull() ?: ""
+            }
+            resId.takeIf { it.isNotBlank() && !it.contains("REPLACE") }
+                ?: return Result.failure(IllegalStateException("Google Sign-In configuratie ontbreekt (GOOGLE_WEB_CLIENT_ID)."))
         } catch (e: Exception) {
             return Result.failure(e)
         }

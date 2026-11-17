@@ -23,6 +23,8 @@ import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -324,30 +326,50 @@ data class UserCloudProfile(
 
 private const val DEFAULT_WEB_CLIENT_ID = "361465857069-v8miibh69ffvuni8brea6gtug9thgucm.apps.googleusercontent.com"
 private const val DEFAULT_DATABASE_ID = "ai-studio-agendaplussite-6a81a79c-1603-4f73-8a9f-956af5b3139b"
+private const val FIREBASE_APP_ID = "1:361465857069:android:946f210d7567bc8978e4a4"
+private const val FIREBASE_API_KEY = "AIzaSyA_DrnpNUuFTypcLGS20GrIYDbOcj2HZEg"
+private const val FIREBASE_PROJECT_ID = "smart-instrument-q9brs"
+private const val FIREBASE_GCM_SENDER_ID = "361465857069"
+private const val FIREBASE_STORAGE_BUCKET = "smart-instrument-q9brs.firebasestorage.app"
+
+private fun ensureFirebaseAppInitialized(context: Context): FirebaseApp {
+    val appCtx = context.applicationContext
+    val existing = FirebaseApp.getApps(appCtx)
+    if (existing.isNotEmpty()) {
+        return existing.first()
+    }
+    return try {
+        FirebaseApp.initializeApp(appCtx) ?: throw IllegalStateException("initializeApp(context) returned null")
+    } catch (_: Exception) {
+        val options = FirebaseOptions.Builder()
+            .setApplicationId(FIREBASE_APP_ID)
+            .setApiKey(FIREBASE_API_KEY)
+            .setProjectId(FIREBASE_PROJECT_ID)
+            .setGcmSenderId(FIREBASE_GCM_SENDER_ID)
+            .setStorageBucket(FIREBASE_STORAGE_BUCKET)
+            .build()
+        FirebaseApp.initializeApp(appCtx, options)
+    }
+}
 
 private fun initFirestoreDb(context: Context): FirebaseFirestore {
+    val app = ensureFirebaseAppInitialized(context)
     val appCtx = context.applicationContext
-    if (com.google.firebase.FirebaseApp.getApps(appCtx).isEmpty()) {
-        com.google.firebase.FirebaseApp.initializeApp(appCtx)
-    }
     val databaseId = runCatching { appCtx.getString(R.string.firestore_database_id) }.getOrNull()
         ?.takeIf { it.isNotBlank() }
         ?: DEFAULT_DATABASE_ID
-    return FirebaseFirestore.getInstance(databaseId)
+    return FirebaseFirestore.getInstance(app, databaseId)
 }
 
 private fun initFirebaseAuth(context: Context): FirebaseAuth {
-    val appCtx = context.applicationContext
-    if (com.google.firebase.FirebaseApp.getApps(appCtx).isEmpty()) {
-        com.google.firebase.FirebaseApp.initializeApp(appCtx)
-    }
-    return com.google.firebase.Firebase.auth
+    val app = ensureFirebaseAppInitialized(context)
+    return FirebaseAuth.getInstance(app)
 }
 
 class FirebaseService(
     private val db: FirebaseFirestore,
     private val appContext: Context,
-    private val auth: FirebaseAuth = Firebase.auth
+    private val auth: FirebaseAuth
 ) {
     constructor(context: Context) : this(
         db = initFirestoreDb(context),

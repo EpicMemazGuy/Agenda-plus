@@ -1,0 +1,206 @@
+{
+  "entities": {
+    "UserCloudSettings": {
+      "title": "UserCloudSettings",
+      "description": "Synchronized Agenda+ user preferences and theme settings.",
+      "type": "object",
+      "properties": {
+        "appThemeStyle": {
+          "type": "string",
+          "enum": ["STANDARD", "NOTHING_OS", "ONE_UI"],
+          "description": "Active visual theme style."
+        },
+        "darkModePreference": {
+          "type": "string",
+          "enum": ["SYSTEM", "LIGHT", "DARK"],
+          "description": "User dark mode preference."
+        },
+        "agendaStyle": {
+          "type": "string",
+          "enum": ["COMPACT", "SPACIOUS"],
+          "description": "Schedule density style."
+        },
+        "uiScale": {
+          "type": "number",
+          "description": "UI text scale factor between 0.85 and 1.20."
+        },
+        "eloUrl": {
+          "type": "string",
+          "description": "Custom ELO portal URL."
+        },
+        "savedBusLine": {
+          "type": "string",
+          "description": "Tracked public transit bus line number."
+        },
+        "uitvalNotificationsEnabled": {
+          "type": "boolean",
+          "description": "Enable canceled or changed lesson alerts."
+        },
+        "gradeNotificationsEnabled": {
+          "type": "boolean",
+          "description": "Enable new grade alerts."
+        },
+        "testNotificationsEnabled": {
+          "type": "boolean",
+          "description": "Enable upcoming test alerts."
+        },
+        "quietHoursEnabled": {
+          "type": "boolean",
+          "description": "Enable quiet notification hours."
+        },
+        "quietHoursStartMinutes": {
+          "type": "integer",
+          "description": "Quiet hours start in minutes from midnight (0..1439)."
+        },
+        "quietHoursEndMinutes": {
+          "type": "integer",
+          "description": "Quiet hours end in minutes from midnight (0..1439)."
+        },
+        "mutedSubjects": {
+          "type": "array",
+          "description": "Bounded list of muted subject names (max 50)."
+        },
+        "smartBusAlertsEnabled": {
+          "type": "boolean",
+          "description": "Enable smart bus departure advice notifications."
+        },
+        "busWalkMinutes": {
+          "type": "integer",
+          "description": "Walk time to bus stop in minutes (1..30)."
+        },
+        "busArrivalBufferMinutes": {
+          "type": "integer",
+          "description": "Desired arrival buffer at school in minutes (2..30)."
+        },
+        "gradeUnboxingEnabled": {
+          "type": "boolean",
+          "description": "Enable interactive grade unboxing reveals."
+        },
+        "gradeUnboxingMode": {
+          "type": "string",
+          "enum": ["CASE_OPENING", "TAP_IT_UP", "PENALTIES", "ULTIMATE_GRADE", "PLINKO_DROP"],
+          "description": "Selected grade unboxing minigame mode."
+        }
+      },
+      "required": [
+        "appThemeStyle",
+        "darkModePreference",
+        "agendaStyle",
+        "uiScale",
+        "eloUrl",
+        "savedBusLine",
+        "uitvalNotificationsEnabled",
+        "gradeNotificationsEnabled",
+        "testNotificationsEnabled",
+        "quietHoursEnabled",
+        "quietHoursStartMinutes",
+        "quietHoursEndMinutes",
+        "mutedSubjects",
+        "smartBusAlertsEnabled",
+        "busWalkMinutes",
+        "busArrivalBufferMinutes",
+        "gradeUnboxingEnabled",
+        "gradeUnboxingMode"
+      ]
+    },
+    "UserCloudProfile": {
+      "title": "UserCloudProfile",
+      "description": "Authenticated user cloud profile storing Google identity metadata, Magister session tokens, school metadata, and synced app settings.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Authentication user UID."
+        },
+        "email": {
+          "type": "string",
+          "description": "Google account email address."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Google account display name."
+        },
+        "studentName": {
+          "type": "string",
+          "description": "Magister student full name."
+        },
+        "studentId": {
+          "type": "string",
+          "description": "Magister student identifier."
+        },
+        "studentClass": {
+          "type": "string",
+          "description": "Magister class label."
+        },
+        "personId": {
+          "type": "integer",
+          "description": "Magister numeric person ID."
+        },
+        "schoolId": {
+          "type": "string",
+          "description": "School tenant ID."
+        },
+        "schoolName": {
+          "type": "string",
+          "description": "School display name."
+        },
+        "schoolCity": {
+          "type": "string",
+          "description": "School city name."
+        },
+        "schoolSubdomain": {
+          "type": "string",
+          "description": "Magister school tenant subdomain."
+        },
+        "schoolProvider": {
+          "type": "string",
+          "enum": ["MAGISTER"],
+          "description": "School schedule provider."
+        },
+        "magisterAccessToken": {
+          "type": "string",
+          "description": "Synchronized Magister OAuth2 access token."
+        },
+        "magisterRefreshToken": {
+          "type": "string",
+          "description": "Synchronized Magister OAuth2 refresh token."
+        },
+        "magisterAuthenticated": {
+          "type": "boolean",
+          "description": "Whether a Magister session is linked."
+        },
+        "settings": {
+          "type": "object",
+          "$ref": "#/entities/UserCloudSettings",
+          "description": "Synchronized app preferences."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of initial profile creation (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest cloud sync (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "magisterAuthenticated",
+        "settings",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserCloudProfile"
+      },
+      "description": "Owner-isolated cloud sync profile for Agenda+ Magister token, school info, and user preferences."
+    }
+  }
+}

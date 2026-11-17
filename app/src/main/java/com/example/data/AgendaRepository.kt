@@ -15,6 +15,8 @@ import com.example.network.WeatherClient
 import com.example.notifications.ScheduleMonitorJobService
 import com.example.notifications.SmartBusPlanner
 import com.example.notifications.UitvalNotificationHelper
+import com.example.services.UserCloudProfile
+import com.example.services.UserCloudSettings
 import com.example.util.LauncherIconManager
 import com.example.util.NetworkStatusHelper
 import com.example.widget.WidgetUpdater
@@ -887,6 +889,91 @@ class AgendaRepository(private val context: Context? = null) {
             recalculateSmartBusAndBridges()
         }
         return result
+    }
+
+    fun snapshotCloudSettings(): UserCloudSettings {
+        val quiet = _quietHoursConfig.value
+        return UserCloudSettings(
+            appThemeStyle = _appThemeStyle.value.name,
+            darkModePreference = _darkModePreference.value.name,
+            agendaStyle = _agendaStyle.value.name,
+            uiScale = _uiScale.value.toDouble().coerceIn(0.85, 1.20),
+            eloUrl = _eloUrl.value,
+            savedBusLine = _savedBusLine.value,
+            uitvalNotificationsEnabled = _uitvalNotificationsEnabled.value,
+            gradeNotificationsEnabled = _gradeNotificationsEnabled.value,
+            testNotificationsEnabled = _testNotificationsEnabled.value,
+            quietHoursEnabled = quiet.enabled,
+            quietHoursStartMinutes = quiet.startMinutes.coerceIn(0, 1439),
+            quietHoursEndMinutes = quiet.endMinutes.coerceIn(0, 1439),
+            mutedSubjects = _mutedSubjects.value.toList().take(50),
+            smartBusAlertsEnabled = _smartBusAlertsEnabled.value,
+            busWalkMinutes = _busWalkMinutes.value.coerceIn(1, 30),
+            busArrivalBufferMinutes = _busArrivalBufferMinutes.value.coerceIn(2, 30),
+            gradeUnboxingEnabled = _gradeUnboxingEnabled.value,
+            gradeUnboxingMode = _gradeUnboxingMode.value.name
+        )
+    }
+
+    suspend fun applyCloudProfile(
+        profile: UserCloudProfile,
+        restoreSession: Boolean,
+        restoreSettings: Boolean
+    ): Boolean {
+        if (restoreSettings) {
+            val s = profile.settings
+            setAppThemeStyle(s.resolvedAppThemeStyle())
+            setDarkModePreference(s.resolvedDarkModePreference())
+            setAgendaStyle(s.resolvedAgendaStyle())
+            setUiScale(s.uiScale.toFloat())
+            if (s.eloUrl.isNotBlank()) setEloUrl(s.eloUrl)
+            if (s.savedBusLine != _savedBusLine.value) {
+                _savedBusLine.value = s.savedBusLine.trim()
+                prefs?.setSavedBusLine(s.savedBusLine.trim())
+            }
+            _uitvalNotificationsEnabled.value = s.uitvalNotificationsEnabled
+            prefs?.setUitvalNotificationsEnabled(s.uitvalNotificationsEnabled)
+            _gradeNotificationsEnabled.value = s.gradeNotificationsEnabled
+            prefs?.setGradeNotificationsEnabled(s.gradeNotificationsEnabled)
+            _testNotificationsEnabled.value = s.testNotificationsEnabled
+            prefs?.setTestNotificationsEnabled(s.testNotificationsEnabled)
+            prefs?.setQuietHoursEnabled(s.quietHoursEnabled)
+            prefs?.setQuietHoursStartMinutes(s.quietHoursStartMinutes)
+            prefs?.setQuietHoursEndMinutes(s.quietHoursEndMinutes)
+            _quietHoursConfig.value = QuietHoursConfig(
+                enabled = s.quietHoursEnabled,
+                startMinutes = s.quietHoursStartMinutes,
+                endMinutes = s.quietHoursEndMinutes
+            )
+            val mutedSet = s.mutedSubjects.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+            _mutedSubjects.value = mutedSet
+            prefs?.setMutedSubjects(mutedSet)
+            _smartBusAlertsEnabled.value = s.smartBusAlertsEnabled
+            prefs?.setSmartBusAlertsEnabled(s.smartBusAlertsEnabled)
+            _busWalkMinutes.value = s.busWalkMinutes.coerceIn(1, 30)
+            prefs?.setBusWalkMinutes(_busWalkMinutes.value)
+            _busArrivalBufferMinutes.value = s.busArrivalBufferMinutes.coerceIn(2, 30)
+            prefs?.setBusArrivalBufferMinutes(_busArrivalBufferMinutes.value)
+            _gradeUnboxingEnabled.value = s.gradeUnboxingEnabled
+            prefs?.setGradeUnboxingEnabled(s.gradeUnboxingEnabled)
+            _gradeUnboxingMode.value = s.resolvedGradeUnboxingMode()
+            prefs?.setGradeUnboxingMode(_gradeUnboxingMode.value)
+            updateMonitorSchedule()
+            recalculateSmartBusAndBridges()
+        }
+
+        val cloudSession = if (restoreSession) profile.toAuthSessionOrNull() else null
+        if (cloudSession != null && cloudSession.school != null && !cloudSession.accessToken.isNullOrBlank()) {
+            _currentSession.value = cloudSession
+            prefs?.saveSession(cloudSession)
+            prefs?.setOnboardingCompleted(true)
+            _hasCompletedOnboarding.value = true
+            context?.let { ScheduleMonitorJobService.schedule(it) }
+            syncLiveSchoolData(cloudSession.school, cloudSession.accessToken, cloudSession.personId)
+            refreshWeather()
+            return true
+        }
+        return false
     }
 
     fun resetAppAndLogout() {

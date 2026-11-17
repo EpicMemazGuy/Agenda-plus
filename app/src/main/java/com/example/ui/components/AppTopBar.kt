@@ -24,6 +24,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import android.app.Activity
 import androidx.compose.ui.graphics.RectangleShape
 import com.example.model.AgendaStyle
 import com.example.model.AppThemeStyle
@@ -32,6 +33,7 @@ import com.example.model.DarkModePreference
 import com.example.model.GradeUnboxingMode
 import com.example.model.UiScalePreset
 import com.example.model.cleanSchoolText
+import com.example.ui.CloudSyncUiState
 import com.example.ui.theme.LocalDarkThemeActive
 import com.example.ui.theme.NothingOutline
 import com.example.ui.theme.NothingRed
@@ -67,6 +69,11 @@ fun AppTopBar(
     onTestUitvalNotification: () -> Boolean = { false },
     onOpenSetupWizard: () -> Unit = {},
     onResetAndLogout: () -> Unit,
+    cloudSyncState: CloudSyncUiState = CloudSyncUiState(),
+    onGoogleCloudSignIn: (Activity) -> Unit = {},
+    onCloudSyncNow: () -> Unit = {},
+    onCloudRestoreFromCloud: () -> Unit = {},
+    onCloudSignOut: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showAccountSheet by remember { mutableStateOf(false) }
@@ -425,6 +432,18 @@ fun AppTopBar(
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                CloudSyncCard(
+                    cloudState = cloudSyncState,
+                    session = session,
+                    onGoogleSignIn = onGoogleCloudSignIn,
+                    onSyncNow = onCloudSyncNow,
+                    onRestoreFromCloud = onCloudRestoreFromCloud,
+                    onSignOut = onCloudSignOut,
+                    compactMode = true
+                )
 
                 Spacer(modifier = Modifier.height(18.dp))
 

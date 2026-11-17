@@ -20,8 +20,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.app.Activity
+import com.example.model.AuthSession
 import com.example.model.SchoolProvider
+import com.example.ui.CloudSyncUiState
 import com.example.ui.components.AgendaPlusLogo
+import com.example.ui.components.CloudSyncCard
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.nothingCardBorder
 
@@ -29,6 +33,11 @@ import com.example.ui.components.nothingCardBorder
 fun WelcomeScreen(
     onSelectProvider: (SchoolProvider) -> Unit,
     onOpenRawConsole: (() -> Unit)? = null,
+    cloudSyncState: CloudSyncUiState = CloudSyncUiState(),
+    onGoogleCloudSignIn: ((Activity) -> Unit)? = null,
+    onCloudSyncNow: () -> Unit = {},
+    onCloudRestoreFromCloud: () -> Unit = {},
+    onCloudSignOut: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val nothingMode = isNothingOs
@@ -176,7 +185,20 @@ fun WelcomeScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            if (onGoogleCloudSignIn != null) {
+                Spacer(modifier = Modifier.height(18.dp))
+                CloudSyncCard(
+                    cloudState = cloudSyncState,
+                    session = AuthSession(),
+                    onGoogleSignIn = onGoogleCloudSignIn,
+                    onSyncNow = onCloudSyncNow,
+                    onRestoreFromCloud = onCloudRestoreFromCloud,
+                    onSignOut = onCloudSignOut,
+                    compactMode = true
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             Surface(
                 shape = RoundedCornerShape(20.dp),

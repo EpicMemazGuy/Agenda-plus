@@ -880,6 +880,110 @@ class ExampleRobolectricTest {
         // 5. Deceleration curve is non-linear (smooth fast-out, slow-in)
         assertTrue(com.example.ui.components.OneUiDecelerationEasing.transform(0.25f) > 0.5f)
     }
+
+    @Test
+    fun test_firebase_cloud_profile_serialization_safe_fallbacks_and_config() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+
+        // 1. Provisioned named Firestore database ID & Google logo drawable exist
+        assertEquals(
+            "ai-studio-agendaplussite-6a81a79c-1603-4f73-8a9f-956af5b3139b",
+            context.getString(R.string.firestore_database_id)
+        )
+        assertNotNull(androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_google_logo))
+
+        // 2. UserCloudSettings round-trip & bounds clamping
+        val customSettings = com.example.services.UserCloudSettings(
+            appThemeStyle = com.example.model.AppThemeStyle.ONE_UI.name,
+            darkModePreference = com.example.model.DarkModePreference.DARK.name,
+            agendaStyle = com.example.model.AgendaStyle.SPACIOUS.name,
+            uiScale = 1.15,
+            eloUrl = "https://elo.example.nl/portaal",
+            savedBusLine = "156",
+            uitvalNotificationsEnabled = false,
+            gradeNotificationsEnabled = true,
+            testNotificationsEnabled = true,
+            quietHoursEnabled = true,
+            quietHoursStartMinutes = 23 * 60,
+            quietHoursEndMinutes = 6 * 60 + 45,
+            mutedSubjects = listOf("LO", "Rekenen"),
+            smartBusAlertsEnabled = false,
+            busWalkMinutes = 8,
+            busArrivalBufferMinutes = 12,
+            gradeUnboxingEnabled = true,
+            gradeUnboxingMode = com.example.model.GradeUnboxingMode.PLINKO_DROP.name
+        )
+        val firestoreSettingsMap = customSettings.toFirestoreMap()
+        val parsedSettings = com.example.services.UserCloudSettings.fromMap(firestoreSettingsMap)
+        assertEquals(com.example.model.AppThemeStyle.ONE_UI, parsedSettings.resolvedAppThemeStyle())
+        assertEquals(com.example.model.DarkModePreference.DARK, parsedSettings.resolvedDarkModePreference())
+        assertEquals(com.example.model.AgendaStyle.SPACIOUS, parsedSettings.resolvedAgendaStyle())
+        assertEquals(com.example.model.GradeUnboxingMode.PLINKO_DROP, parsedSettings.resolvedGradeUnboxingMode())
+        assertEquals("156", parsedSettings.savedBusLine)
+        assertEquals(listOf("LO", "Rekenen"), parsedSettings.mutedSubjects)
+        assertEquals(8, parsedSettings.busWalkMinutes)
+
+        // 3. Safe enum fallback on unknown/corrupted string values
+        val invalidSettings = com.example.services.UserCloudSettings.fromMap(
+            mapOf(
+                "appThemeStyle" to "UNKNOWN_THEME",
+                "darkModePreference" to "INVALID_MODE",
+                "agendaStyle" to "NOPE",
+                "gradeUnboxingMode" to "BROKEN_MODE",
+                "uiScale" to 5.0
+            )
+        )
+        assertEquals(com.example.model.AppThemeStyle.STANDARD, invalidSettings.resolvedAppThemeStyle())
+        assertEquals(com.example.model.DarkModePreference.SYSTEM, invalidSettings.resolvedDarkModePreference())
+        assertEquals(com.example.model.AgendaStyle.COMPACT, invalidSettings.resolvedAgendaStyle())
+        assertEquals(com.example.model.GradeUnboxingMode.CASE_OPENING, invalidSettings.resolvedGradeUnboxingMode())
+        assertEquals(1.20, invalidSettings.uiScale, 0.001)
+
+        // 4. UserCloudProfile create/update map invariants (no "id", immutable "uid" & "createdAt" omitted on update)
+        val profile = com.example.services.UserCloudProfile(
+            uid = "uid_test_123",
+            email = "leerling@example.nl",
+            displayName = "Jan Jansen",
+            studentName = "Jan Jansen",
+            studentId = "123456",
+            studentClass = "4V2",
+            personId = 9876L,
+            schoolId = "elde",
+            schoolName = "Elde College",
+            schoolCity = "Schijndel",
+            schoolSubdomain = "elde",
+            magisterAccessToken = "token_abc_123",
+            magisterRefreshToken = "refresh_xyz_789",
+            magisterAuthenticated = true,
+            settings = customSettings
+        )
+        val createMap = profile.toCreateMap()
+        assertFalse(createMap.containsKey("id"))
+        assertEquals("uid_test_123", createMap["uid"])
+        assertTrue(createMap.containsKey("createdAt"))
+        assertTrue(createMap.containsKey("updatedAt"))
+
+        val updateMap = profile.toUpdateMap()
+        assertFalse(updateMap.containsKey("id"))
+        assertFalse(updateMap.containsKey("uid"))
+        assertFalse(updateMap.containsKey("createdAt"))
+        assertTrue(updateMap.containsKey("updatedAt"))
+        assertEquals("Elde College", updateMap["schoolName"])
+
+        // 5. toAuthSessionOrNull() returns null when unauthenticated/blank and valid AuthSession otherwise
+        assertNull(profile.copy(magisterAuthenticated = false).toAuthSessionOrNull())
+        assertNull(profile.copy(magisterAccessToken = "").toAuthSessionOrNull())
+
+        val restoredSession = profile.toAuthSessionOrNull()
+        assertNotNull(restoredSession)
+        assertTrue(restoredSession!!.isAuthenticated)
+        assertEquals("Jan Jansen", restoredSession.studentName)
+        assertEquals("Elde College", restoredSession.school?.name)
+        assertEquals("elde", restoredSession.school?.subdomain)
+        assertEquals("token_abc_123", restoredSession.accessToken)
+        assertEquals("refresh_xyz_789", restoredSession.refreshToken)
+        assertEquals(9876L, restoredSession.personId)
+    }
 }
 
 

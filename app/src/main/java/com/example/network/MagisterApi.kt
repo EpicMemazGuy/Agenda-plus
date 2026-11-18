@@ -609,7 +609,8 @@ class MagisterClient {
         val grades = fetchGrades(tenant, token, pId)
         val tasks = fetchTasks(tenant, token, pId, appointmentsAndDisruptions.first)
         val folders = extendedApi.fetchMessageFolders(tenant, token)
-        val messages = extendedApi.fetchMessages(tenant, token, folders)
+        val rawMessages = extendedApi.fetchMessages(tenant, token, folders)
+        val messages = extendedApi.enrichMessagesWithDetails(tenant, token, rawMessages, limit = 25)
         val studyGuides = extendedApi.fetchStudyGuides(tenant, token, pId)
         val kwtSlots = extendedApi.fetchKwtSlots(tenant, token, pId, appointmentsAndDisruptions.first)
         val absences = fetchAbsences(tenant, token, pId)
@@ -635,6 +636,15 @@ class MagisterClient {
 
     suspend fun fetchMessageDetail(tenant: SchoolTenant, token: String, messageId: String): String? =
         withContext(Dispatchers.IO) { extendedApi.fetchMessageDetail(tenant, token, messageId) }
+
+    suspend fun enrichMessagesWithDetails(
+        tenant: SchoolTenant,
+        token: String,
+        messages: List<MagisterMessage>,
+        limit: Int = 25
+    ): List<MagisterMessage> = withContext(Dispatchers.IO) {
+        extendedApi.enrichMessagesWithDetails(tenant, token, messages, limit)
+    }
 
     suspend fun markMessageAsRead(tenant: SchoolTenant, token: String, messageId: String): Boolean =
         withContext(Dispatchers.IO) { extendedApi.markMessageAsRead(tenant, token, messageId) }
@@ -1198,8 +1208,17 @@ class MagisterClient {
         }
         for (i in 0 until items.length()) {
             val item = items.optJSONObject(i) ?: continue
-            val desc = item.optCleanString("Omschrijving", "omschrijving", "Reden", "reden") ?: "Verzuim"
-            val date = (item.optCleanString("Start", "start", "Datum", "datum") ?: "").take(10)
+            val afspraakObj = item.optJSONObject("Afspraak") ?: item.optJSONObject("afspraak")
+            val desc = item.optCleanString("Omschrijving", "omschrijving", "Reden", "reden")
+                ?: afspraakObj?.optCleanString("Omschrijving", "omschrijving")
+                ?: "Verzuim"
+            val rawStart = item.optCleanString("Start", "start", "Datum", "datum", "Begin", "begin")
+                ?: afspraakObj?.optCleanString("Start", "start")
+                ?: ""
+            val rawEnd = item.optCleanString("Einde", "einde")
+                ?: afspraakObj?.optCleanString("Einde", "einde")
+                ?: ""
+            val date = rawStart.take(10)
             val isApproved = if (item.has("Geoorloofd")) {
                 item.optBoolean("Geoorloofd", true)
             } else if (item.has("geoorloofd")) {
@@ -1213,9 +1232,22 @@ class MagisterClient {
                 !isApproved -> AbsenceType.UNEXCUSED
                 else -> AbsenceType.EXCUSED
             }
+            val hourInt = item.optInt(
+                "LesuurVan",
+                item.optInt("lesuurVan", item.optInt("Lesuur", item.optInt("lesuur", -1)))
+            ).takeIf { it > 0 }
+                ?: afspraakObj?.optInt("LesuurVan", afspraakObj.optInt("lesuurVan", -1))?.takeIf { it > 0 }
             val periodRaw = item.optCleanString("Lesuur", "lesuur")
-                ?: item.optInt("LesuurVan", item.optInt("lesuurVan", -1)).takeIf { it > 0 }?.let { "${it}e uur" }
+                ?: hourInt?.let { "${it}e uur" }
                 ?: "Hele dag"
+            val parsedHour = hourInt ?: Regex("\\d+").find(periodRaw)?.value?.toIntOrNull()
+
+            val afspraakVakken = afspraakObj?.optJSONArray("Vakken") ?: afspraakObj?.optJSONArray("vakken")
+            val subjectName = item.optCleanString("Vak", "vak", "VakOmschrijving", "vakOmschrijving")
+                ?: afspraakVakken?.optJSONObject(0)?.optCleanString("Naam", "naam")
+                ?: afspraakObj?.optCleanString("Omschrijving", "omschrijving")
+                ?: ""
+            val code = item.optCleanString("Code", "code", "Type", "type", "Soort", "soort") ?: ""
             val id = item.optCleanString("Id", "id")
                 ?: item.optLong("Id", item.optLong("id", i.toLong())).toString()
 
@@ -1226,7 +1258,12 @@ class MagisterClient {
                     period = periodRaw,
                     type = type,
                     reason = desc,
-                    isApproved = isApproved
+                    isApproved = isApproved,
+                    startIso = rawStart,
+                    endIso = rawEnd,
+                    hour = parsedHour,
+                    subject = subjectName,
+                    code = code
                 )
             )
         }
@@ -1298,12 +1335,15 @@ class MagisterClient {
 
                 for (i in 0 until items.length()) {
                     val item = items.getJSONObject(i)
-                    val id = item.optString("Id", "msg_$i")
-                    val subject = item.optString("Onderwerp", "Schoolbericht")
-                    val senderObj = item.optJSONObject("Afzender")
-                    val senderName = senderObj?.optString("Naam") ?: item.optString("AfzenderNaam", "Schooladministratie")
-                    val senderEmail = senderObj?.optString("Email")
-                    val rawDate = item.optString("VerzondenOp")
+                    val id = item.optCleanString("Id", "id") ?: item.optLong("Id", item.optLong("id", i.toLong())).toString()
+                    val subject = item.optCleanString("Onderwerp", "onderwerp") ?: "Schoolbericht"
+                    val senderObj = item.optJSONObject("Afzender") ?: item.optJSONObject("afzender")
+                    val senderName = senderObj?.optCleanString("Naam", "naam", "Weergavenaam", "weergavenaam")
+                        ?: item.optCleanString("AfzenderNaam", "afzenderNaam", "Afzender", "afzender")
+                            ?.takeIf { !it.startsWith("{") }
+                        ?: "Schooladministratie"
+                    val senderEmail = senderObj?.optCleanString("Email", "email")
+                    val rawDate = item.optCleanString("VerzondenOp", "verzondenOp") ?: ""
                     val parsedDate = parseMagisterDateTime(rawDate)
                     val formattedDate = if (parsedDate != null) {
                         dutchDateFormat.format(parsedDate)
@@ -1313,11 +1353,25 @@ class MagisterClient {
                         "Recent"
                     }
 
-                    val body = item.optString("Inhoud", "").ifBlank {
-                        item.optString("Omschrijving", "Geen berichtinhoud beschikbaar.")
+                    val rawBody = item.optCleanString("Inhoud", "inhoud", "Omschrijving", "omschrijving") ?: ""
+                    val cleanBody = if (rawBody.isNotBlank()) {
+                        android.text.Html.fromHtml(rawBody, android.text.Html.FROM_HTML_MODE_COMPACT)
+                            .toString()
+                            .cleanSchoolText() ?: ""
+                    } else ""
+                    val isRead = item.optBoolean("IsGelezen", item.optBoolean("isGelezen", false))
+                    val hasAttachments = item.optBoolean("HeeftBijlagen", item.optBoolean("heeftBijlagen", false))
+                    val ontvangersArr = item.optJSONArray("Ontvangers") ?: item.optJSONArray("ontvangers")
+                    val recipientsStr = if (ontvangersArr != null) {
+                        (0 until ontvangersArr.length()).mapNotNull { idx ->
+                            val o = ontvangersArr.optJSONObject(idx)
+                            o?.optCleanString("Naam", "naam", "Weergavenaam", "weergavenaam")
+                                ?: ontvangersArr.optString(idx, "").cleanSchoolText()
+                        }.distinct().joinToString(", ")
+                    } else {
+                        item.optCleanString("Ontvangers", "ontvangers", "OntvangersNamen", "ontvangersNamen")
+                            ?.takeIf { !it.startsWith("[") && !it.startsWith("{") } ?: ""
                     }
-                    val isRead = item.optBoolean("IsGelezen", false)
-                    val hasAttachments = item.optBoolean("HeeftBijlagen", false)
 
                     messagesList.add(
                         MagisterMessage(
@@ -1326,10 +1380,12 @@ class MagisterClient {
                             senderName = senderName,
                             senderEmail = senderEmail,
                             dateSent = formattedDate,
-                            body = body,
+                            body = cleanBody,
                             isRead = isRead,
                             hasAttachments = hasAttachments,
-                            folder = MessageFolder.INBOX
+                            folder = MessageFolder.INBOX,
+                            recipients = recipientsStr,
+                            rawDateIso = rawDate
                         )
                     )
                 }

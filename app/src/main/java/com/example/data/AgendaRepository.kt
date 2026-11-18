@@ -948,7 +948,17 @@ class AgendaRepository(private val context: Context? = null) {
 
     suspend fun pushIfChangedWithSummary(ctx: Context, force: Boolean = false): Result<Boolean> {
         val hasCurrentWeek = hasAppointmentsInCurrentWeek(_appointments.value)
-        if ((!hasCurrentWeek || _gradeSummaries.value.isEmpty()) &&
+        val needsCoreRefresh = !hasCurrentWeek ||
+            _gradeSummaries.value.isEmpty() ||
+            _messages.value.isEmpty() ||
+            _absences.value.isEmpty()
+
+        val genericSenders = setOf("", "Magister", "Afzender", "Schooladministratie", "Onbekende afzender")
+        val latest25NeedEnrich = _messages.value.take(25).any {
+            it.body.isBlank() || it.senderName.trim() in genericSenders || it.recipients.isBlank() || it.rawDateIso.isBlank()
+        }
+
+        if ((needsCoreRefresh || latest25NeedEnrich) &&
             _currentSession.value.isAuthenticated &&
             !isEffectivelyOffline()
         ) {
@@ -972,30 +982,46 @@ class AgendaRepository(private val context: Context? = null) {
                         }
                     }
                 }
-                runCatching {
-                    val bundle = magisterClient.fetchAllMagisterData(tenant, token, personId)
-                    val cleanedAppointments = bundle.appointments.map { appt ->
-                        appt.copy(
-                            title = appt.title.cleanSchoolText() ?: "Les",
-                            subjectName = appt.subjectName.cleanSchoolText() ?: "Les",
-                            teacherName = appt.teacherName.cleanSchoolText() ?: "",
-                            teacherInitials = appt.teacherInitials.cleanSchoolText() ?: "",
-                            classroom = appt.classroom.cleanSchoolText() ?: "",
-                            originalClassroom = appt.originalClassroom.cleanSchoolText(),
-                            homework = appt.homework.cleanSchoolText()
-                        )
+                if (needsCoreRefresh) {
+                    runCatching {
+                        val bundle = magisterClient.fetchAllMagisterData(tenant, token, personId)
+                        val cleanedAppointments = bundle.appointments.map { appt ->
+                            appt.copy(
+                                title = appt.title.cleanSchoolText() ?: "Les",
+                                subjectName = appt.subjectName.cleanSchoolText() ?: "Les",
+                                teacherName = appt.teacherName.cleanSchoolText() ?: "",
+                                teacherInitials = appt.teacherInitials.cleanSchoolText() ?: "",
+                                classroom = appt.classroom.cleanSchoolText() ?: "",
+                                originalClassroom = appt.originalClassroom.cleanSchoolText(),
+                                homework = appt.homework.cleanSchoolText()
+                            )
+                        }
+                        if (cleanedAppointments.isNotEmpty() || _appointments.value.isEmpty()) {
+                            _appointments.value = cleanedAppointments
+                            prefs?.saveAppointments(cleanedAppointments)
+                        }
+                        if (bundle.grades.isNotEmpty() || _gradeSummaries.value.isEmpty()) {
+                            _gradeSummaries.value = bundle.grades
+                            prefs?.saveGrades(bundle.grades)
+                        }
+                        if (bundle.tasks.isNotEmpty() || _tasks.value.isEmpty()) {
+                            _tasks.value = bundle.tasks
+                            prefs?.saveTasks(bundle.tasks)
+                        }
+                        if (bundle.messages.isNotEmpty() || _messages.value.isEmpty()) {
+                            _messages.value = bundle.messages
+                            prefs?.saveMessages(bundle.messages)
+                        }
+                        if (bundle.absences.isNotEmpty() || _absences.value.isEmpty()) {
+                            _absences.value = bundle.absences
+                            prefs?.saveAbsences(bundle.absences)
+                        }
                     }
-                    if (cleanedAppointments.isNotEmpty() || _appointments.value.isEmpty()) {
-                        _appointments.value = cleanedAppointments
-                        prefs?.saveAppointments(cleanedAppointments)
-                    }
-                    if (bundle.grades.isNotEmpty() || _gradeSummaries.value.isEmpty()) {
-                        _gradeSummaries.value = bundle.grades
-                        prefs?.saveGrades(bundle.grades)
-                    }
-                    if (bundle.tasks.isNotEmpty() || _tasks.value.isEmpty()) {
-                        _tasks.value = bundle.tasks
-                        prefs?.saveTasks(bundle.tasks)
+                } else if (latest25NeedEnrich) {
+                    runCatching {
+                        val enriched = magisterClient.enrichMessagesWithDetails(tenant, token, _messages.value, limit = 25)
+                        _messages.value = enriched
+                        prefs?.saveMessages(enriched)
                     }
                 }
             }
@@ -1004,13 +1030,15 @@ class AgendaRepository(private val context: Context? = null) {
             appointments = _appointments.value,
             grades = _gradeSummaries.value,
             tasks = _tasks.value,
-            unboxedGradeIds = _unboxedGradeIds.value
+            unboxedGradeIds = _unboxedGradeIds.value,
+            messages = _messages.value,
+            absences = _absences.value
         )
         val res = SyncManager.pushIfChanged(ctx, force, sourceOverride)
         res.onSuccess { synced ->
             if (synced) {
                 val counts = SyncManager.lastExportCounts
-                val msg = "Gekoppeld met Web • ${counts.lessons} lessen, ${counts.grades} cijfers, ${counts.homework} huiswerk"
+                val msg = "Gekoppeld met Web • ${counts.lessons} lessen, ${counts.grades} cijfers, ${counts.homework} huiswerk, ${counts.messages} berichten, ${counts.absences} verzuim"
                 com.example.util.RawConsoleLogger.info("WebSync", msg)
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                     android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()

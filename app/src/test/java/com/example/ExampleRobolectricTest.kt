@@ -1146,6 +1146,37 @@ class ExampleRobolectricTest {
             )
         )
 
+        val messages = listOf(
+            com.example.model.MagisterMessage(
+                id = "msg_101",
+                subject = "Excursie informatie",
+                senderName = "Mevr. Van Dijk",
+                senderEmail = "vandijk@school.nl",
+                dateSent = "18 nov 09:30",
+                body = "Vergeet je paspoort niet mee te nemen.",
+                isRead = false,
+                hasAttachments = true,
+                recipients = "Klas 5V, Mentoren",
+                rawDateIso = "2026-11-18T09:30:00Z"
+            )
+        )
+
+        val absences = listOf(
+            com.example.model.AbsenceRecord(
+                id = "abs_1",
+                date = "2026-11-12",
+                period = "2e uur",
+                type = com.example.model.AbsenceType.TARDY,
+                reason = "Te laat in de les",
+                isApproved = false,
+                startIso = "2026-11-12T09:15:00Z",
+                endIso = "2026-11-12T10:00:00Z",
+                hour = 2,
+                subject = "Wiskunde",
+                code = "L"
+            )
+        )
+
         val payload = com.example.services.SyncManager.buildSyncPayloadJsonFromData(
             updatedAt = 1731860000000L,
             themeStyle = com.example.model.AppThemeStyle.STANDARD,
@@ -1162,8 +1193,9 @@ class ExampleRobolectricTest {
             studySites = emptyList(),
             appointments = appointments,
             grades = grades,
-            messages = emptyList(),
-            unboxedGradeIds = setOf("g_78")
+            messages = messages,
+            unboxedGradeIds = setOf("g_78"),
+            absences = absences
         )
 
         assertEquals("material_you", payload.getString("theme"))
@@ -1173,7 +1205,9 @@ class ExampleRobolectricTest {
         assertFalse(cached.has("rooster"))
         assertFalse(cached.has("cijfers"))
         assertFalse(cached.has("schedule"))
-        assertFalse(cached.has("messages"))
+        assertTrue(cached.has("messages"))
+        assertTrue(cached.has("absences"))
+        assertTrue(cached.has("verzuim"))
 
         val lessons = cached.getJSONArray("lessons")
         assertEquals(3, lessons.length())
@@ -1211,5 +1245,121 @@ class ExampleRobolectricTest {
         assertEquals(2.0, gObj.getDouble("weging"), 0.001)
         assertTrue(gObj.getBoolean("unboxed"))
         assertFalse(gObj.getBoolean("isNew"))
+
+        // Verify full message payload contract
+        val exportedMessages = cached.getJSONArray("messages")
+        assertEquals(1, exportedMessages.length())
+        val mObj = exportedMessages.getJSONObject(0)
+        assertEquals("msg_101", mObj.getString("id"))
+        assertEquals("Excursie informatie", mObj.getString("subject"))
+        assertEquals("Excursie informatie", mObj.getString("onderwerp"))
+        assertEquals("Mevr. Van Dijk", mObj.getString("sender"))
+        assertEquals("Mevr. Van Dijk", mObj.getString("afzender"))
+        assertEquals("Klas 5V, Mentoren", mObj.getString("recipients"))
+        assertEquals("Klas 5V, Mentoren", mObj.getString("ontvangers"))
+        assertEquals("2026-11-18T09:30:00Z", mObj.getString("date"))
+        assertEquals("2026-11-18T09:30:00Z", mObj.getString("verzondenOp"))
+        assertEquals("Vergeet je paspoort niet mee te nemen.", mObj.getString("body"))
+        assertEquals("Vergeet je paspoort niet mee te nemen.", mObj.getString("inhoud"))
+        assertFalse(mObj.getBoolean("read"))
+        assertFalse(mObj.getBoolean("gelezen"))
+
+        // Verify absences + verzuim payload contract
+        val exportedAbsences = cached.getJSONArray("absences")
+        val exportedVerzuim = cached.getJSONArray("verzuim")
+        assertEquals(1, exportedAbsences.length())
+        assertEquals(1, exportedVerzuim.length())
+        val aObj = exportedAbsences.getJSONObject(0)
+        assertEquals("abs_1", aObj.getString("id"))
+        assertEquals("2026-11-12", aObj.getString("date"))
+        assertEquals("2026-11-12", aObj.getString("datum"))
+        assertEquals("2026-11-12T09:15:00Z", aObj.getString("start"))
+        assertEquals("2026-11-12T09:15:00Z", aObj.getString("begin"))
+        assertEquals("2026-11-12T10:00:00Z", aObj.getString("end"))
+        assertEquals("2026-11-12T10:00:00Z", aObj.getString("einde"))
+        assertEquals(2, aObj.getInt("hour"))
+        assertEquals(2, aObj.getInt("lesuur"))
+        assertEquals("Wiskunde", aObj.getString("subject"))
+        assertEquals("Wiskunde", aObj.getString("vak"))
+        assertEquals("Te laat", aObj.getString("type"))
+        assertEquals("Te laat", aObj.getString("soort"))
+        assertEquals("L", aObj.getString("code"))
+        assertEquals("Te laat in de les", aObj.getString("description"))
+        assertEquals("Te laat in de les", aObj.getString("omschrijving"))
+        assertFalse(aObj.getBoolean("permitted"))
+        assertFalse(aObj.getBoolean("geoorloofd"))
+    }
+
+    @Test
+    fun test_parse_magister_extended_messages_and_absences_metadata() {
+        val extApi = com.example.network.MagisterExtendedApi(
+            client = okhttp3.OkHttpClient(),
+            requestBuilder = { url, _ -> okhttp3.Request.Builder().url(url).build() },
+            dateParser = { null }
+        )
+        val folder = com.example.model.MessageFolderInfo(1L, "Postvak In", 1, com.example.model.MessageFolder.INBOX)
+        val rawMessagesJson = """
+            {
+              "items": [
+                {
+                  "id": 771,
+                  "onderwerp": "Roosterwijziging",
+                  "afzender": { "naam": "Dhr. Bakker", "email": "bakker@elde.nl" },
+                  "ontvangers": [
+                    { "naam": "Jan Jansen" },
+                    { "naam": "Klas 4A" }
+                  ],
+                  "verzondenOp": "2026-11-18T11:20:00Z",
+                  "inhoud": "<p>Les verplaatst naar lokaal 104.</p>",
+                  "isGelezen": true
+                },
+                {
+                  "id": 772,
+                  "onderwerp": "Administratie",
+                  "afzender": "Conciërge Balie",
+                  "ontvangers": "Alle leerlingen",
+                  "verzondenOp": "2026-11-17T08:05:00Z",
+                  "korteInhoud": "Sleutel gevonden.",
+                  "isGelezen": false
+                }
+              ]
+            }
+        """.trimIndent()
+        val parsedMsgs = extApi.parseMessagesArray(rawMessagesJson, folder)
+        assertEquals(2, parsedMsgs.size)
+        assertEquals("Dhr. Bakker", parsedMsgs[0].senderName)
+        assertEquals("Jan Jansen, Klas 4A", parsedMsgs[0].recipients)
+        assertEquals("2026-11-18T11:20:00Z", parsedMsgs[0].rawDateIso)
+        assertEquals("Les verplaatst naar lokaal 104.", parsedMsgs[0].body)
+        assertEquals("Conciërge Balie", parsedMsgs[1].senderName)
+        assertEquals("Alle leerlingen", parsedMsgs[1].recipients)
+        assertEquals("2026-11-17T08:05:00Z", parsedMsgs[1].rawDateIso)
+
+        val rawAbsencesJson = """
+            {
+              "items": [
+                {
+                  "id": "abs_99",
+                  "start": "2026-11-16T08:30:00Z",
+                  "einde": "2026-11-16T09:15:00Z",
+                  "lesuurVan": 1,
+                  "code": "Z",
+                  "omschrijving": "Ziek gemeld",
+                  "geoorloofd": true,
+                  "afspraak": {
+                    "vakken": [{ "naam": "Scheikunde" }]
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+        val parsedAbsences = MagisterClient().parseAbsencesJson(rawAbsencesJson)
+        assertEquals(1, parsedAbsences.size)
+        assertEquals("2026-11-16T08:30:00Z", parsedAbsences[0].startIso)
+        assertEquals("2026-11-16T09:15:00Z", parsedAbsences[0].endIso)
+        assertEquals(1, parsedAbsences[0].hour)
+        assertEquals("Scheikunde", parsedAbsences[0].subject)
+        assertEquals("Z", parsedAbsences[0].code)
     }
 }
+

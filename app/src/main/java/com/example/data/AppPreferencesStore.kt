@@ -571,6 +571,8 @@ class AppPreferencesStore(context: Context) {
                 put("folder", m.folder.name)
                 put("folderId", m.folderId)
                 put("folderName", m.folderName)
+                put("recipients", m.recipients)
+                put("rawDateIso", m.rawDateIso)
             })
         }
         prefs.edit().putString(KEY_MESSAGES_JSON, arr.toString()).apply()
@@ -597,7 +599,9 @@ class AppPreferencesStore(context: Context) {
                             hasAttachments = o.optBoolean("hasAttachments", false),
                             folder = folder,
                             folderId = o.optLong("folderId", 1L),
-                            folderName = o.optString("folderName", folder.labelDutch)
+                            folderName = o.optString("folderName", folder.labelDutch),
+                            recipients = o.optString("recipients", ""),
+                            rawDateIso = o.optString("rawDateIso", "")
                         )
                     )
                 }
@@ -881,6 +885,11 @@ class AppPreferencesStore(context: Context) {
                 put("type", a.type.name)
                 put("reason", a.reason)
                 put("isApproved", a.isApproved)
+                put("startIso", a.startIso)
+                put("endIso", a.endIso)
+                a.hour?.let { put("hour", it) }
+                put("subject", a.subject)
+                put("code", a.code)
             })
         }
         prefs.edit().putString(KEY_ABSENCES_JSON, arr.toString()).apply()
@@ -895,6 +904,7 @@ class AppPreferencesStore(context: Context) {
                     val o = arr.getJSONObject(i)
                     val type = runCatching { AbsenceType.valueOf(o.optString("type")) }
                         .getOrDefault(AbsenceType.EXCUSED)
+                    val hourVal = if (o.has("hour") && !o.isNull("hour")) o.optInt("hour", -1).takeIf { it > 0 } else null
                     add(
                         AbsenceRecord(
                             id = o.optString("id", "abs_$i"),
@@ -902,7 +912,12 @@ class AppPreferencesStore(context: Context) {
                             period = o.optString("period", "Hele dag"),
                             type = type,
                             reason = o.optString("reason", "Verzuim"),
-                            isApproved = o.optBoolean("isApproved", true)
+                            isApproved = o.optBoolean("isApproved", true),
+                            startIso = o.optString("startIso", ""),
+                            endIso = o.optString("endIso", ""),
+                            hour = hourVal,
+                            subject = o.optString("subject", ""),
+                            code = o.optString("code", "")
                         )
                     )
                 }

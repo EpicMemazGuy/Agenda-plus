@@ -10,6 +10,8 @@ import androidx.security.crypto.MasterKey
 import com.example.data.AppPreferencesStore
 import com.example.data.db.AgendaDatabase
 import com.example.data.db.CustomScheduleItem
+import com.example.model.AbsenceRecord
+import com.example.model.AbsenceType
 import com.example.model.AgendaStyle
 import com.example.model.AppThemeStyle
 import com.example.model.Appointment
@@ -20,6 +22,7 @@ import com.example.model.MagisterMessage
 import com.example.model.StudySite
 import com.example.model.SubjectGradeSummary
 import com.example.model.TestPrepChecklist
+import com.example.model.cleanSchoolText
 import com.example.util.RawConsoleLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -52,13 +55,17 @@ data class SyncSourceOverride(
     val appointments: List<Appointment>? = null,
     val grades: List<SubjectGradeSummary>? = null,
     val tasks: List<HomeworkTask>? = null,
-    val unboxedGradeIds: Set<String>? = null
+    val unboxedGradeIds: Set<String>? = null,
+    val messages: List<MagisterMessage>? = null,
+    val absences: List<AbsenceRecord>? = null
 )
 
 data class SyncExportCounts(
     val lessons: Int = 0,
     val grades: Int = 0,
-    val homework: Int = 0
+    val homework: Int = 0,
+    val messages: Int = 0,
+    val absences: Int = 0
 )
 
 data class WebSyncStatus(
@@ -326,7 +333,8 @@ object SyncManager {
         val tasks = sourceOverride?.tasks?.takeIf { it.isNotEmpty() } ?: store.loadTasks()
         val appointments = sourceOverride?.appointments?.takeIf { it.isNotEmpty() } ?: store.loadAppointments()
         val grades = sourceOverride?.grades?.takeIf { it.isNotEmpty() } ?: store.loadGrades()
-        val messages = store.loadMessages()
+        val messages = sourceOverride?.messages?.takeIf { it.isNotEmpty() } ?: store.loadMessages()
+        val absences = sourceOverride?.absences?.takeIf { it.isNotEmpty() } ?: store.loadAbsences()
         val checklists = store.loadTestPrepChecklists()
         val studySites = store.loadStudySites()
         val unboxedGradeIds = sourceOverride?.unboxedGradeIds?.takeIf { it.isNotEmpty() } ?: store.getUnboxedGradeIds()
@@ -350,7 +358,8 @@ object SyncManager {
             appointments = appointments,
             grades = grades,
             messages = messages,
-            unboxedGradeIds = unboxedGradeIds
+            unboxedGradeIds = unboxedGradeIds,
+            absences = absences
         )
     }
 
@@ -371,7 +380,8 @@ object SyncManager {
         appointments: List<Appointment>,
         grades: List<SubjectGradeSummary>,
         messages: List<MagisterMessage>,
-        unboxedGradeIds: Set<String> = emptySet()
+        unboxedGradeIds: Set<String> = emptySet(),
+        absences: List<AbsenceRecord> = emptyList()
     ): JSONObject {
         val settingsObj = JSONObject().apply {
             put("theme", themeToWire(themeStyle))
@@ -574,10 +584,75 @@ object SyncManager {
             }
         }
 
+        val messagesArr = JSONArray()
+        messages.forEach { m ->
+            val resolvedSender = m.senderName.cleanSchoolText()
+                ?: m.senderEmail?.cleanSchoolText()
+                ?: "Magister"
+            val resolvedDateIso = m.rawDateIso.ifBlank { m.dateSent }
+            messagesArr.put(JSONObject().apply {
+                put("id", m.id)
+                put("subject", m.subject)
+                put("onderwerp", m.subject)
+                put("sender", resolvedSender)
+                put("afzender", resolvedSender)
+                put("senderEmail", m.senderEmail ?: "")
+                put("recipients", m.recipients)
+                put("ontvangers", m.recipients)
+                put("date", resolvedDateIso)
+                put("verzondenOp", resolvedDateIso)
+                put("dateFormatted", m.dateSent)
+                put("body", m.body)
+                put("inhoud", m.body)
+                put("read", m.isRead)
+                put("gelezen", m.isRead)
+                put("hasAttachments", m.hasAttachments)
+                put("folder", m.folderName)
+            })
+        }
+
+        val absencesArr = JSONArray()
+        absences.forEach { a ->
+            val typeLabel = when (a.type) {
+                AbsenceType.SICK -> "Ziek"
+                AbsenceType.TARDY -> "Te laat"
+                AbsenceType.EXCUSED -> "Geoorloofd"
+                AbsenceType.UNEXCUSED -> "Ongeoorloofd"
+            }
+            val resolvedStart = a.startIso.ifBlank { a.date }
+            val resolvedEnd = a.endIso.ifBlank { resolvedStart }
+            val resolvedHour = a.hour ?: Regex("\\d+").find(a.period)?.value?.toIntOrNull() ?: 0
+            val resolvedCode = a.code.ifBlank { typeLabel }
+            absencesArr.put(JSONObject().apply {
+                put("id", a.id)
+                put("date", a.date)
+                put("datum", a.date)
+                put("start", resolvedStart)
+                put("begin", resolvedStart)
+                put("end", resolvedEnd)
+                put("einde", resolvedEnd)
+                put("hour", resolvedHour)
+                put("lesuur", resolvedHour)
+                put("period", a.period)
+                put("subject", a.subject)
+                put("vak", a.subject)
+                put("type", typeLabel)
+                put("soort", typeLabel)
+                put("code", resolvedCode)
+                put("description", a.reason)
+                put("omschrijving", a.reason)
+                put("permitted", a.isApproved)
+                put("geoorloofd", a.isApproved)
+            })
+        }
+
         val cachedDataObj = JSONObject().apply {
             put("lessons", lessonsArr)
             put("grades", gradesArr)
             put("homework", homeworkArr)
+            put("messages", messagesArr)
+            put("absences", absencesArr)
+            put("verzuim", absencesArr)
         }
 
         val schoolInfoObj = JSONObject().apply {
@@ -658,7 +733,9 @@ object SyncManager {
             lastExportCounts = SyncExportCounts(
                 lessons = cachedObj?.optJSONArray("lessons")?.length() ?: 0,
                 grades = cachedObj?.optJSONArray("grades")?.length() ?: 0,
-                homework = cachedObj?.optJSONArray("homework")?.length() ?: 0
+                homework = cachedObj?.optJSONArray("homework")?.length() ?: 0,
+                messages = cachedObj?.optJSONArray("messages")?.length() ?: 0,
+                absences = cachedObj?.optJSONArray("absences")?.length() ?: 0
             )
             val contentHash = computeContentHash(payloadJson)
             val lastHash = prefs.getString(KEY_LAST_HASH, null)

@@ -134,7 +134,65 @@ internal class MagisterExtendedApi(
         return allMessages.distinctBy { it.id }
     }
 
-    private fun parseMessagesArray(bodyStr: String, folder: MessageFolderInfo): List<MagisterMessage> {
+    private fun extractPersonDisplayName(obj: JSONObject?): String? {
+        if (obj == null) return null
+        obj.optClean(
+            "naam", "Naam",
+            "weergavenaam", "Weergavenaam",
+            "volledigeNaam", "VolledigeNaam",
+            "naamVoorWeergave", "NaamVoorWeergave",
+            "roepnaam", "Roepnaam"
+        )?.let { return it }
+        val first = obj.optClean("voornaam", "Voornaam") ?: ""
+        val middle = obj.optClean("tussenvoegsel", "Tussenvoegsel") ?: ""
+        val last = obj.optClean("achternaam", "Achternaam") ?: ""
+        val combined = listOf(first, middle, last).filter { it.isNotBlank() }.joinToString(" ").trim()
+        return combined.ifBlank { null }
+    }
+
+    private fun extractSenderName(item: JSONObject): String? {
+        val senderObj = item.optJSONObject("afzender")
+            ?: item.optJSONObject("Afzender")
+            ?: item.optJSONObject("verzender")
+            ?: item.optJSONObject("Verzender")
+        extractPersonDisplayName(senderObj)?.let { return it }
+
+        for (key in listOf("afzender", "Afzender", "afzenderNaam", "AfzenderNaam", "verzender", "Verzender", "sender", "senderName")) {
+            val raw = item.optClean(key) ?: continue
+            if (!raw.startsWith("{")) return raw
+        }
+        return null
+    }
+
+    private fun extractRecipients(item: JSONObject): String {
+        val arr = item.optJSONArray("ontvangers")
+            ?: item.optJSONArray("Ontvangers")
+            ?: item.optJSONArray("kopieOntvangers")
+            ?: item.optJSONArray("KopieOntvangers")
+            ?: item.optJSONArray("recipients")
+        if (arr != null && arr.length() > 0) {
+            val names = buildList {
+                for (j in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(j)
+                    val name = if (obj != null) {
+                        extractPersonDisplayName(obj) ?: obj.optClean("email", "Email")
+                    } else {
+                        arr.optString(j, "").cleanSchoolText()
+                    }
+                    if (!name.isNullOrBlank()) add(name)
+                }
+            }.distinct()
+            if (names.isNotEmpty()) return names.joinToString(", ")
+        }
+
+        for (key in listOf("ontvangers", "Ontvangers", "ontvangersNamen", "OntvangersNamen", "recipients")) {
+            val raw = item.optClean(key) ?: continue
+            if (!raw.startsWith("[") && !raw.startsWith("{")) return raw
+        }
+        return ""
+    }
+
+    internal fun parseMessagesArray(bodyStr: String, folder: MessageFolderInfo): List<MagisterMessage> {
         val json = runCatching { JSONObject(bodyStr) }.getOrNull() ?: return emptyList()
         val items = json.optJSONArray("items")
             ?: json.optJSONArray("Items")
@@ -146,13 +204,12 @@ internal class MagisterExtendedApi(
             for (i in 0 until items.length()) {
                 val item = items.optJSONObject(i) ?: continue
                 val id = item.optClean("id", "Id") ?: item.optLong("id", item.optLong("Id", i.toLong())).toString()
-                val subject = item.optClean("onderwerp", "Onderwerp") ?: "Schoolbericht"
+                val subject = item.optClean("onderwerp", "Onderwerp", "subject") ?: "Schoolbericht"
                 val senderObj = item.optJSONObject("afzender") ?: item.optJSONObject("Afzender")
-                val senderName = senderObj?.optClean("naam", "Naam")
-                    ?: item.optClean("afzenderNaam", "AfzenderNaam")
-                    ?: "Magister"
-                val senderEmail = senderObj?.optClean("email", "Email")
-                val rawDate = item.optClean("verzondenOp", "VerzondenOp") ?: ""
+                val senderName = extractSenderName(item) ?: "Magister"
+                val senderEmail = senderObj?.optClean("email", "Email", "emailadres", "Emailadres")
+                val recipients = extractRecipients(item)
+                val rawDate = item.optClean("verzondenOp", "VerzondenOp", "datum", "Datum") ?: ""
                 val parsedDate = dateParser(rawDate)
                 val formattedDate = when {
                     parsedDate != null -> dutchDateFormat.format(parsedDate)
@@ -160,7 +217,7 @@ internal class MagisterExtendedApi(
                     else -> "Recent"
                 }
 
-                val rawBody = item.optClean("inhoud", "Inhoud", "omschrijving", "Omschrijving", "korteInhoud")
+                val rawBody = item.optClean("inhoud", "Inhoud", "omschrijving", "Omschrijving", "korteInhoud", "body")
                 val cleanBody = stripHtml(rawBody).cleanSchoolText() ?: ""
                 val isRead = item.optBoolean("isGelezen", item.optBoolean("IsGelezen", false))
                 val hasAttachments = item.optBoolean("heeftBijlagen", item.optBoolean("HeeftBijlagen", false))
@@ -177,14 +234,24 @@ internal class MagisterExtendedApi(
                         hasAttachments = hasAttachments,
                         folder = folder.folderType,
                         folderId = folder.id,
-                        folderName = folder.name
+                        folderName = folder.name,
+                        recipients = recipients,
+                        rawDateIso = rawDate
                     )
                 )
             }
         }
     }
 
-    fun fetchMessageDetail(tenant: SchoolTenant, token: String, messageId: String): String? {
+    internal data class MessageDetailData(
+        val body: String? = null,
+        val senderName: String? = null,
+        val senderEmail: String? = null,
+        val recipients: String? = null,
+        val rawDateIso: String? = null
+    )
+
+    internal fun fetchMessageDetailFull(tenant: SchoolTenant, token: String, messageId: String): MessageDetailData? {
         val urls = listOf(
             "${tenant.apiBaseUrl}/berichten/berichten/$messageId",
             "${tenant.apiBaseUrl}/berichten/$messageId"
@@ -195,13 +262,70 @@ internal class MagisterExtendedApi(
                 val body = resp.body?.string() ?: "{}"
                 if (!resp.isSuccessful) continue
                 val json = JSONObject(body)
-                val raw = json.optClean("inhoud", "Inhoud", "omschrijving", "Omschrijving")
-                val clean = stripHtml(raw).cleanSchoolText()
-                if (clean != null) return clean
+                val raw = json.optClean("inhoud", "Inhoud", "omschrijving", "Omschrijving", "body")
+                val cleanBody = stripHtml(raw).cleanSchoolText()
+                val senderObj = json.optJSONObject("afzender") ?: json.optJSONObject("Afzender")
+                val senderName = extractSenderName(json)
+                val senderEmail = senderObj?.optClean("email", "Email", "emailadres", "Emailadres")
+                val recipients = extractRecipients(json).ifBlank { null }
+                val rawDateIso = json.optClean("verzondenOp", "VerzondenOp", "datum", "Datum")
+                if (cleanBody != null || senderName != null || recipients != null) {
+                    return MessageDetailData(
+                        body = cleanBody,
+                        senderName = senderName,
+                        senderEmail = senderEmail,
+                        recipients = recipients,
+                        rawDateIso = rawDateIso
+                    )
+                }
             } catch (_: Exception) {
             }
         }
         return null
+    }
+
+    fun fetchMessageDetail(tenant: SchoolTenant, token: String, messageId: String): String? =
+        fetchMessageDetailFull(tenant, token, messageId)?.body
+
+    private val genericSenderNames = setOf("", "Magister", "Afzender", "Schooladministratie", "Onbekende afzender")
+
+    fun enrichMessagesWithDetails(
+        tenant: SchoolTenant,
+        token: String,
+        messages: List<MagisterMessage>,
+        limit: Int = 25
+    ): List<MagisterMessage> {
+        if (messages.isEmpty()) return messages
+        val dutchDateFormat = SimpleDateFormat("d MMM HH:mm", Locale("nl", "NL"))
+        return messages.mapIndexed { idx, msg ->
+            val needsBody = msg.body.isBlank()
+            val needsSender = msg.senderName.trim() in genericSenderNames
+            val needsRecipients = msg.recipients.isBlank()
+            val needsIsoDate = msg.rawDateIso.isBlank()
+            if (idx >= limit || (!needsBody && !needsSender && !needsRecipients && !needsIsoDate)) {
+                msg
+            } else {
+                val detail = fetchMessageDetailFull(tenant, token, msg.id)
+                if (detail == null) {
+                    msg
+                } else {
+                    val updatedDateIso = msg.rawDateIso.ifBlank { detail.rawDateIso.orEmpty() }
+                    val updatedDateSent = if (msg.dateSent == "Recent" && updatedDateIso.isNotBlank()) {
+                        dateParser(updatedDateIso)?.let { dutchDateFormat.format(it) } ?: updatedDateIso.take(10)
+                    } else {
+                        msg.dateSent
+                    }
+                    msg.copy(
+                        body = msg.body.ifBlank { detail.body.orEmpty() },
+                        senderName = if (needsSender && !detail.senderName.isNullOrBlank()) detail.senderName else msg.senderName,
+                        senderEmail = msg.senderEmail ?: detail.senderEmail,
+                        recipients = msg.recipients.ifBlank { detail.recipients.orEmpty() },
+                        rawDateIso = updatedDateIso,
+                        dateSent = updatedDateSent
+                    )
+                }
+            }
+        }
     }
 
     fun markMessageAsRead(tenant: SchoolTenant, token: String, messageId: String): Boolean {

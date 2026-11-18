@@ -230,7 +230,12 @@ data class AbsenceRecord(
     val period: String,
     val type: AbsenceType,
     val reason: String,
-    val isApproved: Boolean
+    val isApproved: Boolean,
+    val startIso: String = "",
+    val endIso: String = "",
+    val hour: Int? = null,
+    val subject: String = "",
+    val code: String = ""
 )
 
 data class AnnouncementItem(
@@ -266,7 +271,9 @@ data class MagisterMessage(
     val hasAttachments: Boolean = false,
     val folder: MessageFolder = MessageFolder.INBOX,
     val folderId: Long = 1L,
-    val folderName: String = "Postvak In"
+    val folderName: String = "Postvak In",
+    val recipients: String = "",
+    val rawDateIso: String = ""
 )
 
 data class StudyGuideResource(

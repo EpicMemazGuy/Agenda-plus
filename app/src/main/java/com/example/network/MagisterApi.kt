@@ -699,10 +699,10 @@ class MagisterClient {
         val cal = Calendar.getInstance()
         val isoDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
-        // Fetch 4-week window around current date: 7 days ago to 21 days ahead
-        cal.add(Calendar.DAY_OF_YEAR, -7)
+        // Fetch 6-week window around current date: 14 days ago to 28 days ahead
+        cal.add(Calendar.DAY_OF_YEAR, -14)
         val startDateStr = isoDateFormat.format(cal.time)
-        cal.add(Calendar.DAY_OF_YEAR, 28)
+        cal.add(Calendar.DAY_OF_YEAR, 42)
         val endDateStr = isoDateFormat.format(cal.time)
 
         val candidateUrls = listOf(
@@ -965,13 +965,21 @@ class MagisterClient {
                 "waarde", "Waarde",
                 "CijferStr", "cijferStr",
                 "Cijfer", "cijfer",
-                "resultaat", "Resultaat"
-            ) ?: cijferObj?.optCleanString("waarde", "Waarde", "cijferStr", "CijferStr")
+                "resultaat", "Resultaat",
+                "result", "Result",
+                "grade", "Grade",
+                "value", "Value"
+            ) ?: cijferObj?.optCleanString("waarde", "Waarde", "cijferStr", "CijferStr", "resultaat", "Resultaat", "result", "Result")
+                ?: cijferObj?.optDouble("waarde", Double.NaN)?.takeIf { !it.isNaN() }?.toString()
+                ?: cijferObj?.optDouble("cijfer", Double.NaN)?.takeIf { !it.isNaN() }?.toString()
                 ?: item.optDouble("waarde", Double.NaN).takeIf { !it.isNaN() }?.toString()
                 ?: item.optDouble("Cijfer", Double.NaN).takeIf { !it.isNaN() }?.toString()
+                ?: item.optDouble("grade", Double.NaN).takeIf { !it.isNaN() }?.toString()
+                ?: item.optDouble("value", Double.NaN).takeIf { !it.isNaN() }?.toString()
                 ?: ""
 
-            val score = rawScoreStr.replace(",", ".").toDoubleOrNull() ?: continue
+            val score = rawScoreStr.replace(",", ".").trim().toDoubleOrNull() ?: continue
+            if (score <= 0.0) continue
 
             val kolomObj = item.optJSONObject("cijferKolom") ?: item.optJSONObject("CijferKolom")
             val weight = listOf(

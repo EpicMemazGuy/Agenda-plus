@@ -1030,7 +1030,186 @@ class ExampleRobolectricTest {
         com.example.services.SyncManager.unpair(context)
         assertFalse(com.example.services.SyncManager.isPaired(context))
     }
+
+    @Test
+    fun test_web_sync_payload_builder_lessons_window_and_flat_nonzero_grades() {
+        val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        fun dateOffset(days: Int): String {
+            val cal = java.util.Calendar.getInstance()
+            cal.add(java.util.Calendar.DAY_OF_YEAR, days)
+            return dateFormat.format(cal.time)
+        }
+
+        val appointments = listOf(
+            com.example.model.Appointment(
+                id = 1L,
+                title = "Te oud",
+                subjectCode = "wi",
+                subjectName = "Wiskunde",
+                teacherName = "Jansen",
+                teacherInitials = "JAN",
+                classroom = "A101",
+                periodIndex = 1,
+                startTime = "08:30",
+                endTime = "09:15",
+                dayOfWeek = 1,
+                dateIso = dateOffset(-30)
+            ),
+            com.example.model.Appointment(
+                id = 2L,
+                title = "Vorige week les",
+                subjectCode = "ne",
+                subjectName = "Nederlands",
+                teacherName = "De Vries",
+                teacherInitials = "VRI",
+                classroom = "B204",
+                periodIndex = 2,
+                startTime = "09:15",
+                endTime = "10:00",
+                dayOfWeek = 2,
+                isCanceled = true,
+                dateIso = dateOffset(-10)
+            ),
+            com.example.model.Appointment(
+                id = 3L,
+                title = "Volgende maand binnen bereik",
+                subjectCode = "en",
+                subjectName = "Engels",
+                teacherName = "Bakker",
+                teacherInitials = "BAK",
+                classroom = "C302",
+                periodIndex = 3,
+                startTime = "10:20",
+                endTime = "11:05",
+                dayOfWeek = 3,
+                dateIso = dateOffset(20)
+            ),
+            com.example.model.Appointment(
+                id = 4L,
+                title = "Te ver vooruit",
+                subjectCode = "na",
+                subjectName = "Natuurkunde",
+                teacherName = "Smit",
+                teacherInitials = "SMI",
+                classroom = "D101",
+                periodIndex = 4,
+                startTime = "11:05",
+                endTime = "11:50",
+                dayOfWeek = 4,
+                dateIso = dateOffset(45)
+            ),
+            com.example.model.Appointment(
+                id = 5L,
+                title = "Vandaag zonder dateIso",
+                subjectCode = "bi",
+                subjectName = "Biologie",
+                teacherName = "Koster",
+                teacherInitials = "KOS",
+                classroom = "E002",
+                periodIndex = 5,
+                startTime = "12:15",
+                endTime = "13:00",
+                dayOfWeek = 5,
+                dateIso = ""
+            )
+        )
+
+        val grades = listOf(
+            com.example.model.SubjectGradeSummary(
+                subjectCode = "WI",
+                subjectName = "Wiskunde B",
+                weightedAverage = 7.8,
+                grades = listOf(
+                    com.example.model.GradeItem(
+                        id = "g_78",
+                        subjectCode = "WI",
+                        subjectName = "Wiskunde B",
+                        score = 7.8,
+                        weight = 2.0,
+                        description = "Proefwerk Calculus",
+                        date = "2026-11-12",
+                        period = 1,
+                        isPta = true
+                    ),
+                    com.example.model.GradeItem(
+                        id = "g_zero",
+                        subjectCode = "WI",
+                        subjectName = "Wiskunde B",
+                        score = 0.0,
+                        weight = 1.0,
+                        description = "Lege kolom",
+                        date = "2026-11-15",
+                        period = 1,
+                        isPta = false
+                    )
+                )
+            )
+        )
+
+        val payload = com.example.services.SyncManager.buildSyncPayloadJsonFromData(
+            updatedAt = 1731860000000L,
+            themeStyle = com.example.model.AppThemeStyle.STANDARD,
+            darkMode = com.example.model.DarkModePreference.SYSTEM,
+            agendaStyle = com.example.model.AgendaStyle.SPACIOUS,
+            uiScale = 1.0f,
+            unboxingMode = com.example.model.GradeUnboxingMode.CASE_OPENING,
+            busLine = "306",
+            schoolAddress = "Elde College",
+            weatherCity = "Schijndel",
+            customScheduleItems = emptyList(),
+            tasks = emptyList(),
+            testChecklists = emptyMap(),
+            studySites = emptyList(),
+            appointments = appointments,
+            grades = grades,
+            messages = emptyList(),
+            unboxedGradeIds = setOf("g_78")
+        )
+
+        assertEquals("material_you", payload.getString("theme"))
+        assertTrue(payload.has("schoolInfo"))
+
+        val cached = payload.getJSONObject("cachedData")
+        assertFalse(cached.has("rooster"))
+        assertFalse(cached.has("cijfers"))
+        assertFalse(cached.has("schedule"))
+        assertFalse(cached.has("messages"))
+
+        val lessons = cached.getJSONArray("lessons")
+        assertEquals(3, lessons.length())
+        val exportedIds = (0 until lessons.length()).map { lessons.getJSONObject(it).getLong("id") }.toSet()
+        assertEquals(setOf(2L, 3L, 5L), exportedIds)
+
+        val canceledLesson = (0 until lessons.length())
+            .map { lessons.getJSONObject(it) }
+            .first { it.getLong("id") == 2L }
+        assertEquals("Nederlands", canceledLesson.getString("subject"))
+        assertEquals("Nederlands", canceledLesson.getString("vak"))
+        assertEquals("De Vries", canceledLesson.getString("teacher"))
+        assertEquals("De Vries", canceledLesson.getString("docent"))
+        assertEquals("B204", canceledLesson.getString("room"))
+        assertEquals("B204", canceledLesson.getString("lokaal"))
+        assertEquals(2, canceledLesson.getInt("hour"))
+        assertEquals(2, canceledLesson.getInt("lesuur"))
+        assertTrue(canceledLesson.getBoolean("cancelled"))
+        assertTrue(canceledLesson.getBoolean("uitval"))
+        assertTrue(canceledLesson.getString("start").contains("T09:15:00"))
+        assertTrue(canceledLesson.getString("end").contains("T10:00:00"))
+
+        val exportedGrades = cached.getJSONArray("grades")
+        assertEquals(1, exportedGrades.length())
+        val gObj = exportedGrades.getJSONObject(0)
+        assertEquals("g_78", gObj.getString("id"))
+        assertEquals("Wiskunde B", gObj.getString("subject"))
+        assertEquals("Wiskunde B", gObj.getString("vak"))
+        assertEquals(7.8, gObj.getDouble("grade"), 0.001)
+        assertEquals(7.8, gObj.getDouble("value"), 0.001)
+        assertEquals(7.8, gObj.getDouble("score"), 0.001)
+        assertEquals("7,8", gObj.getString("gradeDisplay"))
+        assertEquals("7,8", gObj.getString("cijfer"))
+        assertEquals(2.0, gObj.getDouble("weight"), 0.001)
+        assertEquals(2.0, gObj.getDouble("weging"), 0.001)
+        assertTrue(gObj.getBoolean("unboxed"))
+        assertFalse(gObj.getBoolean("isNew"))
+    }
 }
-
-
-

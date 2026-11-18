@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Base64
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.example.data.AppPreferencesStore
@@ -39,11 +40,26 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+
+data class SyncSourceOverride(
+    val appointments: List<Appointment>? = null,
+    val grades: List<SubjectGradeSummary>? = null,
+    val tasks: List<HomeworkTask>? = null,
+    val unboxedGradeIds: Set<String>? = null
+)
+
+data class SyncExportCounts(
+    val lessons: Int = 0,
+    val grades: Int = 0,
+    val homework: Int = 0
+)
 
 data class WebSyncStatus(
     val isPaired: Boolean = false,
@@ -111,6 +127,10 @@ object SyncManager {
 
     private val _status = MutableStateFlow(WebSyncStatus())
     val status: StateFlow<WebSyncStatus> = _status.asStateFlow()
+
+    @Volatile
+    var lastExportCounts: SyncExportCounts = SyncExportCounts()
+        private set
 
     private fun getEncryptedPrefs(context: Context): SharedPreferences {
         val appContext = context.applicationContext
@@ -295,19 +315,21 @@ object SyncManager {
 
     suspend fun buildSyncPayloadJson(
         context: Context,
-        updatedAt: Long = System.currentTimeMillis()
+        updatedAt: Long = System.currentTimeMillis(),
+        sourceOverride: SyncSourceOverride? = null
     ): JSONObject {
         val store = AppPreferencesStore(context.applicationContext)
         val customItems = runCatching {
             AgendaDatabase.getInstance(context.applicationContext).customScheduleDao().getAllOnce()
         }.getOrDefault(emptyList())
 
-        val tasks = store.loadTasks()
-        val appointments = store.loadAppointments()
-        val grades = store.loadGrades()
+        val tasks = sourceOverride?.tasks?.takeIf { it.isNotEmpty() } ?: store.loadTasks()
+        val appointments = sourceOverride?.appointments?.takeIf { it.isNotEmpty() } ?: store.loadAppointments()
+        val grades = sourceOverride?.grades?.takeIf { it.isNotEmpty() } ?: store.loadGrades()
         val messages = store.loadMessages()
         val checklists = store.loadTestPrepChecklists()
         val studySites = store.loadStudySites()
+        val unboxedGradeIds = sourceOverride?.unboxedGradeIds?.takeIf { it.isNotEmpty() } ?: store.getUnboxedGradeIds()
 
         return buildSyncPayloadJsonFromData(
             updatedAt = updatedAt,
@@ -327,7 +349,8 @@ object SyncManager {
             studySites = studySites,
             appointments = appointments,
             grades = grades,
-            messages = messages
+            messages = messages,
+            unboxedGradeIds = unboxedGradeIds
         )
     }
 
@@ -347,7 +370,8 @@ object SyncManager {
         studySites: List<StudySite>,
         appointments: List<Appointment>,
         grades: List<SubjectGradeSummary>,
-        messages: List<MagisterMessage>
+        messages: List<MagisterMessage>,
+        unboxedGradeIds: Set<String> = emptySet()
     ): JSONObject {
         val settingsObj = JSONObject().apply {
             put("theme", themeToWire(themeStyle))
@@ -414,51 +438,91 @@ object SyncManager {
             })
         }
 
-        val scheduleArr = JSONArray()
-        val lessonsArr = JSONArray()
-        val roosterArr = JSONArray()
-        appointments.forEach { a ->
-            val apptObj = JSONObject().apply {
-                put("id", a.id)
-                put("title", a.title)
-                put("subjectCode", a.subjectCode)
-                put("subjectName", a.subjectName)
-                put("subject", a.subjectName)
-                put("vak", a.subjectName)
-                put("teacherName", a.teacherName)
-                put("teacherInitials", a.teacherInitials)
-                put("teacher", a.teacherName)
-                put("docent", a.teacherName)
-                put("classroom", a.classroom)
-                put("lokaal", a.classroom)
-                put("originalClassroom", a.originalClassroom ?: "")
-                put("periodIndex", a.periodIndex)
-                put("hour", a.periodIndex)
-                put("lesuur", a.periodIndex)
-                val startIso = if (a.dateIso.isNotBlank() && a.startTime.isNotBlank()) "${a.dateIso}T${a.startTime}:00" else a.startTime
-                val endIso = if (a.dateIso.isNotBlank() && a.endTime.isNotBlank()) "${a.dateIso}T${a.endTime}:00" else a.endTime
-                put("startTime", a.startTime)
-                put("endTime", a.endTime)
-                put("start", startIso)
-                put("end", endIso)
-                put("dayOfWeek", a.dayOfWeek)
-                put("isCanceled", a.isCanceled)
-                put("cancelled", a.isCanceled)
-                put("uitval", a.isCanceled)
-                put("isRelocated", a.isRelocated)
-                put("isSubstitution", a.isSubstitution)
-                put("homework", a.homework ?: "")
-                put("dateIso", a.dateIso)
-                put("isKwt", a.isKwt)
-                put("appointmentType", a.appointmentType)
-                put("infoType", a.infoType)
-                put("description", a.title)
-                put("omschrijving", a.title)
-            }
-            scheduleArr.put(apptObj)
-            lessonsArr.put(apptObj)
-            roosterArr.put(apptObj)
+        val now = System.currentTimeMillis()
+        val startCal = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, -14)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
         }
+        val endCal = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 28)
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }
+        val twoWeeksAgo = startCal.timeInMillis
+        val fourWeeksAhead = endCal.timeInMillis
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+
+        fun buildIsoTimestamp(dateIso: String, timeStr: String): String {
+            val t = timeStr.trim()
+            if (t.contains("T")) return t
+            val hhmm = if (t.length == 5 && t[2] == ':') "$t:00" else t
+            return if (dateIso.isNotBlank() && hhmm.isNotBlank()) "${dateIso}T${hhmm}" else hhmm
+        }
+
+        val lessonsArr = JSONArray()
+        appointments
+            .map { a ->
+                val resolvedDateIso = a.dateIso.trim().take(10).ifBlank {
+                    val dayCal = Calendar.getInstance().apply {
+                        firstDayOfWeek = Calendar.MONDAY
+                        set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                        add(Calendar.DAY_OF_YEAR, (a.dayOfWeek - 1).coerceIn(0, 6))
+                    }
+                    dateFormat.format(dayCal.time)
+                }
+                resolvedDateIso to a
+            }
+            .sortedWith(compareBy({ it.first }, { it.second.periodIndex }, { it.second.startTime }, { it.second.id }))
+            .forEach { (resolvedDateIso, a) ->
+                val apptTime = runCatching { dateFormat.parse(resolvedDateIso)?.time }.getOrNull() ?: now
+                if (apptTime !in twoWeeksAgo..fourWeeksAhead) return@forEach
+
+                val startIso = buildIsoTimestamp(resolvedDateIso, a.startTime)
+                val endIso = buildIsoTimestamp(resolvedDateIso, a.endTime)
+                val apptObj = JSONObject().apply {
+                    put("id", a.id)
+                    put("title", a.title)
+                    put("subjectCode", a.subjectCode)
+                    put("subjectName", a.subjectName)
+                    put("subject", a.subjectName)
+                    put("vak", a.subjectName)
+                    put("teacherName", a.teacherName)
+                    put("teacherInitials", a.teacherInitials)
+                    put("teacher", a.teacherName)
+                    put("docent", a.teacherName)
+                    put("classroom", a.classroom)
+                    put("lokaal", a.classroom)
+                    put("room", a.classroom)
+                    put("originalClassroom", a.originalClassroom ?: "")
+                    put("periodIndex", a.periodIndex)
+                    put("hour", a.periodIndex)
+                    put("lesuur", a.periodIndex)
+                    put("startTime", a.startTime)
+                    put("endTime", a.endTime)
+                    put("start", startIso)
+                    put("end", endIso)
+                    put("dayOfWeek", a.dayOfWeek)
+                    put("isCanceled", a.isCanceled)
+                    put("cancelled", a.isCanceled)
+                    put("uitval", a.isCanceled)
+                    put("isRelocated", a.isRelocated)
+                    put("isSubstitution", a.isSubstitution)
+                    put("homework", a.homework ?: "")
+                    put("dateIso", resolvedDateIso)
+                    put("date", resolvedDateIso)
+                    put("isKwt", a.isKwt)
+                    put("appointmentType", a.appointmentType)
+                    put("infoType", a.infoType)
+                    put("description", a.title)
+                    put("omschrijving", a.title)
+                }
+                lessonsArr.put(apptObj)
+            }
 
         val homeworkArr = JSONArray()
         tasks.forEach { t ->
@@ -476,80 +540,58 @@ object SyncManager {
         }
 
         val gradesArr = JSONArray()
-        val cijfersArr = JSONArray()
-        grades.forEach { s ->
-            val itemsArr = JSONArray()
+        grades.sortedBy { it.subjectName }.forEach { s ->
             s.grades.forEach { g ->
-                if (g.score <= 0.0) return@forEach
-                val gradeObj = JSONObject().apply {
+                if (g.score.isNaN() || g.score <= 0.0) return@forEach
+                val subjectName = g.subjectName.ifBlank { s.subjectName }.ifBlank { "Algemeen" }
+                val subjectCode = g.subjectCode.ifBlank { s.subjectCode }
+                val gradeDisplayStr = String.format(Locale.US, "%.1f", g.score).replace(".", ",")
+                val isUnboxed = g.id in unboxedGradeIds
+                gradesArr.put(JSONObject().apply {
                     put("id", g.id)
-                    put("subjectCode", g.subjectCode)
-                    put("subjectName", s.subjectName)
-                    put("subject", s.subjectName)
-                    put("vak", s.subjectName)
+                    put("subjectCode", subjectCode)
+                    put("subjectName", subjectName)
+                    put("subject", subjectName)
+                    put("vak", subjectName)
+                    put("title", g.description)
+                    put("description", g.description)
+                    put("omschrijving", g.description)
                     put("score", g.score)
                     put("grade", g.score)
                     put("value", g.score)
-                    val gradeDisplayStr = String.format(Locale.US, "%.1f", g.score).replace(".", ",")
                     put("gradeDisplay", gradeDisplayStr)
                     put("cijfer", gradeDisplayStr)
                     put("weight", g.weight)
                     put("weging", g.weight)
-                    put("description", g.description)
-                    put("title", g.description)
-                    put("omschrijving", g.description)
                     put("date", g.date)
                     put("datum", g.date)
                     put("period", g.period)
                     put("isPta", g.isPta)
-                    put("unboxed", true)
-                    put("isNew", false)
-                }
-                itemsArr.put(gradeObj)
-                cijfersArr.put(gradeObj)
+                    put("weightedAverage", s.weightedAverage)
+                    put("unboxed", isUnboxed)
+                    put("isNew", !isUnboxed)
+                })
             }
-            gradesArr.put(JSONObject().apply {
-                put("subjectCode", s.subjectCode)
-                put("subjectName", s.subjectName)
-                put("subject", s.subjectName)
-                put("vak", s.subjectName)
-                put("weightedAverage", s.weightedAverage)
-                put("grades", itemsArr)
-                put("cijfers", itemsArr)
-            })
-        }
-
-        val messagesArr = JSONArray()
-        messages.forEach { m ->
-            messagesArr.put(JSONObject().apply {
-                put("id", m.id)
-                put("subject", m.subject)
-                put("senderName", m.senderName)
-                put("senderEmail", m.senderEmail ?: "")
-                put("dateSent", m.dateSent)
-                put("body", m.body)
-                put("isRead", m.isRead)
-                put("hasAttachments", m.hasAttachments)
-                put("folder", m.folder.name)
-                put("folderId", m.folderId)
-                put("folderName", m.folderName)
-            })
         }
 
         val cachedDataObj = JSONObject().apply {
-            put("schedule", scheduleArr)
             put("lessons", lessonsArr)
-            put("rooster", roosterArr)
-            put("homework", homeworkArr)
             put("grades", gradesArr)
-            put("cijfers", cijfersArr)
-            put("messages", messagesArr)
+            put("homework", homeworkArr)
+        }
+
+        val schoolInfoObj = JSONObject().apply {
+            put("schoolAddress", schoolAddress)
+            put("busLine", busLine)
+            put("weatherCity", weatherCity)
         }
 
         return JSONObject().apply {
             put("schemaVersion", 1)
             put("source", "android")
             put("updatedAt", updatedAt)
+            put("theme", themeToWire(themeStyle))
+            put("schoolInfo", schoolInfoObj)
             put("settings", settingsObj)
             put("customScheduleItems", customArr)
             put("completedHomeworkIds", completedHomeworkArr)
@@ -578,9 +620,24 @@ object SyncManager {
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
+    private fun logOutgoingSyncPayload(payloadStr: String) {
+        val tag = "AgendaSync"
+        Log.d(tag, payloadStr)
+        if (payloadStr.length > 3800) {
+            val chunkSize = 3500
+            val totalParts = (payloadStr.length + chunkSize - 1) / chunkSize
+            for (i in 0 until totalParts) {
+                val start = i * chunkSize
+                val end = minOf(payloadStr.length, start + chunkSize)
+                Log.d(tag, "[part ${i + 1}/$totalParts] ${payloadStr.substring(start, end)}")
+            }
+        }
+    }
+
     suspend fun pushIfChanged(
         context: Context,
-        force: Boolean = false
+        force: Boolean = false,
+        sourceOverride: SyncSourceOverride? = null
     ): Result<Boolean> = withContext(Dispatchers.IO) {
         syncMutex.withLock {
             val appContext = context.applicationContext
@@ -592,7 +649,17 @@ object SyncManager {
             val localUpdatedAt = store.getLocalSyncUpdatedAt().let { ts ->
                 if (ts > 0L) ts else System.currentTimeMillis()
             }
-            val payloadJson = buildSyncPayloadJson(appContext, updatedAt = localUpdatedAt)
+            val payloadJson = buildSyncPayloadJson(
+                context = appContext,
+                updatedAt = localUpdatedAt,
+                sourceOverride = sourceOverride
+            )
+            val cachedObj = payloadJson.optJSONObject("cachedData")
+            lastExportCounts = SyncExportCounts(
+                lessons = cachedObj?.optJSONArray("lessons")?.length() ?: 0,
+                grades = cachedObj?.optJSONArray("grades")?.length() ?: 0,
+                homework = cachedObj?.optJSONArray("homework")?.length() ?: 0
+            )
             val contentHash = computeContentHash(payloadJson)
             val lastHash = prefs.getString(KEY_LAST_HASH, null)
 
@@ -604,7 +671,9 @@ object SyncManager {
 
             val lastVersion = prefs.getLong(KEY_LAST_VERSION, 0L)
             val version = maxOf(System.currentTimeMillis(), lastVersion + 1L)
-            val blob = encryptPayload(creds.aesKeyBytes, payloadJson.toString())
+            val payloadStr = payloadJson.toString()
+            logOutgoingSyncPayload(payloadStr)
+            val blob = encryptPayload(creds.aesKeyBytes, payloadStr)
 
             val postBodyJson = JSONObject().apply {
                 put("version", version)

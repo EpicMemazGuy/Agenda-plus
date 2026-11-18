@@ -17,6 +17,7 @@ import com.example.notifications.SmartBusPlanner
 import com.example.notifications.UitvalNotificationHelper
 import com.example.services.PullSyncOutcome
 import com.example.services.SyncManager
+import com.example.services.SyncSourceOverride
 import com.example.util.LauncherIconManager
 import com.example.util.NetworkStatusHelper
 import com.example.widget.WidgetUpdater
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
 import org.json.JSONObject
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
@@ -927,31 +929,88 @@ class AgendaRepository(private val context: Context? = null) {
         }
     }
 
+    private fun hasAppointmentsInCurrentWeek(appointments: List<Appointment>): Boolean {
+        if (appointments.isEmpty()) return false
+        if (appointments.none { it.dateIso.isNotBlank() }) return true
+        val isoFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val cal = Calendar.getInstance().apply {
+            firstDayOfWeek = Calendar.MONDAY
+            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+        }
+        val currentWeekIsos = buildSet {
+            repeat(7) {
+                add(isoFormat.format(cal.time))
+                cal.add(Calendar.DAY_OF_YEAR, 1)
+            }
+        }
+        return appointments.any { it.dateIso.take(10) in currentWeekIsos }
+    }
+
     suspend fun pushIfChangedWithSummary(ctx: Context, force: Boolean = false): Result<Boolean> {
-        if (_appointments.value.isEmpty() && _currentSession.value.isAuthenticated) {
-            val session = _currentSession.value
+        val hasCurrentWeek = hasAppointmentsInCurrentWeek(_appointments.value)
+        if ((!hasCurrentWeek || _gradeSummaries.value.isEmpty()) &&
+            _currentSession.value.isAuthenticated &&
+            !isEffectivelyOffline()
+        ) {
+            var session = _currentSession.value
             val tenant = session.school
-            val token = session.accessToken
+            var token = session.accessToken
             val personId = session.personId
             if (tenant != null && !token.isNullOrBlank() && personId > 0L) {
+                if (magisterClient.isAccessTokenExpired(token)) {
+                    val refreshTok = session.refreshToken
+                    if (!refreshTok.isNullOrBlank()) {
+                        val refreshed = magisterClient.refreshAccessToken(refreshTok)
+                        if (refreshed != null) {
+                            token = refreshed.first
+                            session = session.copy(
+                                accessToken = refreshed.first,
+                                refreshToken = refreshed.second ?: refreshTok
+                            )
+                            _currentSession.value = session
+                            prefs?.saveSession(session)
+                        }
+                    }
+                }
                 runCatching {
                     val bundle = magisterClient.fetchAllMagisterData(tenant, token, personId)
-                    _appointments.value = bundle.appointments
-                    _gradeSummaries.value = bundle.grades
-                    _tasks.value = bundle.tasks
-                    prefs?.saveAppointments(bundle.appointments)
-                    prefs?.saveGrades(bundle.grades)
-                    prefs?.saveTasks(bundle.tasks)
+                    val cleanedAppointments = bundle.appointments.map { appt ->
+                        appt.copy(
+                            title = appt.title.cleanSchoolText() ?: "Les",
+                            subjectName = appt.subjectName.cleanSchoolText() ?: "Les",
+                            teacherName = appt.teacherName.cleanSchoolText() ?: "",
+                            teacherInitials = appt.teacherInitials.cleanSchoolText() ?: "",
+                            classroom = appt.classroom.cleanSchoolText() ?: "",
+                            originalClassroom = appt.originalClassroom.cleanSchoolText(),
+                            homework = appt.homework.cleanSchoolText()
+                        )
+                    }
+                    if (cleanedAppointments.isNotEmpty() || _appointments.value.isEmpty()) {
+                        _appointments.value = cleanedAppointments
+                        prefs?.saveAppointments(cleanedAppointments)
+                    }
+                    if (bundle.grades.isNotEmpty() || _gradeSummaries.value.isEmpty()) {
+                        _gradeSummaries.value = bundle.grades
+                        prefs?.saveGrades(bundle.grades)
+                    }
+                    if (bundle.tasks.isNotEmpty() || _tasks.value.isEmpty()) {
+                        _tasks.value = bundle.tasks
+                        prefs?.saveTasks(bundle.tasks)
+                    }
                 }
             }
         }
-        val res = SyncManager.pushIfChanged(ctx, force)
+        val sourceOverride = SyncSourceOverride(
+            appointments = _appointments.value,
+            grades = _gradeSummaries.value,
+            tasks = _tasks.value,
+            unboxedGradeIds = _unboxedGradeIds.value
+        )
+        val res = SyncManager.pushIfChanged(ctx, force, sourceOverride)
         res.onSuccess { synced ->
             if (synced) {
-                val lCount = _appointments.value.size
-                val gCount = _gradeSummaries.value.sumOf { it.grades.size }
-                val tCount = _tasks.value.size
-                val msg = "Gekoppeld met Web • $lCount lessen, $gCount cijfers, $tCount huiswerk"
+                val counts = SyncManager.lastExportCounts
+                val msg = "Gekoppeld met Web • ${counts.lessons} lessen, ${counts.grades} cijfers, ${counts.homework} huiswerk"
                 com.example.util.RawConsoleLogger.info("WebSync", msg)
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                     android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()

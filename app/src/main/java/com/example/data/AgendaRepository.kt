@@ -20,6 +20,7 @@ import com.example.services.SyncManager
 import com.example.util.LauncherIconManager
 import com.example.util.NetworkStatusHelper
 import com.example.widget.WidgetUpdater
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -341,7 +342,7 @@ class AgendaRepository(private val context: Context? = null) {
             recalculateSmartBusAndBridges()
             prefs?.touchLocalSyncUpdatedAt()
             context?.let { ctx ->
-                SyncManager.pushIfChanged(ctx)
+                pushIfChangedWithSummary(ctx)
             }
         } catch (e: Exception) {
             com.example.util.RawConsoleLogger.warn("Sync", "Sync probleem: ${e.message}")
@@ -919,7 +920,45 @@ class AgendaRepository(private val context: Context? = null) {
 
     private fun notifyLocalDataChanged() {
         prefs?.touchLocalSyncUpdatedAt()
-        context?.let { SyncManager.pushIfChangedAsync(it) }
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()).launch {
+                runCatching { pushIfChangedWithSummary(ctx, force = false) }
+            }
+        }
+    }
+
+    suspend fun pushIfChangedWithSummary(ctx: Context, force: Boolean = false): Result<Boolean> {
+        if (_appointments.value.isEmpty() && _currentSession.value.isAuthenticated) {
+            val session = _currentSession.value
+            val tenant = session.school
+            val token = session.accessToken
+            val personId = session.personId
+            if (tenant != null && !token.isNullOrBlank() && personId > 0L) {
+                runCatching {
+                    val bundle = magisterClient.fetchAllMagisterData(tenant, token, personId)
+                    _appointments.value = bundle.appointments
+                    _gradeSummaries.value = bundle.grades
+                    _tasks.value = bundle.tasks
+                    prefs?.saveAppointments(bundle.appointments)
+                    prefs?.saveGrades(bundle.grades)
+                    prefs?.saveTasks(bundle.tasks)
+                }
+            }
+        }
+        val res = SyncManager.pushIfChanged(ctx, force)
+        res.onSuccess { synced ->
+            if (synced) {
+                val lCount = _appointments.value.size
+                val gCount = _gradeSummaries.value.sumOf { it.grades.size }
+                val tCount = _tasks.value.size
+                val msg = "Gekoppeld met Web • $lCount lessen, $gCount cijfers, $tCount huiswerk"
+                com.example.util.RawConsoleLogger.info("WebSync", msg)
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        return res
     }
 
     suspend fun pullAndMergeWebSync(): Result<PullSyncOutcome> {

@@ -415,21 +415,36 @@ object SyncManager {
         }
 
         val scheduleArr = JSONArray()
+        val lessonsArr = JSONArray()
+        val roosterArr = JSONArray()
         appointments.forEach { a ->
-            scheduleArr.put(JSONObject().apply {
+            val apptObj = JSONObject().apply {
                 put("id", a.id)
                 put("title", a.title)
                 put("subjectCode", a.subjectCode)
                 put("subjectName", a.subjectName)
+                put("subject", a.subjectName)
+                put("vak", a.subjectName)
                 put("teacherName", a.teacherName)
                 put("teacherInitials", a.teacherInitials)
+                put("teacher", a.teacherName)
+                put("docent", a.teacherName)
                 put("classroom", a.classroom)
+                put("lokaal", a.classroom)
                 put("originalClassroom", a.originalClassroom ?: "")
                 put("periodIndex", a.periodIndex)
+                put("hour", a.periodIndex)
+                put("lesuur", a.periodIndex)
+                val startIso = if (a.dateIso.isNotBlank() && a.startTime.isNotBlank()) "${a.dateIso}T${a.startTime}:00" else a.startTime
+                val endIso = if (a.dateIso.isNotBlank() && a.endTime.isNotBlank()) "${a.dateIso}T${a.endTime}:00" else a.endTime
                 put("startTime", a.startTime)
                 put("endTime", a.endTime)
+                put("start", startIso)
+                put("end", endIso)
                 put("dayOfWeek", a.dayOfWeek)
                 put("isCanceled", a.isCanceled)
+                put("cancelled", a.isCanceled)
+                put("uitval", a.isCanceled)
                 put("isRelocated", a.isRelocated)
                 put("isSubstitution", a.isSubstitution)
                 put("homework", a.homework ?: "")
@@ -437,7 +452,12 @@ object SyncManager {
                 put("isKwt", a.isKwt)
                 put("appointmentType", a.appointmentType)
                 put("infoType", a.infoType)
-            })
+                put("description", a.title)
+                put("omschrijving", a.title)
+            }
+            scheduleArr.put(apptObj)
+            lessonsArr.put(apptObj)
+            roosterArr.put(apptObj)
         }
 
         val homeworkArr = JSONArray()
@@ -456,26 +476,46 @@ object SyncManager {
         }
 
         val gradesArr = JSONArray()
+        val cijfersArr = JSONArray()
         grades.forEach { s ->
             val itemsArr = JSONArray()
             s.grades.forEach { g ->
-                itemsArr.put(JSONObject().apply {
+                if (g.score <= 0.0) return@forEach
+                val gradeObj = JSONObject().apply {
                     put("id", g.id)
                     put("subjectCode", g.subjectCode)
-                    put("subjectName", g.subjectName)
+                    put("subjectName", s.subjectName)
+                    put("subject", s.subjectName)
+                    put("vak", s.subjectName)
                     put("score", g.score)
+                    put("grade", g.score)
+                    put("value", g.score)
+                    val gradeDisplayStr = String.format(Locale.US, "%.1f", g.score).replace(".", ",")
+                    put("gradeDisplay", gradeDisplayStr)
+                    put("cijfer", gradeDisplayStr)
                     put("weight", g.weight)
+                    put("weging", g.weight)
                     put("description", g.description)
+                    put("title", g.description)
+                    put("omschrijving", g.description)
                     put("date", g.date)
+                    put("datum", g.date)
                     put("period", g.period)
                     put("isPta", g.isPta)
-                })
+                    put("unboxed", true)
+                    put("isNew", false)
+                }
+                itemsArr.put(gradeObj)
+                cijfersArr.put(gradeObj)
             }
             gradesArr.put(JSONObject().apply {
                 put("subjectCode", s.subjectCode)
                 put("subjectName", s.subjectName)
+                put("subject", s.subjectName)
+                put("vak", s.subjectName)
                 put("weightedAverage", s.weightedAverage)
                 put("grades", itemsArr)
+                put("cijfers", itemsArr)
             })
         }
 
@@ -498,8 +538,11 @@ object SyncManager {
 
         val cachedDataObj = JSONObject().apply {
             put("schedule", scheduleArr)
+            put("lessons", lessonsArr)
+            put("rooster", roosterArr)
             put("homework", homeworkArr)
             put("grades", gradesArr)
+            put("cijfers", cijfersArr)
             put("messages", messagesArr)
         }
 

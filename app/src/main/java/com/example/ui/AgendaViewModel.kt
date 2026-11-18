@@ -738,7 +738,7 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
             viewModelScope.launch {
                 val pullOutcome = repository.pullAndMergeWebSync().getOrNull()
                 if (pullOutcome !is PullSyncOutcome.PulledPayload) {
-                    SyncManager.pushIfChanged(ctx, force = true)
+                    repository.pushIfChangedWithSummary(ctx, force = true)
                 }
             }
         }
@@ -749,7 +749,7 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
         if (webSyncState.value.isBusy) return
         viewModelScope.launch {
             repository.pullAndMergeWebSync()
-            SyncManager.pushIfChanged(ctx, force = true)
+            repository.pushIfChangedWithSummary(ctx, force = true)
         }
     }
 

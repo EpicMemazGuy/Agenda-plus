@@ -25,6 +25,9 @@ import com.example.model.TaskCategory
 import com.example.model.TaskPriority
 import com.example.model.TestPrepChecklist
 import com.example.model.isTestKeywordMatch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
@@ -56,10 +59,22 @@ fun HuiswerkScreen(
         onHeaderCollapsedChange(oneUiMode && isScrolled)
     }
 
-    val filteredTasks = if (selectedCategory == null) {
-        tasks
-    } else {
-        tasks.filter { it.category == selectedCategory }
+    val todayIso = remember {
+        SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+    }
+
+    val filteredTasks = remember(tasks, selectedCategory, todayIso) {
+        tasks.filter { task ->
+            if (selectedCategory != null && task.category != selectedCategory) {
+                return@filter false
+            }
+            val isPast = task.dueDay.length == 10 && task.dueDay < todayIso
+            !isPast
+        }.sortedWith(
+            compareBy<HomeworkTask> { it.isCompleted }
+                .thenBy { if (it.dueDay.length == 10) it.dueDay else "9999-99-99" }
+                .thenBy { it.dueDate }
+        )
     }
 
     val completedCount = tasks.count { it.isCompleted }

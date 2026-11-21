@@ -31,6 +31,7 @@ enum class MeerSection(val titleDutch: String) {
     AFWEZIGHEID("Afwezigheid"),
     STUDIEWIJZERS("Studiewijzers & Bronnen"),
     KWT("Keuzelessen (KWT)"),
+    VAKKEN("Vakken Aanpassen"),
     INSTELLINGEN("Instellingen")
 }
 
@@ -91,6 +92,10 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
     val uiScale: StateFlow<Float> = repository.uiScale
     val appThemeStyle: StateFlow<AppThemeStyle> = repository.appThemeStyle
     val darkModePreference: StateFlow<DarkModePreference> = repository.darkModePreference
+    val metroAccent: StateFlow<MetroAccent> = repository.metroAccent
+    val subjectCustomizations: StateFlow<Map<String, SubjectCustomization>> = repository.subjectCustomizations
+    val smartDefaultNamesEnabled: StateFlow<Boolean> = repository.smartDefaultNamesEnabled
+    val useSubjectColorsForMetroTiles: StateFlow<Boolean> = repository.useSubjectColorsForMetroTiles
     val eloUrl: StateFlow<String> = repository.eloUrl
     val studySites: StateFlow<List<StudySite>> = repository.studySites
     val weatherInfo: StateFlow<WeatherInfo?> = repository.weatherInfo
@@ -612,6 +617,30 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setDarkModePreference(pref: DarkModePreference) {
         repository.setDarkModePreference(pref)
+    }
+
+    fun setMetroAccent(accent: MetroAccent) {
+        repository.setMetroAccent(accent)
+    }
+
+    fun setSmartDefaultNamesEnabled(enabled: Boolean) {
+        repository.setSmartDefaultNamesEnabled(enabled)
+    }
+
+    fun setUseSubjectColorsForMetroTiles(enabled: Boolean) {
+        repository.setUseSubjectColorsForMetroTiles(enabled)
+    }
+
+    fun saveSubjectCustomization(customization: SubjectCustomization) {
+        repository.saveSubjectCustomization(customization)
+    }
+
+    fun resetSubjectCustomization(subjectCode: String) {
+        repository.resetSubjectCustomization(subjectCode)
+    }
+
+    fun resetAllSubjectCustomizations() {
+        repository.resetAllSubjectCustomizations()
     }
 
     fun openInAppBrowser(title: String, url: String) {

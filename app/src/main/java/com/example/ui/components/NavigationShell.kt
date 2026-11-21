@@ -44,6 +44,10 @@ import com.example.ui.theme.NothingBlack
 import com.example.ui.theme.NothingMatteElevated
 import com.example.ui.theme.NothingWhite
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.RectangleShape
+
 data class NavItem(
     val tab: AppTab,
     val selectedIcon: ImageVector,
@@ -61,6 +65,8 @@ fun AppBottomNavigationBar(
 ) {
     val nothingMode = isNothingOs
     val oneUiMode = isOneUi85
+    val windowsPhoneMode = isWindowsPhone
+    val iosMode = isIosLiquidGlass
     val isDark = LocalDarkThemeActive.current
 
     val navItems = remember {
@@ -108,21 +114,29 @@ fun AppBottomNavigationBar(
         )
     }
 
-    if (oneUiMode) {
+    if (oneUiMode || iosMode) {
         Box(
             modifier = modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 10.dp),
+                .padding(horizontal = if (iosMode) 18.dp else 24.dp, vertical = 10.dp),
             contentAlignment = Alignment.Center
         ) {
-            val dockShape = SquircleShape(26.dp)
+            val dockShape = if (iosMode) CircleShape else SquircleShape(26.dp)
+            val specularBorder = if (iosMode) {
+                BorderStroke(
+                    width = 1.dp,
+                    color = if (isDark) Color.White.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.70f)
+                )
+            } else {
+                oneUiInnerHighlightBorder()
+            }
             OneUiFrostedSurface(
                 shape = dockShape,
                 containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
-                    alpha = if (isDark) 0.78f else 0.80f
+                    alpha = if (isDark) 0.78f else 0.82f
                 ),
-                border = oneUiInnerHighlightBorder(),
+                border = specularBorder,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("main_navigation_bar")
@@ -143,7 +157,7 @@ fun AppBottomNavigationBar(
                                 Color.Transparent
                             },
                             animationSpec = oneUiSpring(),
-                            label = "oneui_nav_pill_${item.tab.name}"
+                            label = "floating_nav_pill_${item.tab.name}"
                         )
                         val tintColor by animateColorAsState(
                             targetValue = if (isSelected) {
@@ -152,12 +166,12 @@ fun AppBottomNavigationBar(
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             },
                             animationSpec = oneUiTween(240),
-                            label = "oneui_nav_tint_${item.tab.name}"
+                            label = "floating_nav_tint_${item.tab.name}"
                         )
                         val iconScale by animateFloatAsState(
                             targetValue = if (isSelected) 1.08f else 1.0f,
                             animationSpec = oneUiSpring(),
-                            label = "oneui_nav_scale_${item.tab.name}"
+                            label = "floating_nav_scale_${item.tab.name}"
                         )
 
                         Column(
@@ -165,7 +179,7 @@ fun AppBottomNavigationBar(
                             verticalArrangement = Arrangement.Center,
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(SquircleShape(20.dp))
+                                .clip(if (iosMode) CircleShape else SquircleShape(20.dp))
                                 .background(pillColor)
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
@@ -177,7 +191,7 @@ fun AppBottomNavigationBar(
                             Crossfade(
                                 targetState = isSelected,
                                 animationSpec = oneUiTween(220),
-                                label = "oneui_nav_icon_${item.tab.name}"
+                                label = "floating_nav_icon_${item.tab.name}"
                             ) { selected ->
                                 Icon(
                                     imageVector = if (selected) item.oneUiSelectedIcon else item.oneUiUnselectedIcon,
@@ -195,12 +209,77 @@ fun AppBottomNavigationBar(
                             Text(
                                 text = item.tab.title,
                                 fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                 color = tintColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+                    }
+                }
+            }
+        }
+    } else if (windowsPhoneMode) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = RectangleShape,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+            modifier = modifier
+                .fillMaxWidth()
+                .testTag("main_navigation_bar")
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .height(60.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                navItems.forEach { item ->
+                    val isSelected = currentTab == item.tab
+                    val fgColor = if (isSelected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Top,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(60.dp)
+                            .clickable { onTabSelected(item.tab) }
+                            .testTag(item.testTag)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                    else Color.Transparent
+                                )
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        Icon(
+                            imageVector = if (isSelected) item.selectedIcon else item.unselectedIcon,
+                            contentDescription = item.tab.title,
+                            tint = fgColor,
+                            modifier = Modifier.size(21.dp)
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = item.tab.title.uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = fgColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
                     }
                 }
             }

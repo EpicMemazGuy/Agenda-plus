@@ -42,16 +42,17 @@ fun CustomScheduleItemCard(
 ) {
     val accent = customAccentColor(item.colorKey)
     val shape = appCardShape(standard = 18.dp, nothing = 24.dp)
+    val baseColor = if (item.isCompleted) {
+        MaterialTheme.colorScheme.surfaceContainerLowest
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
 
     Card(
         shape = shape,
         border = nothingCardBorder(),
         colors = CardDefaults.cardColors(
-            containerColor = if (item.isCompleted) {
-                MaterialTheme.colorScheme.surfaceContainerLowest
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerLow
-            }
+            containerColor = appLiquidGlassContainerColor(defaultColor = baseColor)
         ),
         modifier = modifier
             .fillMaxWidth()
@@ -83,15 +84,15 @@ fun CustomScheduleItemCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    if (isOneUi85) {
+                    if (isOneUi85 || isIosLiquidGlass) {
                         OneUiPillBadge(
-                            text = "Eigen blok",
+                            text = if (item.isRecurring) "Herhalend" else "Eigen blok",
                             containerColor = accent.copy(alpha = 0.16f),
                             contentColor = accent
                         )
                     } else {
                         Surface(
-                            shape = RoundedCornerShape(percent = 50),
+                            shape = if (isWindowsPhone) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape(percent = 50),
                             color = accent.copy(alpha = 0.16f)
                         ) {
                             Row(

@@ -50,11 +50,28 @@ import com.example.ui.theme.OneUiDividerDark
 import com.example.ui.theme.OneUiDividerLight
 import kotlin.math.abs
 
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.unit.sp
+import com.example.ui.theme.IosDarkDivider
+import com.example.ui.theme.IosLightDivider
+import com.example.ui.theme.IosRed
+import java.util.Locale
+
 val isNothingOs: Boolean
     @Composable get() = LocalAppThemeStyle.current == AppThemeStyle.NOTHING_OS
 
 val isOneUi85: Boolean
     @Composable get() = LocalAppThemeStyle.current == AppThemeStyle.ONE_UI
+
+val isWindowsPhone: Boolean
+    @Composable get() = LocalAppThemeStyle.current == AppThemeStyle.WINDOWS_PHONE
+
+val isIosLiquidGlass: Boolean
+    @Composable get() = LocalAppThemeStyle.current == AppThemeStyle.IOS_LIQUID_GLASS
+
+val isFloatingOverlayTheme: Boolean
+    @Composable get() = LocalAppThemeStyle.current == AppThemeStyle.ONE_UI ||
+        LocalAppThemeStyle.current == AppThemeStyle.IOS_LIQUID_GLASS
 
 @Composable
 fun appCardCornerRadius(
@@ -63,6 +80,8 @@ fun appCardCornerRadius(
 ): Dp {
     return when (LocalAppThemeStyle.current) {
         AppThemeStyle.ONE_UI -> 26.dp
+        AppThemeStyle.IOS_LIQUID_GLASS -> 22.dp
+        AppThemeStyle.WINDOWS_PHONE -> 0.dp
         AppThemeStyle.NOTHING_OS -> nothing
         AppThemeStyle.STANDARD -> standard
     }
@@ -75,8 +94,38 @@ fun appCardShape(
 ): Shape {
     return when (LocalAppThemeStyle.current) {
         AppThemeStyle.ONE_UI -> SquircleShape(26.dp)
+        AppThemeStyle.IOS_LIQUID_GLASS -> SquircleShape(22.dp)
+        AppThemeStyle.WINDOWS_PHONE -> RectangleShape
         AppThemeStyle.NOTHING_OS -> RoundedCornerShape(nothing)
         AppThemeStyle.STANDARD -> RoundedCornerShape(standard)
+    }
+}
+
+@Composable
+fun appButtonShape(standard: Dp = 14.dp): Shape {
+    return when (LocalAppThemeStyle.current) {
+        AppThemeStyle.WINDOWS_PHONE -> RectangleShape
+        AppThemeStyle.IOS_LIQUID_GLASS, AppThemeStyle.ONE_UI -> CircleShape
+        AppThemeStyle.NOTHING_OS -> RoundedCornerShape(standard)
+        AppThemeStyle.STANDARD -> RoundedCornerShape(standard)
+    }
+}
+
+@Composable
+fun appLiquidGlassContainerColor(
+    defaultColor: Color = MaterialTheme.colorScheme.surfaceContainer,
+    isUrgent: Boolean = false
+): Color {
+    val isDark = LocalDarkThemeActive.current
+    return when (LocalAppThemeStyle.current) {
+        AppThemeStyle.IOS_LIQUID_GLASS -> {
+            if (isUrgent) {
+                if (isDark) Color(0xFF2C1414).copy(alpha = 0.84f) else Color(0xFFFFF2F1).copy(alpha = 0.88f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = if (isDark) 0.78f else 0.82f)
+            }
+        }
+        else -> defaultColor
     }
 }
 
@@ -84,12 +133,21 @@ fun appCardShape(
 fun nothingCardBorder(
     isAlert: Boolean = false
 ): BorderStroke? {
+    val isDark = LocalDarkThemeActive.current
     return when (LocalAppThemeStyle.current) {
         AppThemeStyle.NOTHING_OS -> BorderStroke(
             width = 1.dp,
             color = if (isAlert) NothingRed else NothingOutline
         )
-        // One UI relies strictly on surface separation and whitespace rather than boxy borders.
+        AppThemeStyle.IOS_LIQUID_GLASS -> BorderStroke(
+            width = 1.dp,
+            color = when {
+                isAlert -> IosRed.copy(alpha = 0.55f)
+                isDark -> Color.White.copy(alpha = 0.16f)
+                else -> Color.White.copy(alpha = 0.70f)
+            }
+        )
+        AppThemeStyle.WINDOWS_PHONE -> null
         AppThemeStyle.ONE_UI -> if (isAlert) {
             BorderStroke(
                 width = onePixelDp(),
@@ -202,6 +260,114 @@ fun OneUiExpandingHeader(
     }
 }
 
+/**
+ * Windows Phone 8 / 8.1 lowercase Panorama section header (32sp light weight).
+ */
+@Composable
+fun MetroPanoramaHeader(
+    title: String,
+    subtitle: String? = null,
+    modifier: Modifier = Modifier,
+    trailingContent: (@Composable () -> Unit)? = null
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp, bottom = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title.lowercase(Locale("nl", "NL")),
+                    style = MaterialTheme.typography.displayLarge.copy(
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.Light
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (!subtitle.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle.uppercase(Locale("nl", "NL")),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            if (trailingContent != null) {
+                trailingContent()
+            }
+        }
+    }
+}
+
+/**
+ * iOS (Liquid Glass) 28sp Apple Large Title header with smooth collapse on scroll.
+ */
+@Composable
+fun IosLargeTitleHeader(
+    title: String,
+    subtitle: String? = null,
+    isScrolled: Boolean = false,
+    modifier: Modifier = Modifier,
+    trailingContent: (@Composable () -> Unit)? = null
+) {
+    val collapseFraction by animateFloatAsState(
+        targetValue = if (isScrolled) 1f else 0f,
+        animationSpec = oneUiSpring(),
+        label = "ios_header_collapse"
+    )
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 14.dp, bottom = 10.dp)
+            .graphicsLayer {
+                alpha = (1f - (collapseFraction * 0.92f)).coerceIn(0f, 1f)
+                translationY = -collapseFraction * 18f
+            }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.displayLarge.copy(
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (!subtitle.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            if (trailingContent != null) {
+                trailingContent()
+            }
+        }
+    }
+}
+
 @Composable
 fun NothingAwareDivider(
     modifier: Modifier = Modifier,
@@ -216,6 +382,21 @@ fun NothingAwareDivider(
                 modifier = modifier.padding(start = insetStart),
                 thickness = onePixelDp(),
                 color = hairlineColor
+            )
+        }
+        AppThemeStyle.IOS_LIQUID_GLASS -> {
+            val dividerColor = if (LocalDarkThemeActive.current) IosDarkDivider else IosLightDivider
+            HorizontalDivider(
+                modifier = modifier.padding(start = insetStart),
+                thickness = 0.5.dp,
+                color = dividerColor
+            )
+        }
+        AppThemeStyle.WINDOWS_PHONE -> {
+            HorizontalDivider(
+                modifier = modifier,
+                thickness = 1.dp,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.16f)
             )
         }
         AppThemeStyle.STANDARD -> HorizontalDivider(modifier = modifier, color = color)

@@ -19,7 +19,10 @@ import com.example.model.DarkModePreference
 import com.example.model.GradeUnboxingMode
 import com.example.model.HomeworkTask
 import com.example.model.MagisterMessage
+import com.example.model.MetroAccent
 import com.example.model.StudySite
+import com.example.model.SubjectCustomization
+import com.example.model.SubjectCustomizationCatalog
 import com.example.model.SubjectGradeSummary
 import com.example.model.TestPrepChecklist
 import com.example.model.cleanSchoolText
@@ -359,7 +362,11 @@ object SyncManager {
             grades = grades,
             messages = messages,
             unboxedGradeIds = unboxedGradeIds,
-            absences = absences
+            absences = absences,
+            metroAccent = store.getMetroAccent(),
+            smartSubjectNames = store.isSmartSubjectNamesEnabled(),
+            useSubjectColorsForMetroTiles = store.isUseSubjectColorsForMetroTiles(),
+            subjectCustomizations = store.loadSubjectCustomizations()
         )
     }
 
@@ -381,11 +388,18 @@ object SyncManager {
         grades: List<SubjectGradeSummary>,
         messages: List<MagisterMessage>,
         unboxedGradeIds: Set<String> = emptySet(),
-        absences: List<AbsenceRecord> = emptyList()
+        absences: List<AbsenceRecord> = emptyList(),
+        metroAccent: MetroAccent = MetroAccent.COBALT,
+        smartSubjectNames: Boolean = true,
+        useSubjectColorsForMetroTiles: Boolean = false,
+        subjectCustomizations: Map<String, SubjectCustomization> = emptyMap()
     ): JSONObject {
         val settingsObj = JSONObject().apply {
             put("theme", themeToWire(themeStyle))
             put("darkMode", darkModeToWire(darkMode))
+            put("metroAccent", metroAccentToWire(metroAccent))
+            put("smartSubjectNames", smartSubjectNames)
+            put("useSubjectColorsForMetroTiles", useSubjectColorsForMetroTiles)
             put("agendaDensity", agendaStyleToWire(agendaStyle))
             put("uiScale", kotlin.math.round(uiScale.coerceIn(0.85f, 1.20f) * 100f).toInt())
             put("unboxingMode", unboxingToWire(unboxingMode))
@@ -653,6 +667,7 @@ object SyncManager {
             put("messages", messagesArr)
             put("absences", absencesArr)
             put("verzuim", absencesArr)
+            put("subjectCustomizations", SubjectCustomizationCatalog.toJsonObject(subjectCustomizations))
         }
 
         val schoolInfoObj = JSONObject().apply {
@@ -916,12 +931,31 @@ object SyncManager {
         AppThemeStyle.STANDARD -> "material_you"
         AppThemeStyle.NOTHING_OS -> "nothing_os"
         AppThemeStyle.ONE_UI -> "one_ui"
+        AppThemeStyle.WINDOWS_PHONE -> "windows_phone"
+        AppThemeStyle.IOS_LIQUID_GLASS -> "ios_liquid_glass"
     }
 
     fun themeFromWire(raw: String?): AppThemeStyle? = when (raw?.trim()?.lowercase(Locale.US)) {
         "material_you", "standard" -> AppThemeStyle.STANDARD
         "nothing_os", "nothing" -> AppThemeStyle.NOTHING_OS
         "one_ui", "oneui", "one_ui_8_5" -> AppThemeStyle.ONE_UI
+        "windows_phone", "windowsphone", "metro", "metro_ui" -> AppThemeStyle.WINDOWS_PHONE
+        "ios_liquid_glass", "ios", "liquid_glass" -> AppThemeStyle.IOS_LIQUID_GLASS
+        else -> null
+    }
+
+    fun metroAccentToWire(accent: MetroAccent): String = when (accent) {
+        MetroAccent.COBALT -> "cobalt"
+        MetroAccent.EMERALD -> "emerald"
+        MetroAccent.CRIMSON -> "crimson"
+        MetroAccent.AMBER -> "amber"
+    }
+
+    fun metroAccentFromWire(raw: String?): MetroAccent? = when (raw?.trim()?.lowercase(Locale.US)) {
+        "cobalt" -> MetroAccent.COBALT
+        "emerald" -> MetroAccent.EMERALD
+        "crimson" -> MetroAccent.CRIMSON
+        "amber" -> MetroAccent.AMBER
         else -> null
     }
 

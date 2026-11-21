@@ -30,13 +30,25 @@ fun AgendaPlusLogo(
 ) {
     val nothingMode = isNothingOs
     val oneUiMode = isOneUi85
+    val windowsPhoneMode = isWindowsPhone
+    val iosMode = isIosLiquidGlass
 
-    if (oneUiMode) {
+    if (oneUiMode || windowsPhoneMode || iosMode) {
+        val markShape = when {
+            windowsPhoneMode -> androidx.compose.ui.graphics.RectangleShape
+            iosMode -> SquircleShape(size * 0.28f)
+            else -> SquircleShape(size * 0.28f)
+        }
         Box(
             modifier = modifier
                 .size(size)
-                .clip(SquircleShape(size * 0.28f))
-                .background(MaterialTheme.colorScheme.primary),
+                .clip(markShape)
+                .background(MaterialTheme.colorScheme.primary)
+                .then(
+                    if (iosMode) {
+                        Modifier.border(1.dp, Color.White.copy(alpha = 0.30f), markShape)
+                    } else Modifier
+                ),
             contentAlignment = Alignment.Center
         ) {
             Icon(

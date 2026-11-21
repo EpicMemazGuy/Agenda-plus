@@ -21,9 +21,11 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import com.example.model.AppThemeStyle
 import com.example.model.DarkModePreference
+import com.example.model.MetroAccent
 
 val LocalAppThemeStyle = staticCompositionLocalOf { AppThemeStyle.STANDARD }
 val LocalDarkThemeActive = staticCompositionLocalOf { false }
+val LocalMetroAccent = staticCompositionLocalOf { MetroAccent.COBALT }
 
 private val DarkColorScheme = darkColorScheme(
     primary = NavyPrimaryDark,
@@ -108,6 +110,146 @@ private val NothingOsColorScheme = darkColorScheme(
     errorContainer = NothingRedContainer,
     onErrorContainer = NothingOnRedContainer
 )
+
+private fun metroColorScheme(
+    accent: MetroAccent,
+    isDark: Boolean
+): ColorScheme {
+    val primaryAccent = Color(accent.colorHex)
+    return if (isDark) {
+        darkColorScheme(
+            primary = primaryAccent,
+            onPrimary = Color.White,
+            primaryContainer = primaryAccent,
+            onPrimaryContainer = Color.White,
+            secondary = primaryAccent,
+            onSecondary = Color.White,
+            secondaryContainer = MetroTileElevatedDark,
+            onSecondaryContainer = Color.White,
+            tertiary = MetroEmerald,
+            onTertiary = Color.White,
+            tertiaryContainer = MetroTileElevatedDark,
+            onTertiaryContainer = Color.White,
+            background = MetroBlack,
+            onBackground = Color.White,
+            surface = MetroBlack,
+            onSurface = Color.White,
+            surfaceVariant = MetroTileElevatedDark,
+            onSurfaceVariant = Color(0xFFB3B3B3),
+            outline = Color(0xFF333333),
+            outlineVariant = Color(0xFF262626),
+            surfaceContainerLowest = MetroBlack,
+            surfaceContainerLow = MetroTileDark,
+            surfaceContainer = MetroTileDark,
+            surfaceContainerHigh = MetroTileElevatedDark,
+            surfaceContainerHighest = Color(0xFF333333),
+            error = MetroCrimson,
+            onError = Color.White,
+            errorContainer = MetroCrimson,
+            onErrorContainer = Color.White
+        )
+    } else {
+        lightColorScheme(
+            primary = primaryAccent,
+            onPrimary = Color.White,
+            primaryContainer = primaryAccent,
+            onPrimaryContainer = Color.White,
+            secondary = primaryAccent,
+            onSecondary = Color.White,
+            secondaryContainer = MetroTileElevatedLight,
+            onSecondaryContainer = Color(0xFF111111),
+            tertiary = MetroEmerald,
+            onTertiary = Color.White,
+            tertiaryContainer = MetroTileElevatedLight,
+            onTertiaryContainer = Color(0xFF111111),
+            background = MetroWhite,
+            onBackground = Color(0xFF111111),
+            surface = MetroWhite,
+            onSurface = Color(0xFF111111),
+            surfaceVariant = MetroTileElevatedLight,
+            onSurfaceVariant = Color(0xFF555555),
+            outline = Color(0xFFCCCCCC),
+            outlineVariant = Color(0xFFDADADA),
+            surfaceContainerLowest = MetroWhite,
+            surfaceContainerLow = MetroTileLight,
+            surfaceContainer = MetroTileLight,
+            surfaceContainerHigh = MetroTileElevatedLight,
+            surfaceContainerHighest = Color(0xFFD6D6D6),
+            error = MetroCrimson,
+            onError = Color.White,
+            errorContainer = MetroCrimson,
+            onErrorContainer = Color.White
+        )
+    }
+}
+
+private fun iosLiquidGlassColorScheme(isDark: Boolean): ColorScheme {
+    return if (isDark) {
+        darkColorScheme(
+            primary = IosBlue,
+            onPrimary = Color.White,
+            primaryContainer = IosBlue.copy(alpha = 0.22f),
+            onPrimaryContainer = Color(0xFFD8ECFF),
+            secondary = IosOrange,
+            onSecondary = Color.Black,
+            secondaryContainer = IosOrange.copy(alpha = 0.20f),
+            onSecondaryContainer = Color(0xFFFFE5BA),
+            tertiary = IosGreen,
+            onTertiary = Color.Black,
+            tertiaryContainer = IosGreen.copy(alpha = 0.20f),
+            onTertiaryContainer = Color(0xFFD2F8DC),
+            background = IosDarkCanvas,
+            onBackground = Color.White,
+            surface = IosDarkCanvas,
+            onSurface = Color.White,
+            surfaceVariant = IosDarkElevated,
+            onSurfaceVariant = Color(0xFFAEAEB2),
+            outline = IosDarkDivider,
+            outlineVariant = IosDarkDivider,
+            surfaceContainerLowest = IosDarkCanvas,
+            surfaceContainerLow = IosDarkCard,
+            surfaceContainer = IosDarkCard,
+            surfaceContainerHigh = IosDarkElevated,
+            surfaceContainerHighest = IosDarkHighest,
+            error = IosRed,
+            onError = Color.White,
+            errorContainer = IosRed.copy(alpha = 0.22f),
+            onErrorContainer = Color(0xFFFFD8D4)
+        )
+    } else {
+        lightColorScheme(
+            primary = IosBlueLight,
+            onPrimary = Color.White,
+            primaryContainer = IosBlueLight.copy(alpha = 0.13f),
+            onPrimaryContainer = Color(0xFF003B7A),
+            secondary = IosOrangeLight,
+            onSecondary = Color.White,
+            secondaryContainer = IosOrange.copy(alpha = 0.16f),
+            onSecondaryContainer = Color(0xFF5C3400),
+            tertiary = IosGreenLight,
+            onTertiary = Color.White,
+            tertiaryContainer = IosGreen.copy(alpha = 0.16f),
+            onTertiaryContainer = Color(0xFF0A471A),
+            background = IosLightCanvas,
+            onBackground = Color(0xFF000000),
+            surface = IosLightCanvas,
+            onSurface = Color(0xFF000000),
+            surfaceVariant = IosLightElevated,
+            onSurfaceVariant = Color(0xFF636366),
+            outline = IosLightDivider,
+            outlineVariant = IosLightDivider,
+            surfaceContainerLowest = IosLightCard,
+            surfaceContainerLow = IosLightCard,
+            surfaceContainer = IosLightCard,
+            surfaceContainerHigh = IosLightElevated,
+            surfaceContainerHighest = IosLightHighest,
+            error = IosRedLight,
+            onError = Color.White,
+            errorContainer = IosRed.copy(alpha = 0.14f),
+            onErrorContainer = Color(0xFF6E000A)
+        )
+    }
+}
 
 private fun oneUiColorScheme(
     context: Context,
@@ -206,6 +348,7 @@ private fun oneUiColorScheme(
 fun AgendaPlusTheme(
     appThemeStyle: AppThemeStyle = AppThemeStyle.STANDARD,
     darkModePreference: DarkModePreference = DarkModePreference.SYSTEM,
+    metroAccent: MetroAccent = MetroAccent.COBALT,
     systemDarkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
@@ -213,6 +356,8 @@ fun AgendaPlusTheme(
     val context = LocalContext.current
     val isNothing = appThemeStyle == AppThemeStyle.NOTHING_OS
     val isOneUi = appThemeStyle == AppThemeStyle.ONE_UI
+    val isMetro = appThemeStyle == AppThemeStyle.WINDOWS_PHONE
+    val isIos = appThemeStyle == AppThemeStyle.IOS_LIQUID_GLASS
 
     val effectiveDark = when {
         isNothing -> true
@@ -224,6 +369,8 @@ fun AgendaPlusTheme(
     val colorScheme = when {
         isNothing -> NothingOsColorScheme
         isOneUi -> oneUiColorScheme(context = context, isDark = effectiveDark)
+        isMetro -> metroColorScheme(accent = metroAccent, isDark = effectiveDark)
+        isIos -> iosLiquidGlassColorScheme(isDark = effectiveDark)
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (effectiveDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
@@ -234,6 +381,8 @@ fun AgendaPlusTheme(
     val typography = when {
         isNothing -> NothingOsTypography
         isOneUi -> OneUiTypography
+        isMetro -> MetroTypography
+        isIos -> IosLiquidGlassTypography
         else -> Typography
     }
 
@@ -252,7 +401,8 @@ fun AgendaPlusTheme(
 
     CompositionLocalProvider(
         LocalAppThemeStyle provides appThemeStyle,
-        LocalDarkThemeActive provides effectiveDark
+        LocalDarkThemeActive provides effectiveDark,
+        LocalMetroAccent provides metroAccent
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

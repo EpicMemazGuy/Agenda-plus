@@ -52,7 +52,20 @@ enum class UiScalePreset(val labelDutch: String, val scaleFactor: Float) {
 enum class AppThemeStyle(val labelDutch: String, val subtitleDutch: String) {
     STANDARD("Material You", "Huidige Material You stijl (standaard)"),
     NOTHING_OS("Nothing OS", "OLED zwart, Ndot matrix & Nothing Red"),
-    ONE_UI("One UI 8.5", "Samsung 26dp squircles, wallpaper-kleuren & AMOLED")
+    ONE_UI("One UI 8.5", "Samsung 26dp squircles, wallpaper-kleuren & AMOLED"),
+    WINDOWS_PHONE("Windows Phone", "0dp Metro Live Tiles & lowercase Panorama titels"),
+    IOS_LIQUID_GLASS("iOS Liquid Glass", "22dp squircles, frosted glass & SF typografie")
+}
+
+enum class MetroAccent(
+    val labelDutch: String,
+    val colorHex: Long,
+    val hexString: String
+) {
+    COBALT("Cobalt", 0xFF1BA1E2L, "#1BA1E2"),
+    EMERALD("Emerald", 0xFF008A00L, "#008A00"),
+    CRIMSON("Crimson", 0xFFE51400L, "#E51400"),
+    AMBER("Amber", 0xFFF0A30AL, "#F0A30A")
 }
 
 enum class DarkModePreference(val labelDutch: String) {

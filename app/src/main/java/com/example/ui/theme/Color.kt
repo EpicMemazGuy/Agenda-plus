@@ -106,3 +106,40 @@ val OneUiDividerDark = Color(0xFF2C2C2E)          // Ultra-thin 1px dark hairlin
 val OneUiErrorRedLight = Color(0xFFD93025)
 val OneUiErrorRedDark = Color(0xFFFF5E57)
 
+// ============================================================================
+// Windows Phone 8 / 8.1 Metro UI Tokens (Zero-Radius Flat Solid Live Tiles)
+// ============================================================================
+val MetroBlack = Color(0xFF000000)
+val MetroTileDark = Color(0xFF1D1D1D)
+val MetroTileElevatedDark = Color(0xFF282828)
+val MetroWhite = Color(0xFFFFFFFF)
+val MetroTileLight = Color(0xFFF0F0F0)
+val MetroTileElevatedLight = Color(0xFFE3E3E3)
+val MetroCobalt = Color(0xFF1BA1E2)
+val MetroEmerald = Color(0xFF008A00)
+val MetroCrimson = Color(0xFFE51400)
+val MetroAmber = Color(0xFFF0A30A)
+
+// ============================================================================
+// iOS (Liquid Glass) Tokens (Frosted Translucent Surfaces & Semantic Accents)
+// ============================================================================
+val IosBlue = Color(0xFF0A84FF)
+val IosBlueLight = Color(0xFF007AFF)
+val IosGreen = Color(0xFF30D158)
+val IosGreenLight = Color(0xFF248A3D)
+val IosOrange = Color(0xFFFF9F0A)
+val IosOrangeLight = Color(0xFFD97706)
+val IosRed = Color(0xFFFF453A)
+val IosRedLight = Color(0xFFD70015)
+
+val IosDarkCanvas = Color(0xFF000000)
+val IosDarkCard = Color(0xFF1C1C1E)
+val IosDarkElevated = Color(0xFF2C2C2E)
+val IosDarkHighest = Color(0xFF3A3A3C)
+val IosDarkDivider = Color(0xFF38383A)
+
+val IosLightCanvas = Color(0xFFF2F2F7)
+val IosLightCard = Color(0xFFFFFFFF)
+val IosLightElevated = Color(0xFFE5E5EA)
+val IosLightHighest = Color(0xFFD1D1D6)
+val IosLightDivider = Color(0xFFC6C6C8)

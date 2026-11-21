@@ -79,7 +79,10 @@ fun AppTopBar(
     var testNotificationFeedback by remember { mutableStateOf<String?>(null) }
     val nothingMode = isNothingOs
     val oneUiMode = isOneUi85
+    val windowsPhoneMode = isWindowsPhone
+    val iosMode = isIosLiquidGlass
     val cardBorder: BorderStroke? = nothingCardBorder()
+    val pillShape = if (windowsPhoneMode) RectangleShape else RoundedCornerShape(percent = 50)
 
     val cleanStudentName = session.studentName.cleanSchoolText() ?: "Account"
     val cleanStudentClass = session.studentClass.cleanSchoolText()
@@ -123,7 +126,7 @@ fun AppTopBar(
                             )
                             if (collapsedTitle == null) {
                                 Surface(
-                                    shape = RoundedCornerShape(percent = 50),
+                                    shape = pillShape,
                                     color = MaterialTheme.colorScheme.primaryContainer,
                                     border = if (nothingMode) BorderStroke(1.dp, NothingOutline) else null
                                 ) {
@@ -156,7 +159,7 @@ fun AppTopBar(
                 ) {
                     if (isOffline) {
                         Surface(
-                            shape = RoundedCornerShape(percent = 50),
+                            shape = pillShape,
                             color = MaterialTheme.colorScheme.errorContainer,
                             modifier = Modifier.testTag("offline_badge")
                         ) {
@@ -205,11 +208,11 @@ fun AppTopBar(
 
                     // Account & Settings Profile Trigger Pill
                     Surface(
-                        shape = RoundedCornerShape(percent = 50),
+                        shape = pillShape,
                         color = MaterialTheme.colorScheme.surfaceContainerHighest,
                         border = if (nothingMode) BorderStroke(1.dp, NothingOutline) else null,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(percent = 50))
+                            .clip(pillShape)
                             .clickable { showAccountSheet = true }
                             .testTag("topbar_account_pill")
                     ) {
@@ -218,7 +221,7 @@ fun AppTopBar(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
                             Surface(
-                                shape = CircleShape,
+                                shape = if (windowsPhoneMode) RectangleShape else CircleShape,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(24.dp)
                             ) {
@@ -251,9 +254,18 @@ fun AppTopBar(
         Box(modifier = modifier.fillMaxWidth()) {
             topBarInner()
         }
+    } else if (iosMode) {
+        OneUiFrostedSurface(
+            shape = RectangleShape,
+            containerColor = MaterialTheme.colorScheme.background.copy(alpha = if (isDark) 0.72f else 0.76f),
+            border = null,
+            modifier = modifier.fillMaxWidth()
+        ) {
+            topBarInner()
+        }
     } else {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            color = if (windowsPhoneMode) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.surfaceContainerLow,
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
             modifier = modifier.fillMaxWidth()
@@ -378,7 +390,7 @@ fun AppTopBar(
                         showAccountSheet = false
                         onResetAndLogout()
                     },
-                    shape = RoundedCornerShape(percent = 50),
+                    shape = appButtonShape(),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.error
                     ),

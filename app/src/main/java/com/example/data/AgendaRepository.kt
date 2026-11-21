@@ -190,6 +190,18 @@ class AgendaRepository(private val context: Context? = null) {
     private val _darkModePreference = MutableStateFlow(prefs?.getDarkModePreference() ?: DarkModePreference.SYSTEM)
     val darkModePreference: StateFlow<DarkModePreference> = _darkModePreference.asStateFlow()
 
+    private val _metroAccent = MutableStateFlow(prefs?.getMetroAccent() ?: MetroAccent.COBALT)
+    val metroAccent: StateFlow<MetroAccent> = _metroAccent.asStateFlow()
+
+    private val _subjectCustomizations = MutableStateFlow(prefs?.loadSubjectCustomizations() ?: emptyMap())
+    val subjectCustomizations: StateFlow<Map<String, SubjectCustomization>> = _subjectCustomizations.asStateFlow()
+
+    private val _smartDefaultNamesEnabled = MutableStateFlow(prefs?.isSmartSubjectNamesEnabled() ?: true)
+    val smartDefaultNamesEnabled: StateFlow<Boolean> = _smartDefaultNamesEnabled.asStateFlow()
+
+    private val _useSubjectColorsForMetroTiles = MutableStateFlow(prefs?.isUseSubjectColorsForMetroTiles() ?: false)
+    val useSubjectColorsForMetroTiles: StateFlow<Boolean> = _useSubjectColorsForMetroTiles.asStateFlow()
+
     private val _eloUrl = MutableStateFlow(prefs?.getEloUrl() ?: AppPreferencesStore.DEFAULT_ELO_URL)
     val eloUrl: StateFlow<String> = _eloUrl.asStateFlow()
 
@@ -732,6 +744,63 @@ class AgendaRepository(private val context: Context? = null) {
         notifyLocalDataChanged()
     }
 
+    fun setMetroAccent(accent: MetroAccent) {
+        _metroAccent.value = accent
+        prefs?.setMetroAccent(accent)
+        context?.let { WidgetUpdater.updateAllWidgets(it) }
+        notifyLocalDataChanged()
+    }
+
+    fun setSmartDefaultNamesEnabled(enabled: Boolean) {
+        _smartDefaultNamesEnabled.value = enabled
+        prefs?.setSmartSubjectNamesEnabled(enabled)
+        context?.let { WidgetUpdater.updateAllWidgets(it) }
+        notifyLocalDataChanged()
+    }
+
+    fun setUseSubjectColorsForMetroTiles(enabled: Boolean) {
+        _useSubjectColorsForMetroTiles.value = enabled
+        prefs?.setUseSubjectColorsForMetroTiles(enabled)
+        context?.let { WidgetUpdater.updateAllWidgets(it) }
+        notifyLocalDataChanged()
+    }
+
+    fun saveSubjectCustomization(customization: SubjectCustomization) {
+        val code = customization.code.trim().lowercase(java.util.Locale.ROOT)
+        if (code.isBlank()) return
+        val normalized = customization.copy(
+            code = code,
+            nickname = customization.nickname.trim(),
+            iconName = customization.iconName?.trim()?.takeIf { it.isNotBlank() }
+        )
+        val updated = _subjectCustomizations.value.toMutableMap().apply {
+            put(code, normalized)
+        }
+        _subjectCustomizations.value = updated
+        prefs?.saveSubjectCustomizations(updated)
+        context?.let { WidgetUpdater.updateAllWidgets(it) }
+        notifyLocalDataChanged()
+    }
+
+    fun resetSubjectCustomization(subjectCode: String) {
+        val code = subjectCode.trim().lowercase(java.util.Locale.ROOT)
+        if (code !in _subjectCustomizations.value) return
+        val updated = _subjectCustomizations.value.toMutableMap().apply {
+            remove(code)
+        }
+        _subjectCustomizations.value = updated
+        prefs?.saveSubjectCustomizations(updated)
+        context?.let { WidgetUpdater.updateAllWidgets(it) }
+        notifyLocalDataChanged()
+    }
+
+    fun resetAllSubjectCustomizations() {
+        _subjectCustomizations.value = emptyMap()
+        prefs?.saveSubjectCustomizations(emptyMap())
+        context?.let { WidgetUpdater.updateAllWidgets(it) }
+        notifyLocalDataChanged()
+    }
+
     fun setEloUrl(url: String) {
         val trimmed = url.trim()
         if (trimmed.isBlank()) return
@@ -1021,6 +1090,10 @@ class AgendaRepository(private val context: Context? = null) {
         if (result.isSuccess) {
             _appThemeStyle.value = store.getAppThemeStyle()
             _darkModePreference.value = store.getDarkModePreference()
+            _metroAccent.value = store.getMetroAccent()
+            _smartDefaultNamesEnabled.value = store.isSmartSubjectNamesEnabled()
+            _useSubjectColorsForMetroTiles.value = store.isUseSubjectColorsForMetroTiles()
+            _subjectCustomizations.value = store.loadSubjectCustomizations()
             _agendaStyle.value = store.getAgendaStyle()
             _uiScale.value = store.getUiScale()
             _eloUrl.value = store.getEloUrl()
@@ -1199,6 +1272,20 @@ class AgendaRepository(private val context: Context? = null) {
                 _darkModePreference.value = dm
                 prefs?.setDarkModePreference(dm)
             }
+            SyncManager.metroAccentFromWire(s.optString("metroAccent", ""))?.let { accent ->
+                _metroAccent.value = accent
+                prefs?.setMetroAccent(accent)
+            }
+            if (s.has("smartSubjectNames")) {
+                val smart = s.optBoolean("smartSubjectNames", true)
+                _smartDefaultNamesEnabled.value = smart
+                prefs?.setSmartSubjectNamesEnabled(smart)
+            }
+            if (s.has("useSubjectColorsForMetroTiles")) {
+                val useColors = s.optBoolean("useSubjectColorsForMetroTiles", false)
+                _useSubjectColorsForMetroTiles.value = useColors
+                prefs?.setUseSubjectColorsForMetroTiles(useColors)
+            }
             SyncManager.agendaStyleFromWire(s.optString("agendaDensity", ""))?.let { density ->
                 _agendaStyle.value = density
                 prefs?.setAgendaStyle(density)
@@ -1361,6 +1448,13 @@ class AgendaRepository(private val context: Context? = null) {
                 _studySites.value = sites
                 prefs?.saveStudySites(sites)
             }
+        }
+
+        // 6. Subject Customizations
+        payloadJson.optJSONObject("cachedData")?.optJSONObject("subjectCustomizations")?.let { subjObj ->
+            val parsed = SubjectCustomizationCatalog.fromJsonObject(subjObj)
+            _subjectCustomizations.value = parsed
+            prefs?.saveSubjectCustomizations(parsed)
         }
 
         if (incomingUpdatedAt > 0L) {

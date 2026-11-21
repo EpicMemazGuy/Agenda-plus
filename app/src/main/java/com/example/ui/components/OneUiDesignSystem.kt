@@ -31,6 +31,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.layer.GraphicsLayer
@@ -216,13 +217,16 @@ fun appInnerCardShape(
 ): Shape {
     return when (LocalAppThemeStyle.current) {
         AppThemeStyle.ONE_UI -> SquircleShape(14.dp)
+        AppThemeStyle.IOS_LIQUID_GLASS -> SquircleShape(14.dp)
+        AppThemeStyle.WINDOWS_PHONE -> RectangleShape
         AppThemeStyle.NOTHING_OS -> RoundedCornerShape(nothing)
         AppThemeStyle.STANDARD -> RoundedCornerShape(standard)
     }
 }
 
 /**
- * Thumbnail / icon container shape: 9dp squircle in One UI 8.5, 10dp RoundedCornerShape otherwise.
+ * Thumbnail / icon container shape: 9dp squircle in One UI 8.5, 10dp squircle in iOS,
+ * 0dp sharp corners in Windows Phone, 10dp RoundedCornerShape otherwise.
  */
 @Composable
 fun appThumbnailShape(
@@ -231,18 +235,22 @@ fun appThumbnailShape(
 ): Shape {
     return when (LocalAppThemeStyle.current) {
         AppThemeStyle.ONE_UI -> SquircleShape(9.dp)
+        AppThemeStyle.IOS_LIQUID_GLASS -> SquircleShape(10.dp)
+        AppThemeStyle.WINDOWS_PHONE -> RectangleShape
         AppThemeStyle.NOTHING_OS -> RoundedCornerShape(nothing)
         AppThemeStyle.STANDARD -> RoundedCornerShape(standard)
     }
 }
 
 /**
- * Bottom sheet top-rounded squircle shape (26dp) for One UI 8.5.
+ * Bottom sheet top-rounded shape.
  */
 @Composable
 fun appSheetShape(): Shape {
     return when (LocalAppThemeStyle.current) {
         AppThemeStyle.ONE_UI -> SquircleShape(26.dp, topOnly = true)
+        AppThemeStyle.IOS_LIQUID_GLASS -> SquircleShape(24.dp, topOnly = true)
+        AppThemeStyle.WINDOWS_PHONE -> RectangleShape
         AppThemeStyle.NOTHING_OS -> RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)
         AppThemeStyle.STANDARD -> RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)
     }
@@ -251,19 +259,23 @@ fun appSheetShape(): Shape {
 @Composable
 fun appSheetContainerColor(): Color {
     val isDark = LocalDarkThemeActive.current
-    return if (LocalAppThemeStyle.current == AppThemeStyle.ONE_UI) {
-        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = if (isDark) 0.94f else 0.96f)
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
+    return when (LocalAppThemeStyle.current) {
+        AppThemeStyle.ONE_UI -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = if (isDark) 0.94f else 0.96f)
+        AppThemeStyle.IOS_LIQUID_GLASS -> MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = if (isDark) 0.90f else 0.94f)
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
 }
 
 /**
- * Enforces minimum 24dp horizontal outer margin on left & right edges in One UI 8.5.
+ * Enforces horizontal outer margin per theme.
  */
 @Composable
 fun appScreenHorizontalPadding(standard: Dp = 16.dp): Dp {
-    return if (LocalAppThemeStyle.current == AppThemeStyle.ONE_UI) 24.dp else standard
+    return when (LocalAppThemeStyle.current) {
+        AppThemeStyle.ONE_UI -> 24.dp
+        AppThemeStyle.IOS_LIQUID_GLASS -> 18.dp
+        else -> standard
+    }
 }
 
 /**

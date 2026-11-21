@@ -101,6 +101,42 @@ class AppPreferencesStore(context: Context) {
         prefs.edit().putString(KEY_DARK_MODE_PREF, pref.name).apply()
     }
 
+    fun getMetroAccent(): MetroAccent {
+        val raw = prefs.getString(KEY_METRO_ACCENT, MetroAccent.COBALT.name)
+        return runCatching { MetroAccent.valueOf(raw ?: MetroAccent.COBALT.name) }
+            .getOrDefault(MetroAccent.COBALT)
+    }
+
+    fun setMetroAccent(accent: MetroAccent) {
+        prefs.edit().putString(KEY_METRO_ACCENT, accent.name).apply()
+    }
+
+    fun isSmartSubjectNamesEnabled(): Boolean =
+        prefs.getBoolean(KEY_SMART_SUBJECT_NAMES, true)
+
+    fun setSmartSubjectNamesEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SMART_SUBJECT_NAMES, enabled).apply()
+    }
+
+    fun isUseSubjectColorsForMetroTiles(): Boolean =
+        prefs.getBoolean(KEY_USE_SUBJECT_COLORS_METRO, false)
+
+    fun setUseSubjectColorsForMetroTiles(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_USE_SUBJECT_COLORS_METRO, enabled).apply()
+    }
+
+    fun loadSubjectCustomizations(): Map<String, SubjectCustomization> {
+        val raw = prefs.getString(KEY_SUBJECT_CUSTOMIZATIONS_JSON, null) ?: return emptyMap()
+        return runCatching {
+            SubjectCustomizationCatalog.fromJsonObject(JSONObject(raw))
+        }.getOrDefault(emptyMap())
+    }
+
+    fun saveSubjectCustomizations(map: Map<String, SubjectCustomization>) {
+        val json = SubjectCustomizationCatalog.toJsonObject(map)
+        prefs.edit().putString(KEY_SUBJECT_CUSTOMIZATIONS_JSON, json.toString()).apply()
+    }
+
     fun getEloUrl(): String =
         prefs.getString(KEY_ELO_URL, DEFAULT_ELO_URL)?.takeIf { it.isNotBlank() } ?: DEFAULT_ELO_URL
 
@@ -1230,6 +1266,10 @@ class AppPreferencesStore(context: Context) {
             put("backupVersion", 2)
             put("appThemeStyle", getAppThemeStyle().name)
             put("darkModePreference", getDarkModePreference().name)
+            put("metroAccent", getMetroAccent().name)
+            put("smartSubjectNamesEnabled", isSmartSubjectNamesEnabled())
+            put("useSubjectColorsForMetroTiles", isUseSubjectColorsForMetroTiles())
+            put("subjectCustomizations", SubjectCustomizationCatalog.toJsonObject(loadSubjectCustomizations()))
             put("agendaStyle", getAgendaStyle().name)
             put("uiScale", getUiScale().toDouble())
             put("eloUrl", getEloUrl())
@@ -1319,6 +1359,25 @@ class AppPreferencesStore(context: Context) {
                 setDarkModePreference(it)
                 restoredCount++
             }
+        }
+        root.optString("metroAccent").takeIf { it.isNotBlank() }?.let { raw ->
+            runCatching { MetroAccent.valueOf(raw) }.getOrNull()?.let {
+                setMetroAccent(it)
+                restoredCount++
+            }
+        }
+        if (root.has("smartSubjectNamesEnabled")) {
+            setSmartSubjectNamesEnabled(root.optBoolean("smartSubjectNamesEnabled", true))
+            restoredCount++
+        }
+        if (root.has("useSubjectColorsForMetroTiles")) {
+            setUseSubjectColorsForMetroTiles(root.optBoolean("useSubjectColorsForMetroTiles", false))
+            restoredCount++
+        }
+        root.optJSONObject("subjectCustomizations")?.let { subjObj ->
+            val parsed = SubjectCustomizationCatalog.fromJsonObject(subjObj)
+            saveSubjectCustomizations(parsed)
+            restoredCount++
         }
         root.optString("agendaStyle").takeIf { it.isNotBlank() }?.let { raw ->
             runCatching { AgendaStyle.valueOf(raw) }.getOrNull()?.let {
@@ -1564,6 +1623,10 @@ class AppPreferencesStore(context: Context) {
         private const val KEY_FOCUS_WEEK_KEY = "focus_week_key"
         private const val KEY_CHANGED_LESSON_DIFFS_JSON = "changed_lesson_diffs_json"
         private const val KEY_LOCAL_SYNC_UPDATED_AT = "local_sync_updated_at"
+        private const val KEY_METRO_ACCENT = "metro_accent"
+        private const val KEY_SMART_SUBJECT_NAMES = "smart_subject_names_enabled"
+        private const val KEY_USE_SUBJECT_COLORS_METRO = "use_subject_colors_metro"
+        private const val KEY_SUBJECT_CUSTOMIZATIONS_JSON = "subject_customizations_json"
         const val DEFAULT_ELO_URL = "https://www.itslearning.com"
 
         fun splitToetsstofIntoTopics(rawText: String, subject: String = "", fallbackTitle: String = ""): List<TestPrepSubtopic> {

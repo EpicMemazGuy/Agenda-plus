@@ -15,7 +15,8 @@ object LauncherIconManager {
             val nothingComponent = ComponentName(pkg, "$pkg.MainActivityNothingOs")
             val oneUiComponent = ComponentName(pkg, "$pkg.MainActivityOneUi")
 
-            val defaultState = if (style == AppThemeStyle.STANDARD) {
+            val useDefaultIcon = style != AppThemeStyle.NOTHING_OS && style != AppThemeStyle.ONE_UI
+            val defaultState = if (useDefaultIcon) {
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED
             } else {
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED

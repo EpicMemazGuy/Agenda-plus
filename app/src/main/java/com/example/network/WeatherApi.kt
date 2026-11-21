@@ -33,6 +33,7 @@ class WeatherClient {
             "latitude=$latitude&longitude=$longitude" +
             "&current=temperature_2m,weather_code,wind_speed_10m,is_day" +
             "&daily=temperature_2m_max,temperature_2m_min" +
+            "&hourly=precipitation_probability,precipitation" +
             "&forecast_days=1&timezone=auto"
         try {
             val request = Request.Builder()
@@ -49,6 +50,32 @@ class WeatherClient {
             val daily = json.optJSONObject("daily")
             val maxArr = daily?.optJSONArray("temperature_2m_max")
             val minArr = daily?.optJSONArray("temperature_2m_min")
+
+            val hourly = json.optJSONObject("hourly")
+            val timeArr = hourly?.optJSONArray("time")
+            val probArr = hourly?.optJSONArray("precipitation_probability")
+            val mmArr = hourly?.optJSONArray("precipitation")
+            val hourlyTimes = buildList {
+                if (timeArr != null) {
+                    for (i in 0 until timeArr.length()) {
+                        add(timeArr.optString(i, ""))
+                    }
+                }
+            }
+            val hourlyProb = buildList {
+                if (probArr != null) {
+                    for (i in 0 until probArr.length()) {
+                        add(probArr.optInt(i, 0))
+                    }
+                }
+            }
+            val hourlyMm = buildList {
+                if (mmArr != null) {
+                    for (i in 0 until mmArr.length()) {
+                        add(mmArr.optDouble(i, 0.0))
+                    }
+                }
+            }
 
             val temp = current.optDouble("temperature_2m", 0.0)
             val code = current.optInt("weather_code", 0)
@@ -67,11 +94,57 @@ class WeatherClient {
                 weatherCode = code,
                 isDay = isDay,
                 latitude = latitude,
-                longitude = longitude
+                longitude = longitude,
+                hourlyTimesIso = hourlyTimes,
+                hourlyPrecipProb = hourlyProb,
+                hourlyPrecipMm = hourlyMm
             )
         } catch (e: Exception) {
             RawConsoleLogger.warn("Weather", "Weer ophalen overgeslagen: ${e.message}")
             null
+        }
+    }
+
+    companion object {
+        fun evaluateRainForWindow(
+            weather: WeatherInfo?,
+            startMinutes: Int,
+            durationMinutes: Int = 30
+        ): com.example.model.RainForecastWindow {
+            if (weather == null || weather.hourlyTimesIso.isEmpty()) {
+                return com.example.model.RainForecastWindow()
+            }
+            val endMinutes = startMinutes + durationMinutes.coerceAtLeast(10)
+            var maxProb = 0
+            var maxMm = 0.0
+            for (i in weather.hourlyTimesIso.indices) {
+                val timeStr = weather.hourlyTimesIso[i]
+                val tIdx = timeStr.indexOf('T')
+                val hourInt = if (tIdx >= 0 && timeStr.length >= tIdx + 3) {
+                    timeStr.substring(tIdx + 1, tIdx + 3).toIntOrNull()
+                } else null
+                if (hourInt == null) continue
+                val bucketStart = hourInt * 60
+                val bucketEnd = bucketStart + 59
+                val overlaps = bucketStart <= endMinutes && bucketEnd >= startMinutes
+                if (overlaps) {
+                    val p = weather.hourlyPrecipProb.getOrNull(i) ?: 0
+                    val mm = weather.hourlyPrecipMm.getOrNull(i) ?: 0.0
+                    if (p > maxProb) maxProb = p
+                    if (mm > maxMm) maxMm = mm
+                }
+            }
+            val isRain = maxProb >= 40 || maxMm >= 0.2
+            val summary = if (isRain) {
+                val mmText = if (maxMm >= 0.1) String.format(java.util.Locale.US, "%.1f mm", maxMm) else "kans op bui"
+                "Regen tijdens vertrek ($maxProb% • $mmText)"
+            } else ""
+            return com.example.model.RainForecastWindow(
+                maxProbabilityPercent = maxProb,
+                maxPrecipitationMm = maxMm,
+                isRainExpected = isRain,
+                summaryDutch = summary
+            )
         }
     }
 

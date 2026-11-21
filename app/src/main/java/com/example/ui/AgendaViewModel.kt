@@ -68,6 +68,11 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
     val smartBusAlertsEnabled: StateFlow<Boolean> = repository.smartBusAlertsEnabled
     val busWalkMinutes: StateFlow<Int> = repository.busWalkMinutes
     val busArrivalBufferMinutes: StateFlow<Int> = repository.busArrivalBufferMinutes
+    val commuteModes: StateFlow<List<CommuteModeConfig>> = repository.commuteModes
+    val activeCommuteModeId: StateFlow<String> = repository.activeCommuteModeId
+    val morningLockNotificationEnabled: StateFlow<Boolean> = repository.morningLockNotificationEnabled
+    val weeklyFocusMinutes: StateFlow<Int> = repository.weeklyFocusMinutes
+    val changedLessonDiffs: StateFlow<Map<Long, String>> = repository.changedLessonDiffs
     val smartBusAdvice: StateFlow<SmartBusAdvice?> = repository.smartBusAdvice
     val isRefreshing: StateFlow<Boolean> = repository.isRefreshing
     val lastSyncTime: StateFlow<String> = repository.lastSyncTime
@@ -330,6 +335,24 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun selectCommuteMode(modeId: String, userLat: Double? = null, userLon: Double? = null) {
+        viewModelScope.launch {
+            repository.selectCommuteMode(modeId, userLat, userLon)
+        }
+    }
+
+    fun saveCommuteModes(modes: List<CommuteModeConfig>) {
+        repository.saveCommuteModes(modes)
+    }
+
+    fun setMorningLockNotificationEnabled(enabled: Boolean) {
+        repository.setMorningLockNotificationEnabled(enabled)
+    }
+
+    fun recordFocusMinutesCompleted(minutes: Int, completedTaskId: String? = null) {
+        repository.recordFocusMinutesCompleted(minutes, completedTaskId)
+    }
+
     fun refreshBusTracking(userLat: Double? = null, userLon: Double? = null) {
         viewModelScope.launch {
             repository.refreshBusTracking(userLat, userLon)
@@ -387,6 +410,10 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
 
     fun removeTestPrepTopic(key: String, topicId: String) {
         repository.removeTestPrepTopic(key, topicId)
+    }
+
+    fun autoSplitTestPrepChecklist(key: String, targetDateIso: String? = null) {
+        repository.autoSplitTestPrepChecklist(key, targetDateIso)
     }
 
     fun openCustomScheduleDialog(item: CustomScheduleItem? = null) {

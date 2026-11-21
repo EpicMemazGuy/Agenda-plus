@@ -45,6 +45,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.model.AppThemeStyle
+import com.example.model.HomeworkTask
 import com.example.model.cleanSchoolText
 import com.example.notifications.UitvalNotificationHelper
 import com.example.ui.AgendaViewModel
@@ -58,12 +59,15 @@ import com.example.ui.components.OneUiBackdropState
 import com.example.ui.components.oneUiSpring
 import com.example.ui.components.oneUiTween
 import com.example.ui.dialogs.AddTaskDialog
+import com.example.ui.dialogs.ClassmateGapFinderSheet
 import com.example.ui.dialogs.CustomScheduleItemDialog
 import com.example.ui.dialogs.GradeExportSheet
 import com.example.ui.dialogs.GradeUnboxingDialog
 import com.example.ui.dialogs.InAppWebViewDialog
 import com.example.ui.dialogs.LoginDialog
 import com.example.ui.dialogs.MagisterOAuthWebViewDialog
+import com.example.ui.dialogs.OvergangsnormSimulatorSheet
+import com.example.ui.dialogs.PomodoroTimerDialog
 import com.example.ui.dialogs.TestPrepChecklistSheet
 import com.example.ui.dialogs.TodayModifySheet
 import com.example.ui.dialogs.TutorialDialog
@@ -78,6 +82,7 @@ class MainActivity : ComponentActivity() {
     private var pendingIdToken: String? = null
     private var deepLinkTriggered by mutableStateOf(0)
     private var pendingWidgetTab by mutableStateOf<AppTab?>(null)
+    private var pendingGapShareUri by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -108,7 +113,11 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                AgendaPlusApp(viewModel = viewModel)
+                AgendaPlusApp(
+                    viewModel = viewModel,
+                    initialGapShareUri = pendingGapShareUri,
+                    onClearGapShareUri = { pendingGapShareUri = null }
+                )
             }
         }
     }
@@ -143,13 +152,17 @@ class MainActivity : ComponentActivity() {
                 pendingIdToken = idToken
                 deepLinkTriggered++
             }
+        } else if (scheme == "agendaplus" && host == "tussenuur") {
+            pendingGapShareUri = uri.toString()
         }
     }
 }
 
 @Composable
 fun AgendaPlusApp(
-    viewModel: AgendaViewModel = viewModel()
+    viewModel: AgendaViewModel = viewModel(),
+    initialGapShareUri: String? = null,
+    onClearGapShareUri: () -> Unit = {}
 ) {
     val session by viewModel.currentSession.collectAsStateWithLifecycle()
     val hasCompletedOnboarding by viewModel.hasCompletedOnboarding.collectAsStateWithLifecycle()
@@ -176,6 +189,11 @@ fun AgendaPlusApp(
     val busWalkMinutes by viewModel.busWalkMinutes.collectAsStateWithLifecycle()
     val busArrivalBufferMinutes by viewModel.busArrivalBufferMinutes.collectAsStateWithLifecycle()
     val smartBusAdvice by viewModel.smartBusAdvice.collectAsStateWithLifecycle()
+    val commuteModes by viewModel.commuteModes.collectAsStateWithLifecycle()
+    val activeCommuteModeId by viewModel.activeCommuteModeId.collectAsStateWithLifecycle()
+    val morningLockNotificationEnabled by viewModel.morningLockNotificationEnabled.collectAsStateWithLifecycle()
+    val weeklyFocusMinutes by viewModel.weeklyFocusMinutes.collectAsStateWithLifecycle()
+    val changedLessonDiffs by viewModel.changedLessonDiffs.collectAsStateWithLifecycle()
     val offlineModeEnabled by viewModel.offlineModeEnabled.collectAsStateWithLifecycle()
     val isDeviceOnline by viewModel.isDeviceOnline.collectAsStateWithLifecycle()
     val isEffectivelyOffline = offlineModeEnabled || !isDeviceOnline
@@ -232,6 +250,19 @@ fun AgendaPlusApp(
         mutableStateOf(java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date()))
     }
     var customDialogDayOfWeek by remember { mutableIntStateOf(1) }
+    var activeFocusTask by remember { mutableStateOf<HomeworkTask?>(null) }
+    var showOvergangsnormSheet by remember { mutableStateOf(false) }
+    var showClassmateGapFinder by remember { mutableStateOf(false) }
+    var activeGapShareUri by remember { mutableStateOf<String?>(null) }
+    var activeChecklistTargetDateIso by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(initialGapShareUri, session.isAuthenticated) {
+        if (!initialGapShareUri.isNullOrBlank() && session.isAuthenticated) {
+            activeGapShareUri = initialGapShareUri
+            showClassmateGapFinder = true
+            onClearGapShareUri()
+        }
+    }
 
     val availableSubjects = remember(appointments, gradeSummaries) {
         (appointments.mapNotNull { it.subjectName.cleanSchoolText() } +
@@ -394,6 +425,9 @@ fun AgendaPlusApp(
                             savedBusLine = savedBusLine,
                             busTrackingState = busTrackingState,
                             smartBusAdvice = smartBusAdvice,
+                            commuteModes = commuteModes,
+                            activeCommuteModeId = activeCommuteModeId,
+                            changedLessonDiffs = changedLessonDiffs,
                             customScheduleItems = customScheduleItems,
                             onNavigateToRooster = { viewModel.selectTab(AppTab.ROOSTER) },
                             onNavigateToTasks = { viewModel.selectTab(AppTab.HUISWERK) },
@@ -412,6 +446,8 @@ fun AgendaPlusApp(
                             onOpenTodayModifySheet = { viewModel.openTodayModifySheet() },
                             onSetBusLine = { line, lat, lon -> viewModel.setBusLineAndTrack(line, lat, lon) },
                             onRefreshBusTracking = { lat, lon -> viewModel.refreshBusTracking(lat, lon) },
+                            onSelectCommuteMode = { modeId, lat, lon -> viewModel.selectCommuteMode(modeId, lat, lon) },
+                            onSaveCommuteModes = { modes -> viewModel.saveCommuteModes(modes) },
                             onAddCustomScheduleItem = {
                                 val cal = java.util.Calendar.getInstance()
                                 customDialogDateIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(cal.time)
@@ -445,6 +481,7 @@ fun AgendaPlusApp(
                             kwtSlots = kwtSlots,
                             customScheduleItems = customScheduleItems,
                             testPrepChecklists = testPrepChecklists,
+                            changedLessonDiffs = changedLessonDiffs,
                             onSelectDay = { viewModel.selectDay(it) },
                             onSelectViewMode = { viewModel.setRoosterViewMode(it) },
                             onOpenKwtSlot = { appt -> viewModel.openKwtSlotSheet(appt) },
@@ -456,7 +493,8 @@ fun AgendaPlusApp(
                             onEditCustomScheduleItem = { viewModel.openCustomScheduleDialog(it) },
                             onToggleCustomScheduleItem = { id, done -> viewModel.toggleCustomScheduleItem(id, done) },
                             onDeleteCustomScheduleItem = { id -> viewModel.deleteCustomScheduleItem(id) },
-                            onOpenTestPrep = { key, subj, title, stof ->
+                            onOpenTestPrep = { key, subj, title, stof, targetDateIso ->
+                                activeChecklistTargetDateIso = targetDateIso
                                 viewModel.openTestPrepChecklist(key, subj, title, stof)
                             },
                             onHeaderCollapsedChange = { isHeaderCollapsed = it },
@@ -468,12 +506,17 @@ fun AgendaPlusApp(
                             tasks = tasks,
                             selectedCategory = taskFilter,
                             testPrepChecklists = testPrepChecklists,
+                            studyGuides = studyGuides,
+                            eloUrl = eloUrl,
                             onSelectCategory = { viewModel.setTaskFilter(it) },
                             onToggleTask = { viewModel.toggleTask(it) },
                             onAddTaskClick = { viewModel.openAddTaskDialog() },
-                            onOpenTestPrep = { key, subj, title, stof ->
+                            onOpenTestPrep = { key, subj, title, stof, targetDateIso ->
+                                activeChecklistTargetDateIso = targetDateIso
                                 viewModel.openTestPrepChecklist(key, subj, title, stof)
                             },
+                            onOpenResourceUrl = { title, url -> viewModel.openInAppBrowser(title, url) },
+                            onStartFocusSession = { task -> activeFocusTask = task },
                             onHeaderCollapsedChange = { isHeaderCollapsed = it },
                             modifier = contentModifier
                         )
@@ -485,6 +528,7 @@ fun AgendaPlusApp(
                             unboxedGradeIds = unboxedGradeIds,
                             onOpenWhatIf = { viewModel.openWhatIf(it) },
                             onOpenExportSheet = { viewModel.openGradeExportSheet() },
+                            onOpenOvergangsSimulator = { showOvergangsnormSheet = true },
                             onPlayGradeUnboxing = { grade -> viewModel.openGradeUnboxing(grade) },
                             onHeaderCollapsedChange = { isHeaderCollapsed = it },
                             modifier = contentModifier
@@ -587,6 +631,8 @@ fun AgendaPlusApp(
                             onExportBackupJson = { viewModel.exportChoicesBackupJson() },
                             onImportBackupJson = { raw -> viewModel.importChoicesBackupJson(raw) },
                             webSyncState = webSyncState,
+                            weeklyFocusMinutes = weeklyFocusMinutes,
+                            onOpenClassmateGapFinder = { showClassmateGapFinder = true },
                             onPairUri = { uri -> viewModel.pairWithWebUri(uri) },
                             onSyncNow = { viewModel.syncWithWebNow() },
                             onPullLatest = { viewModel.pullFromWebNow() },
@@ -752,6 +798,8 @@ fun AgendaPlusApp(
             GradeUnboxingDialog(
                 grade = targetGrade,
                 initialMode = gradeUnboxingMode,
+                appThemeStyle = appThemeStyle,
+                studentName = session.studentName,
                 onChangeMode = { viewModel.setGradeUnboxingMode(it) },
                 onRevealComplete = { viewModel.closeGradeUnboxing(markUnboxed = true) },
                 onDismiss = { viewModel.closeGradeUnboxing(markUnboxed = true) }
@@ -770,11 +818,15 @@ fun AgendaPlusApp(
                 schoolAddress = schoolAddress,
                 savedBusLine = savedBusLine,
                 isOffline = isEffectivelyOffline,
+                commuteModes = commuteModes,
+                morningLockNotificationEnabled = morningLockNotificationEnabled,
                 onToggleBlock = { type, enabled -> viewModel.toggleTodayBlock(type, enabled) },
                 onMoveBlock = { type, delta -> viewModel.moveTodayBlock(type, delta) },
                 onSearchSchoolAddress = { query -> viewModel.searchSchoolAddresses(query) },
                 onSaveSchoolAddress = { addr -> viewModel.saveSchoolAddress(addr) },
                 onSetBusLine = { line -> viewModel.setBusLineAndTrack(line) },
+                onSaveCommuteModes = { modes -> viewModel.saveCommuteModes(modes) },
+                onSetMorningLockNotificationEnabled = { viewModel.setMorningLockNotificationEnabled(it) },
                 onDismiss = { viewModel.closeTodayModifySheet() }
             )
         }
@@ -794,12 +846,48 @@ fun AgendaPlusApp(
             if (checklist != null) {
                 TestPrepChecklistSheet(
                     checklist = checklist,
+                    targetDateIso = activeChecklistTargetDateIso,
                     onToggleTopic = { topicId -> viewModel.toggleTestPrepTopic(key, topicId) },
                     onAddTopic = { label -> viewModel.addTestPrepTopic(key, label) },
                     onRemoveTopic = { topicId -> viewModel.removeTestPrepTopic(key, topicId) },
-                    onDismiss = { viewModel.closeTestPrepChecklist() }
+                    onAutoSplitToDate = { targetIso -> viewModel.autoSplitTestPrepChecklist(key, targetIso) },
+                    onDismiss = {
+                        activeChecklistTargetDateIso = null
+                        viewModel.closeTestPrepChecklist()
+                    }
                 )
             }
+        }
+
+        activeFocusTask?.let { focusTask ->
+            PomodoroTimerDialog(
+                task = focusTask,
+                onCompleteSession = { minutesFocused, markDone ->
+                    viewModel.recordFocusMinutesCompleted(
+                        minutes = minutesFocused,
+                        completedTaskId = if (markDone) focusTask.id else null
+                    )
+                },
+                onDismiss = { activeFocusTask = null }
+            )
+        }
+
+        if (showOvergangsnormSheet) {
+            OvergangsnormSimulatorSheet(
+                summaries = gradeSummaries,
+                onDismiss = { showOvergangsnormSheet = false }
+            )
+        }
+
+        if (showClassmateGapFinder) {
+            ClassmateGapFinderSheet(
+                appointments = appointments,
+                initialClassmateUri = activeGapShareUri,
+                onDismiss = {
+                    showClassmateGapFinder = false
+                    activeGapShareUri = null
+                }
+            )
         }
 
         if (showCustomScheduleDialog) {

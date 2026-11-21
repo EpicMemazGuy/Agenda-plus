@@ -15,6 +15,7 @@ import androidx.core.content.FileProvider
 import com.example.model.AppThemeStyle
 import com.example.model.GradeItem
 import com.example.model.SubjectGradeSummary
+import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
 import java.io.File
 import java.io.FileOutputStream
@@ -210,7 +211,7 @@ object GradeExporter {
                 canvas.drawRoundRect(rowRect, rowRadius, rowRadius, cardBorderPaint)
             }
 
-            val subjText = ellipsizeText(grade.subjectName, 22)
+            val subjText = ellipsizeText(grade.subjectName.capitalizeSubjectName(), 22)
             val descText = ellipsizeText("${grade.description} • Weging ${grade.weight}x", 40)
             canvas.drawText(subjText, 120f, curY + 54f, rowSubjectPaint)
             canvas.drawText(descText, 120f, curY + 96f, rowDescPaint)
@@ -276,14 +277,213 @@ object GradeExporter {
         return outFile
     }
 
+    fun renderSingleGradeUnboxingCardPng(
+        context: Context,
+        grade: GradeItem,
+        studentName: String,
+        appThemeStyle: AppThemeStyle,
+        isDarkMode: Boolean = true,
+        dynamicPrimaryArgb: Int? = null
+    ): File {
+        val width = 1080
+        val height = 1350
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val isNothing = appThemeStyle == AppThemeStyle.NOTHING_OS
+        val isOneUi = appThemeStyle == AppThemeStyle.ONE_UI
+        val oneUiLight = isOneUi && !isDarkMode
+        val resolvedDynamicPrimary = dynamicPrimaryArgb ?: if (oneUiLight) Color.rgb(3, 129, 254) else Color.rgb(62, 145, 255)
+
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        when {
+            isNothing -> {
+                bgPaint.color = Color.BLACK
+                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+                val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(36, 255, 255, 255) }
+                var gx = 36f
+                while (gx < width) {
+                    var gy = 36f
+                    while (gy < height) {
+                        canvas.drawCircle(gx, gy, 2.2f, dotPaint)
+                        gy += 36f
+                    }
+                    gx += 36f
+                }
+            }
+            isOneUi -> {
+                bgPaint.color = if (oneUiLight) Color.rgb(246, 246, 248) else Color.BLACK
+                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+            }
+            else -> {
+                bgPaint.shader = LinearGradient(
+                    0f, 0f, width.toFloat(), height.toFloat(),
+                    intArrayOf(Color.rgb(16, 23, 46), Color.rgb(30, 42, 78), Color.rgb(18, 25, 48)),
+                    null,
+                    Shader.TileMode.CLAMP
+                )
+                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+            }
+        }
+
+        val rarityColor = when {
+            grade.score >= 8.0 -> Color.rgb(245, 158, 11)
+            grade.score >= 5.5 -> if (isOneUi) resolvedDynamicPrimary else Color.rgb(124, 58, 237)
+            else -> Color.rgb(215, 25, 32)
+        }
+        val rarityLabel = when {
+            grade.score >= 8.5 -> "LEGENDARISCH"
+            grade.score >= 8.0 -> "GOUD"
+            grade.score >= 6.8 -> "ZELDZAAM"
+            grade.score >= 5.5 -> "VOLDOENDE"
+            else -> "ONVOLDOENDE"
+        }
+
+        val cardBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = when {
+                isNothing -> Color.rgb(20, 20, 22)
+                oneUiLight -> Color.WHITE
+                isOneUi -> Color.rgb(23, 23, 27)
+                else -> Color.argb(235, 27, 37, 68)
+            }
+        }
+        val cardBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+            color = rarityColor
+        }
+        val outerRadius = if (isOneUi) 64f else 52f
+        val outerRect = RectF(64f, 64f, width - 64f, height - 64f)
+        canvas.drawRoundRect(outerRect, outerRadius, outerRadius, cardBgPaint)
+        canvas.drawRoundRect(outerRect, outerRadius, outerRadius, cardBorderPaint)
+
+        val primaryText = if (oneUiLight) Color.rgb(16, 19, 24) else Color.WHITE
+        val secondaryText = if (oneUiLight) Color.rgb(93, 100, 114) else Color.rgb(185, 193, 210)
+
+        // Rarity badge
+        val badgeRect = RectF(112f, 128f, 460f, 196f)
+        canvas.drawRoundRect(badgeRect, 34f, 34f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = rarityColor })
+        canvas.drawText(
+            rarityLabel,
+            badgeRect.centerX(),
+            badgeRect.centerY() + 11f,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                textSize = 30f
+                textAlign = Paint.Align.CENTER
+                typeface = Typeface.create(if (isNothing) Typeface.MONOSPACE else Typeface.DEFAULT, Typeface.BOLD)
+            }
+        )
+
+        val dateLabel = SimpleDateFormat("d MMM yyyy", Locale("nl", "NL")).format(Date())
+        canvas.drawText(
+            dateLabel,
+            width - 112f,
+            174f,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = secondaryText
+                textSize = 28f
+                textAlign = Paint.Align.RIGHT
+            }
+        )
+
+        // Big score circle
+        val centerX = width / 2f
+        val centerY = 530f
+        canvas.drawCircle(
+            centerX,
+            centerY,
+            210f,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.argb(38, Color.red(rarityColor), Color.green(rarityColor), Color.blue(rarityColor))
+            }
+        )
+        canvas.drawCircle(
+            centerX,
+            centerY,
+            210f,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = 8f
+                color = rarityColor
+            }
+        )
+        canvas.drawText(
+            String.format(Locale.US, "%.1f", grade.score),
+            centerX,
+            centerY + 62f,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = rarityColor
+                textSize = 180f
+                textAlign = Paint.Align.CENTER
+                typeface = Typeface.create(if (isNothing) Typeface.MONOSPACE else Typeface.DEFAULT, Typeface.BOLD)
+            }
+        )
+
+        // Subject + Description + Metadata
+        val subjectTitle = ellipsizeText(grade.subjectName.capitalizeSubjectName(), 24)
+        canvas.drawText(
+            subjectTitle,
+            centerX,
+            840f,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = primaryText
+                textSize = 58f
+                textAlign = Paint.Align.CENTER
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }
+        )
+        canvas.drawText(
+            ellipsizeText(grade.description.ifBlank { "Toetsresultaat" }, 38),
+            centerX,
+            915f,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = secondaryText
+                textSize = 34f
+                textAlign = Paint.Align.CENTER
+            }
+        )
+        canvas.drawText(
+            "Weging ${grade.weight}x • ${grade.date}",
+            centerX,
+            980f,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = primaryText
+                textSize = 32f
+                textAlign = Paint.Align.CENTER
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }
+        )
+
+        val cleanStudent = studentName.cleanSchoolText() ?: "Agenda+ Leerling"
+        canvas.drawText(
+            "$cleanStudent • agendaplus.nl",
+            centerX,
+            height - 128f,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = secondaryText
+                textSize = 28f
+                textAlign = Paint.Align.CENTER
+            }
+        )
+
+        val outFile = File(exportsDir(context), "agendaplus_unboxing_${grade.id.hashCode()}_${System.currentTimeMillis()}.png")
+        FileOutputStream(outFile).use { fos ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+        }
+        bitmap.recycle()
+        return outFile
+    }
+
     fun generateCsvString(summaries: List<SubjectGradeSummary>): String {
         val sb = StringBuilder()
         sb.appendLine("Vak,Code,Vakgemiddelde,Omschrijving,Cijfer,Weging,Datum,Periode")
         for (summary in summaries) {
+            val subjName = summary.subjectName.capitalizeSubjectName()
             if (summary.grades.isEmpty()) {
                 sb.appendLine(
                     listOf(
-                        csvEscape(summary.subjectName),
+                        csvEscape(subjName),
                         csvEscape(summary.subjectCode),
                         summary.weightedAverage.toString(),
                         "",
@@ -297,7 +497,7 @@ object GradeExporter {
                 for (grade in summary.grades) {
                     sb.appendLine(
                         listOf(
-                            csvEscape(summary.subjectName),
+                            csvEscape(subjName),
                             csvEscape(summary.subjectCode),
                             summary.weightedAverage.toString(),
                             csvEscape(grade.description),

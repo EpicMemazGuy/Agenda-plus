@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import com.example.model.GradeItem
 import com.example.model.GradeScopeFilter
 import com.example.model.SubjectGradeSummary
+import com.example.model.capitalizeSubjectName
+import java.util.Locale
 import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.NothingConcentricGradeRing
@@ -76,6 +78,7 @@ fun CijfersScreen(
     unboxedGradeIds: Set<String> = emptySet(),
     onOpenWhatIf: (SubjectGradeSummary) -> Unit,
     onOpenExportSheet: () -> Unit = {},
+    onOpenOvergangsSimulator: () -> Unit = {},
     onPlayGradeUnboxing: (GradeItem) -> Unit = {},
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
@@ -189,10 +192,16 @@ fun CijfersScreen(
                             }
                         }
 
+                        val overgangShape = if (oneUiMode) CircleShape else RoundedCornerShape(20.dp)
                         Surface(
-                            shape = if (oneUiMode) CircleShape else RoundedCornerShape(20.dp),
+                            shape = overgangShape,
                             color = if (oneUiMode) oneUiPillContainerColor(isError = failingSubjects > 0) else MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.padding(8.dp)
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .clip(overgangShape)
+                                .clickable(onClick = onOpenOvergangsSimulator)
+                                .minimumInteractiveComponentSize()
+                                .testTag("open_overgangsnorm_simulator")
                         ) {
                             Column(
                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -204,7 +213,7 @@ fun CijfersScreen(
                                     color = if (oneUiMode) oneUiPillContentColor(isError = failingSubjects > 0) else MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                                 Text(
-                                    text = if (failingSubjects == 0) "Voldoende" else "$failingSubjects onvoldoende(s)",
+                                    text = if (failingSubjects == 0) "Voldoende • Simuleer" else "$failingSubjects onvoldoende(s) • Simuleer",
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = if (oneUiMode) oneUiPillContentColor(isError = failingSubjects > 0) else MaterialTheme.colorScheme.onPrimaryContainer
@@ -413,6 +422,21 @@ fun SubjectGradeCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             val rowTouchShape = appInnerCardShape(standard = 12.dp, nothing = 12.dp)
+            val displaySubject = summary.subjectName.capitalizeSubjectName()
+            val trendDelta = remember(summary) {
+                if (summary.grades.size < 2) {
+                    null
+                } else {
+                    val sorted = summary.grades.sortedByDescending { it.date }
+                    val previous = sorted.drop(1)
+                    val prevWeight = previous.sumOf { it.weight }.coerceAtLeast(0.01)
+                    val prevAvg = round((previous.sumOf { it.score * it.weight } / prevWeight) * 10) / 10.0
+                    val delta = round((summary.weightedAverage - prevAvg) * 10) / 10.0
+                    delta.takeIf { kotlin.math.abs(it) >= 0.1 }
+                }
+            }
+            val isNearEdge = summary.weightedAverage in 5.5..5.7
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -422,17 +446,40 @@ fun SubjectGradeCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = summary.subjectName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "${summary.grades.size} cijfers ingevoerd",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = displaySubject,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (isNearEdge) {
+                            OneUiPillBadge(
+                                text = "Op het randje",
+                                isError = true
+                            )
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "${summary.grades.size} cijfers ingevoerd",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        trendDelta?.let { delta ->
+                            val sign = if (delta > 0) "+" else ""
+                            OneUiPillBadge(
+                                text = "$sign${String.format(Locale.US, "%.1f", delta)}",
+                                isError = delta < 0.0
+                            )
+                        }
+                    }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -572,7 +619,7 @@ fun SubjectGradeCard(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("What-If Cijfer Berekenen voor ${summary.subjectName}")
+                        Text("What-If Cijfer Berekenen voor ${summary.subjectName.capitalizeSubjectName()}")
                     }
                 }
             }

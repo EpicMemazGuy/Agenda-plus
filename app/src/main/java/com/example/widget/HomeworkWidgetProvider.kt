@@ -14,6 +14,7 @@ import com.example.R
 import com.example.data.AppPreferencesStore
 import com.example.model.AppThemeStyle
 import com.example.model.TaskCategory
+import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
 
 class HomeworkWidgetProvider : AppWidgetProvider() {
@@ -30,13 +31,29 @@ class HomeworkWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action == ACTION_REFRESH || intent.action == AppWidgetManager.ACTION_APPWIDGET_UPDATE) {
-            updateAllWidgets(context)
+        when (intent.action) {
+            ACTION_TOGGLE_TASK -> {
+                val taskId = intent.getStringExtra(EXTRA_TASK_ID)
+                if (!taskId.isNullOrBlank()) {
+                    val store = AppPreferencesStore(context)
+                    val updated = store.loadTasks().map { task ->
+                        if (task.id == taskId) task.copy(isCompleted = !task.isCompleted) else task
+                    }
+                    store.saveTasks(updated)
+                    store.touchLocalSyncUpdatedAt()
+                    updateAllWidgets(context)
+                }
+            }
+            ACTION_REFRESH, AppWidgetManager.ACTION_APPWIDGET_UPDATE -> {
+                updateAllWidgets(context)
+            }
         }
     }
 
     companion object {
         const val ACTION_REFRESH = "com.example.widget.ACTION_REFRESH_HOMEWORK"
+        const val ACTION_TOGGLE_TASK = "com.example.widget.ACTION_TOGGLE_TASK"
+        const val EXTRA_TASK_ID = "extra_task_id"
 
         fun updateAllWidgets(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
@@ -142,10 +159,22 @@ class HomeworkWidgetProvider : AppWidgetProvider() {
                     } else {
                         views.setViewVisibility(rowId, View.VISIBLE)
                         val title = task.title.cleanSchoolText() ?: "Huiswerk"
-                        val subj = task.subject.cleanSchoolText() ?: "Vak"
+                        val subj = (task.subject.cleanSchoolText() ?: "Vak").capitalizeSubjectName()
                         val isExam = task.category == TaskCategory.EXAM || task.category == TaskCategory.MAJOR_TEST
                         views.setTextViewText(titleId, title)
-                        views.setTextViewText(metaId, if (isExam) "TOETS • $subj" else subj.take(10))
+                        views.setTextViewText(metaId, if (isExam) "TOETS • $subj" else subj.take(12))
+
+                        val toggleIntent = Intent(context, HomeworkWidgetProvider::class.java).apply {
+                            action = ACTION_TOGGLE_TASK
+                            putExtra(EXTRA_TASK_ID, task.id)
+                        }
+                        val togglePendingIntent = PendingIntent.getBroadcast(
+                            context,
+                            310 + index,
+                            toggleIntent,
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
+                        views.setOnClickPendingIntent(rowId, togglePendingIntent)
 
                         when {
                             isNothing -> {

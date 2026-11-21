@@ -14,6 +14,7 @@ import com.example.R
 import com.example.data.AppPreferencesStore
 import com.example.model.AppThemeStyle
 import com.example.model.GradeItem
+import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
 import java.util.Locale
 
@@ -130,12 +131,12 @@ class GradesWidgetProvider : AppWidgetProvider() {
 
                 val displayRows: List<Pair<String, Double>> = if (allGrades.isNotEmpty()) {
                     allGrades.take(3).map { g ->
-                        val subj = g.subjectName.cleanSchoolText() ?: g.subjectCode.ifBlank { "Vak" }
+                        val subj = (g.subjectName.cleanSchoolText() ?: g.subjectCode.ifBlank { "Vak" }).capitalizeSubjectName()
                         subj to g.score
                     }
                 } else {
                     summaries.take(3).map { s ->
-                        val subj = s.subjectName.cleanSchoolText() ?: s.subjectCode.ifBlank { "Vak" }
+                        val subj = (s.subjectName.cleanSchoolText() ?: s.subjectCode.ifBlank { "Vak" }).capitalizeSubjectName()
                         subj to s.weightedAverage
                     }
                 }

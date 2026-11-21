@@ -23,7 +23,8 @@ sealed class AuthResult {
         val studentId: String,
         val studentClass: String,
         val personId: Long,
-        val resolvedTenant: SchoolTenant? = null
+        val resolvedTenant: SchoolTenant? = null,
+        val expiresInSeconds: Long = 3600L
     ) : AuthResult()
 
     data class Error(
@@ -31,6 +32,18 @@ sealed class AuthResult {
         val errorMessage: String,
         val technicalDetails: String
     ) : AuthResult()
+}
+
+sealed class TokenRefreshResult {
+    data class Success(
+        val accessToken: String,
+        val refreshToken: String,
+        val expiresAtMs: Long
+    ) : TokenRefreshResult()
+
+    data class InvalidGrant(val errorMessage: String) : TokenRefreshResult()
+
+    data class TransientError(val code: Int, val errorMessage: String) : TokenRefreshResult()
 }
 
 data class MagisterDataBundle(
@@ -257,10 +270,11 @@ class MagisterClient {
             }
 
             val refreshToken = json.optString("refresh_token").ifBlank { null }
+            val expiresIn = json.optLong("expires_in", 3600L).coerceAtLeast(60L)
             val idToken = json.optString("id_token").ifBlank { idTokenHint }
             com.example.util.RawConsoleLogger.http(
                 "Auth",
-                "Token exchange OK (200). accessTokenLen=${accessToken.length}, hasRefresh=${refreshToken != null}, hasIdToken=${!idToken.isNullOrBlank()}"
+                "Token exchange OK (200). accessTokenLen=${accessToken.length}, hasRefresh=${refreshToken != null}, expiresIn=${expiresIn}s"
             )
 
             // Deduce real tenant subdomain from host-meta, JWT tokens, or userinfo
@@ -284,7 +298,8 @@ class MagisterClient {
                 studentId = profile.id,
                 studentClass = profile.className,
                 personId = profile.personId,
-                resolvedTenant = resolvedTenant
+                resolvedTenant = resolvedTenant,
+                expiresInSeconds = expiresIn
             )
         } catch (e: IOException) {
             AuthResult.Error(
@@ -301,17 +316,19 @@ class MagisterClient {
         }
     }
 
-    fun isAccessTokenExpired(token: String): Boolean {
+    fun isAccessTokenExpired(token: String, bufferSeconds: Long = 300L): Boolean {
         val payload = PkceHelper.decodeJwtPayload(token) ?: return false
         val exp = payload.optLong("exp", 0L)
         if (exp <= 0L) return false
         val nowSeconds = System.currentTimeMillis() / 1000L
-        return nowSeconds >= (exp - 60L)
+        return nowSeconds >= (exp - bufferSeconds)
     }
 
-    suspend fun refreshAccessToken(refreshToken: String): Pair<String, String?>? = withContext(Dispatchers.IO) {
+    suspend fun refreshAccessTokenDetailed(refreshToken: String): TokenRefreshResult = withContext(Dispatchers.IO) {
         val cleanRefresh = refreshToken.trim()
-        if (cleanRefresh.isBlank()) return@withContext null
+        if (cleanRefresh.isBlank()) {
+            return@withContext TokenRefreshResult.InvalidGrant("Geen refresh token aanwezig")
+        }
 
         val formBody = FormBody.Builder()
             .add("client_id", clientId)
@@ -327,17 +344,46 @@ class MagisterClient {
             .build()
 
         return@withContext try {
-            val response = client.newCall(request).execute()
-            val bodyString = response.body?.string() ?: ""
-            com.example.util.RawConsoleLogger.http("Auth", "Refresh token -> ${response.code}")
-            if (!response.isSuccessful) return@withContext null
-            val json = JSONObject(bodyString)
-            val newAccess = json.optString("access_token").cleanSchoolText() ?: return@withContext null
-            val newRefresh = json.optString("refresh_token").cleanSchoolText() ?: cleanRefresh
-            newAccess to newRefresh
+            client.newCall(request).execute().use { response ->
+                val bodyString = response.body?.string() ?: ""
+                com.example.util.RawConsoleLogger.http("Auth", "Refresh token -> ${response.code}")
+                if (!response.isSuccessful) {
+                    val errorJson = runCatching { JSONObject(bodyString) }.getOrNull()
+                    val errorCode = errorJson?.optString("error")?.trim()?.lowercase(Locale.US) ?: ""
+                    val errorDesc = errorJson?.optString("error_description")?.cleanSchoolText()
+                        ?: errorJson?.optString("error")?.cleanSchoolText()
+                        ?: "HTTP ${response.code}"
+                    if (errorCode == "invalid_grant" || errorCode == "invalid_token") {
+                        return@use TokenRefreshResult.InvalidGrant(errorDesc)
+                    }
+                    return@use TokenRefreshResult.TransientError(response.code, errorDesc)
+                }
+
+                val json = JSONObject(bodyString)
+                val newAccess = json.optString("access_token").cleanSchoolText()
+                    ?: return@use TokenRefreshResult.TransientError(500, "Leeg access_token ontvangen")
+                val newRefresh = json.optString("refresh_token").cleanSchoolText() ?: cleanRefresh
+                val expiresInSec = json.optLong("expires_in", 3600L).coerceAtLeast(60L)
+                val expiresAtMs = System.currentTimeMillis() + (expiresInSec * 1000L)
+                TokenRefreshResult.Success(
+                    accessToken = newAccess,
+                    refreshToken = newRefresh,
+                    expiresAtMs = expiresAtMs
+                )
+            }
+        } catch (e: IOException) {
+            com.example.util.RawConsoleLogger.warn("Auth", "Token vernieuwen tijdelijk mislukt (netwerk): ${e.message}")
+            TokenRefreshResult.TransientError(0, e.message ?: "Netwerkfout")
         } catch (e: Exception) {
-            com.example.util.RawConsoleLogger.warn("Auth", "Token vernieuwen mislukt: ${e.message}")
-            null
+            com.example.util.RawConsoleLogger.warn("Auth", "Token vernieuwen fout: ${e.message}")
+            TokenRefreshResult.TransientError(500, e.message ?: "Onbekende fout")
+        }
+    }
+
+    suspend fun refreshAccessToken(refreshToken: String): Pair<String, String?>? {
+        return when (val res = refreshAccessTokenDetailed(refreshToken)) {
+            is TokenRefreshResult.Success -> res.accessToken to res.refreshToken
+            else -> null
         }
     }
 
@@ -777,7 +823,7 @@ class MagisterClient {
                     } else null
 
                     val rawTitle = item.optCleanString("Omschrijving", "Titel", "omschrijving", "titel") ?: ""
-                    val subjectName = vakName ?: rawTitle.ifBlank { "Les" }
+                    val subjectName = (vakName ?: rawTitle.ifBlank { "Les" }).capitalizeSubjectName().ifBlank { "Les" }
                     val title = rawTitle.ifBlank { subjectName }
 
                     val rawStart = item.optCleanString("Start", "start", "begin") ?: ""
@@ -1128,7 +1174,7 @@ class MagisterClient {
                 for (i in 0 until items.length()) {
                     val item = items.getJSONObject(i)
                     val title = item.optCleanString("Titel", "titel") ?: "Opdracht"
-                    val subject = item.optCleanString("Vak", "vak") ?: "Algemeen"
+                    val subject = (item.optCleanString("Vak", "vak") ?: "Algemeen").capitalizeSubjectName().ifBlank { "Algemeen" }
                     val desc = item.optCleanString("Omschrijving", "omschrijving") ?: ""
                     val deadline = item.optCleanString("InleverenVoor", "inleverenVoor")?.take(16) ?: "Binnenkort"
                     val cat = when {
@@ -1243,10 +1289,10 @@ class MagisterClient {
             val parsedHour = hourInt ?: Regex("\\d+").find(periodRaw)?.value?.toIntOrNull()
 
             val afspraakVakken = afspraakObj?.optJSONArray("Vakken") ?: afspraakObj?.optJSONArray("vakken")
-            val subjectName = item.optCleanString("Vak", "vak", "VakOmschrijving", "vakOmschrijving")
+            val subjectName = (item.optCleanString("Vak", "vak", "VakOmschrijving", "vakOmschrijving")
                 ?: afspraakVakken?.optJSONObject(0)?.optCleanString("Naam", "naam")
                 ?: afspraakObj?.optCleanString("Omschrijving", "omschrijving")
-                ?: ""
+                ?: "").capitalizeSubjectName()
             val code = item.optCleanString("Code", "code", "Type", "type", "Soort", "soort") ?: ""
             val id = item.optCleanString("Id", "id")
                 ?: item.optLong("Id", item.optLong("id", i.toLong())).toString()

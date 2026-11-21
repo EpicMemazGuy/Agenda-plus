@@ -7,6 +7,9 @@ import com.example.model.TaskCategory
 import com.example.model.TaskPriority
 import com.example.model.cleanSchoolText
 import com.example.network.MagisterClient
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
@@ -1360,6 +1363,267 @@ class ExampleRobolectricTest {
         assertEquals(1, parsedAbsences[0].hour)
         assertEquals("Scheikunde", parsedAbsences[0].subject)
         assertEquals("Z", parsedAbsences[0].code)
+    }
+
+    @Test
+    fun test_magister_token_manager_single_flight_and_error_handling() = runBlocking {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val store = com.example.data.AppPreferencesStore(context)
+        val fixedNow = 1_700_000_000_000L
+        val refreshCount = java.util.concurrent.atomic.AtomicInteger(0)
+
+        try {
+            com.example.network.MagisterTokenManager.clockMsProvider = { fixedNow }
+            store.clearSession()
+            store.saveSessionSync(
+                com.example.model.AuthSession(
+                    isAuthenticated = true,
+                    studentName = "Tester",
+                    school = com.example.model.SchoolTenant("1", "Elde", "Schijndel", "elde"),
+                    accessToken = "expired_tok",
+                    refreshToken = "rt_1",
+                    personId = 42L,
+                    expiresAt = fixedNow - 10_000L
+                )
+            )
+
+            com.example.network.MagisterTokenManager.refreshExecutorOverride = { token ->
+                assertEquals("rt_1", token)
+                refreshCount.incrementAndGet()
+                kotlinx.coroutines.delay(50)
+                com.example.network.TokenRefreshResult.Success(
+                    accessToken = "new_access_1",
+                    refreshToken = "rt_2",
+                    expiresAtMs = fixedNow + 3_600_000L
+                )
+            }
+
+            // 5 concurrent callers must coalesce into 1 single-flight refresh call
+            val results = coroutineScope {
+                (1..5).map {
+                    async {
+                        com.example.network.MagisterTokenManager.getValidAccessToken(context)
+                    }
+                }.awaitAll()
+            }
+
+            assertEquals(1, refreshCount.get())
+            assertTrue(results.all { it is com.example.network.TokenAcquireResult.Valid && it.accessToken == "new_access_1" })
+            val savedAfterRefresh = store.loadSession()
+            assertEquals("rt_2", savedAfterRefresh.refreshToken)
+            assertEquals("new_access_1", savedAfterRefresh.accessToken)
+
+            // Transient failure must preserve existing tokens
+            com.example.network.MagisterTokenManager.refreshExecutorOverride = {
+                com.example.network.TokenRefreshResult.TransientError(503, "Service unavailable")
+            }
+            val transient = com.example.network.MagisterTokenManager.getValidAccessToken(context, forceRefresh = true)
+            assertTrue(transient is com.example.network.TokenAcquireResult.TransientFailure)
+            assertTrue(store.loadSession().isAuthenticated)
+            assertEquals("rt_2", store.loadSession().refreshToken)
+
+            // InvalidGrant must clear credentials and require reauth
+            com.example.network.MagisterTokenManager.refreshExecutorOverride = {
+                com.example.network.TokenRefreshResult.InvalidGrant("invalid_grant")
+            }
+            val invalid = com.example.network.MagisterTokenManager.getValidAccessToken(context, forceRefresh = true)
+            assertTrue(invalid is com.example.network.TokenAcquireResult.RequiresReauth)
+            assertFalse(store.loadSession().isAuthenticated)
+        } finally {
+            com.example.network.MagisterTokenManager.refreshExecutorOverride = null
+            com.example.network.MagisterTokenManager.clockMsProvider = { System.currentTimeMillis() }
+            store.clearSession()
+        }
+    }
+
+    @Test
+    fun test_changed_lesson_diffs_persistence_and_pruning() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val store = com.example.data.AppPreferencesStore(context)
+        store.clearSession()
+
+        store.mergeChangedLessonDiffs(
+            newDiffs = mapOf(101L to "Lokaal 10 -> 22", 102L to "Uitval (1e uur)"),
+            activeLessonIds = setOf(101L, 102L)
+        )
+        val loaded = store.getChangedLessonDiffs()
+        assertEquals(2, loaded.size)
+        assertEquals("Lokaal 10 -> 22", loaded[101L])
+
+        // Lesson 102 drops out of active lessons -> gets pruned
+        store.mergeChangedLessonDiffs(
+            newDiffs = emptyMap(),
+            activeLessonIds = setOf(101L)
+        )
+        val afterPrune = store.getChangedLessonDiffs()
+        assertEquals(1, afterPrune.size)
+        assertTrue(afterPrune.containsKey(101L))
+        assertFalse(afterPrune.containsKey(102L))
+    }
+
+    @Test
+    fun test_gap_share_payload_zero_pii_and_overlap_matching() {
+        val today = "2026-11-18"
+        val myAppts = listOf(
+            com.example.model.Appointment(
+                id = 1L, title = "Nederlands", subjectCode = "NE", subjectName = "Nederlands",
+                teacherName = "Jansen", teacherInitials = "JAN", classroom = "B102",
+                periodIndex = 1, startTime = "08:30", endTime = "09:20", dayOfWeek = 3,
+                isCanceled = false, dateIso = today
+            ),
+            com.example.model.Appointment(
+                id = 2L, title = "Wiskunde", subjectCode = "WI", subjectName = "Wiskunde",
+                teacherName = "Bakker", teacherInitials = "BAK", classroom = "C204",
+                periodIndex = 2, startTime = "09:20", endTime = "10:10", dayOfWeek = 3,
+                isCanceled = true, dateIso = today
+            ),
+            // Period 3 omitted intentionally -> becomes "tussenuur"
+            com.example.model.Appointment(
+                id = 4L, title = "Engels", subjectCode = "EN", subjectName = "Engels",
+                teacherName = "De Vries", teacherInitials = "VRI", classroom = "A101",
+                periodIndex = 4, startTime = "11:20", endTime = "12:10", dayOfWeek = 3,
+                isCanceled = false, dateIso = today
+            )
+        )
+
+        val json = com.example.services.SyncManager.buildGapSharePayloadJson(
+            alias = "Sam",
+            appointments = myAppts,
+            todayIsoOverride = today
+        )
+        assertEquals("agendaplus_gaps_v1", json.getString("schema"))
+        assertEquals("Sam", json.getString("alias"))
+
+        val slots = json.getJSONArray("freeSlots")
+        assertEquals(2, slots.length())
+        val raw = json.toString()
+        assertFalse(raw.contains("grades"))
+        assertFalse(raw.contains("homework"))
+        assertFalse(raw.contains("Bakker"))
+        assertFalse(raw.contains("C204"))
+        assertFalse(raw.contains("Wiskunde"))
+
+        val friend = com.example.services.SyncManager.ClassmateGapSchedule(
+            alias = "Kim",
+            generatedAt = 1234L,
+            freeSlots = listOf(
+                com.example.services.SyncManager.GapSlot(
+                    dateIso = today, period = 3, startTime = "10:30", endTime = "11:20",
+                    kind = "tussenuur", label = "3e uur (tussenuur)"
+                )
+            )
+        )
+        val overlaps = com.example.services.SyncManager.findOverlappingGaps(myAppts, friend, todayIsoOverride = today)
+        assertEquals(1, overlaps.size)
+        assertEquals(3, overlaps.first().period)
+        assertEquals("tussenuur", overlaps.first().myKind)
+    }
+
+    @Test
+    fun test_render_single_grade_unboxing_card_png_across_themes() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val grade = com.example.model.GradeItem(
+            id = "g_99",
+            subjectCode = "WI",
+            subjectName = "wiskunde B",
+            score = 8.6,
+            weight = 3.0,
+            description = "SE Kansrekening",
+            date = "18-11-2026",
+            period = 2,
+            isPta = true
+        )
+
+        com.example.model.AppThemeStyle.entries.forEach { style ->
+            val file = com.example.util.GradeExporter.renderSingleGradeUnboxingCardPng(
+                context = context,
+                grade = grade,
+                studentName = "Sam",
+                appThemeStyle = style
+            )
+            try {
+                assertTrue("PNG file must exist for $style", file.exists())
+                assertTrue("PNG file must be >1KB for $style", file.length() > 1000L)
+            } finally {
+                file.delete()
+            }
+        }
+    }
+
+    @Test
+    fun test_weekly_focus_minutes_and_commute_backup_round_trip() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val store = com.example.data.AppPreferencesStore(context)
+
+        val initial = store.getWeeklyFocusMinutes()
+        val afterFirst = store.addWeeklyFocusMinutes(25)
+        assertEquals(initial + 25, afterFirst)
+        val afterSecond = store.addWeeklyFocusMinutes(15)
+        assertEquals(initial + 40, afterSecond)
+
+        val customModes = listOf(
+            com.example.model.CommuteModeConfig("bus_1", com.example.model.CommuteModeType.BUS, "Lijn 156", busLine = "156"),
+            com.example.model.CommuteModeConfig("bus_2", com.example.model.CommuteModeType.BUS, "Lijn 306", busLine = "306"),
+            com.example.model.CommuteModeConfig("bike_1", com.example.model.CommuteModeType.BIKE, "Fiets", bikeMinutes = 30)
+        )
+        store.saveCommuteModes(customModes)
+        store.setActiveCommuteModeId("bus_2")
+        store.setMorningLockNotificationEnabled(false)
+
+        val backupJson = store.exportChoicesBackupJson()
+        // Mutate before restoring
+        store.saveCommuteModes(listOf(com.example.model.CommuteModeConfig("bike_only", com.example.model.CommuteModeType.BIKE, "Fiets", bikeMinutes = 10)))
+        store.setActiveCommuteModeId("bike_only")
+        store.setMorningLockNotificationEnabled(true)
+
+        val restoredResult = store.importChoicesBackupJson(backupJson)
+        assertTrue(restoredResult.isSuccess)
+        val restoredModes = store.getCommuteModes()
+        assertEquals(3, restoredModes.size)
+        assertEquals("156", restoredModes[0].busLine)
+        assertEquals("306", restoredModes[1].busLine)
+        assertEquals(30, restoredModes[2].bikeMinutes)
+        assertEquals("bus_2", store.getActiveCommuteModeId())
+        assertFalse(store.isMorningLockNotificationEnabled())
+    }
+
+    @Test
+    fun test_homework_widget_toggle_task_broadcast() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val store = com.example.data.AppPreferencesStore(context)
+        val tasks = listOf(
+            com.example.model.HomeworkTask(
+                id = "t1",
+                subject = "engels",
+                title = "Vocabulaire H3",
+                description = "Woordjes leren",
+                dueDay = "2026-11-20",
+                dueDate = "Vr 20 nov",
+                category = com.example.model.TaskCategory.HOMEWORK,
+                isCompleted = false
+            ),
+            com.example.model.HomeworkTask(
+                id = "t2",
+                subject = "Wiskunde",
+                title = "Opgave 4",
+                description = "Maken",
+                dueDay = "2026-11-21",
+                dueDate = "Za 21 nov",
+                category = com.example.model.TaskCategory.HOMEWORK,
+                isCompleted = true
+            )
+        )
+        store.saveTasks(tasks)
+
+        val intent = android.content.Intent(com.example.widget.HomeworkWidgetProvider.ACTION_TOGGLE_TASK).apply {
+            putExtra(com.example.widget.HomeworkWidgetProvider.EXTRA_TASK_ID, "t1")
+        }
+        com.example.widget.HomeworkWidgetProvider().onReceive(context, intent)
+
+        val reloaded = store.loadTasks()
+        assertTrue(reloaded.first { it.id == "t1" }.isCompleted)
+        assertTrue(reloaded.first { it.id == "t2" }.isCompleted)
+        assertTrue(store.getLocalSyncUpdatedAt() > 0L)
     }
 }
 

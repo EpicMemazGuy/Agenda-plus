@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -36,10 +37,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.model.AppThemeStyle
 import com.example.model.GradeItem
 import com.example.model.GradeUnboxingMode
+import com.example.model.capitalizeSubjectName
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.theme.LocalDarkThemeActive
+import com.example.util.GradeExporter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -51,6 +56,8 @@ import kotlin.random.Random
 fun GradeUnboxingDialog(
     grade: GradeItem,
     initialMode: GradeUnboxingMode,
+    appThemeStyle: AppThemeStyle = AppThemeStyle.STANDARD,
+    studentName: String = "",
     onChangeMode: (GradeUnboxingMode) -> Unit,
     onRevealComplete: () -> Unit,
     onDismiss: () -> Unit
@@ -92,7 +99,7 @@ fun GradeUnboxingDialog(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "${grade.subjectName} • Weging ${grade.weight}x",
+                            text = "${grade.subjectName.capitalizeSubjectName()} • Weging ${grade.weight}x",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -136,6 +143,8 @@ fun GradeUnboxingDialog(
                     if (revealed) {
                         GradeRevealedCelebrationCard(
                             grade = grade,
+                            appThemeStyle = appThemeStyle,
+                            studentName = studentName,
                             onReplay = { isRevealed = false },
                             onDone = {
                                 onRevealComplete()
@@ -216,9 +225,14 @@ private fun gradeRarityLabel(score: Double): String = when {
 @Composable
 private fun GradeRevealedCelebrationCard(
     grade: GradeItem,
+    appThemeStyle: AppThemeStyle,
+    studentName: String,
     onReplay: () -> Unit,
     onDone: () -> Unit
 ) {
+    val context = LocalContext.current
+    val isDarkMode = LocalDarkThemeActive.current
+    val dynamicPrimary = MaterialTheme.colorScheme.primary
     val primaryRarity = gradeRarityColor(grade.score)
     val secondaryRarity = gradeRaritySecondaryColor(grade.score)
 
@@ -267,7 +281,7 @@ private fun GradeRevealedCelebrationCard(
             )
 
             Text(
-                text = grade.subjectName,
+                text = grade.subjectName.capitalizeSubjectName(),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
@@ -280,7 +294,41 @@ private fun GradeRevealedCelebrationCard(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+
+            FilledTonalButton(
+                onClick = {
+                    val primaryArgb = android.graphics.Color.argb(
+                        (dynamicPrimary.alpha * 255).toInt(),
+                        (dynamicPrimary.red * 255).toInt(),
+                        (dynamicPrimary.green * 255).toInt(),
+                        (dynamicPrimary.blue * 255).toInt()
+                    )
+                    val file = GradeExporter.renderSingleGradeUnboxingCardPng(
+                        context = context,
+                        grade = grade,
+                        studentName = studentName,
+                        appThemeStyle = appThemeStyle,
+                        isDarkMode = isDarkMode,
+                        dynamicPrimaryArgb = primaryArgb
+                    )
+                    GradeExporter.shareFileViaProvider(
+                        context = context,
+                        file = file,
+                        mimeType = "image/png",
+                        chooserTitle = "Deel cijferkaart"
+                    )
+                },
+                shape = RoundedCornerShape(percent = 50),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("unboxing_share_card_button")
+            ) {
+                Icon(Icons.Default.IosShare, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Deel Cijferkaart", fontWeight = FontWeight.Bold)
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -289,7 +337,7 @@ private fun GradeRevealedCelebrationCard(
                 OutlinedButton(
                     onClick = onReplay,
                     shape = RoundedCornerShape(percent = 50),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).height(48.dp)
                 ) {
                     Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
@@ -300,6 +348,7 @@ private fun GradeRevealedCelebrationCard(
                     shape = RoundedCornerShape(percent = 50),
                     modifier = Modifier
                         .weight(1f)
+                        .height(48.dp)
                         .testTag("unboxing_done_button")
                 ) {
                     Text("Opslaan", fontWeight = FontWeight.Bold)

@@ -36,6 +36,16 @@
                     android:host="oauth2redirect"
                     android:scheme="m6loapp" />
             </intent-filter>
+
+            <!-- Deep link handler for Zero-PII Classmate Gap Finder -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="tussenuur"
+                    android:scheme="agendaplus" />
+            </intent-filter>
         </activity>
 
         <!-- Default Launcher Icon Alias -->
@@ -119,6 +129,7 @@
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.example.widget.ACTION_REFRESH_HOMEWORK" />
+                <action android:name="com.example.widget.ACTION_TOGGLE_TASK" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

@@ -2,9 +2,14 @@ package com.example.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.example.model.*
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 data class WeatherLocationPref(
     val cityName: String,
@@ -14,8 +19,27 @@ data class WeatherLocationPref(
 
 class AppPreferencesStore(context: Context) {
 
+    private val appContext: Context = context.applicationContext
+
     private val prefs: SharedPreferences =
-        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private val secretSessionPrefs: SharedPreferences by lazy {
+        try {
+            val masterKey = MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                appContext,
+                SECRET_SESSION_PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (_: Throwable) {
+            prefs
+        }
+    }
 
     fun hasCompletedOnboarding(): Boolean = prefs.getBoolean(KEY_ONBOARDING_DONE, false)
 
@@ -192,6 +216,10 @@ class AppPreferencesStore(context: Context) {
     }
 
     fun saveSession(session: AuthSession) {
+        saveSessionSync(session)
+    }
+
+    fun saveSessionSync(session: AuthSession) {
         if (!session.isAuthenticated) {
             clearSession()
             return
@@ -204,6 +232,7 @@ class AppPreferencesStore(context: Context) {
             put("accessToken", session.accessToken ?: "")
             put("refreshToken", session.refreshToken ?: "")
             put("personId", session.personId)
+            put("expiresAt", session.expiresAt)
             put("provider", SchoolProvider.MAGISTER.name)
             session.school?.let { school ->
                 put("school", JSONObject().apply {
@@ -215,11 +244,23 @@ class AppPreferencesStore(context: Context) {
                 })
             }
         }
-        prefs.edit().putString(KEY_SESSION_JSON, json.toString()).apply()
+        secretSessionPrefs.edit().putString(KEY_SESSION_JSON, json.toString()).commit()
+        if (secretSessionPrefs !== prefs && prefs.contains(KEY_SESSION_JSON)) {
+            prefs.edit().remove(KEY_SESSION_JSON).commit()
+        }
+    }
+
+    fun clearAuthCredentialsOnly() {
+        secretSessionPrefs.edit().remove(KEY_SESSION_JSON).commit()
+        if (secretSessionPrefs !== prefs && prefs.contains(KEY_SESSION_JSON)) {
+            prefs.edit().remove(KEY_SESSION_JSON).commit()
+        }
     }
 
     fun loadSession(): AuthSession {
-        val raw = prefs.getString(KEY_SESSION_JSON, null) ?: return AuthSession()
+        val raw = secretSessionPrefs.getString(KEY_SESSION_JSON, null)
+            ?: prefs.getString(KEY_SESSION_JSON, null)
+            ?: return AuthSession()
         return try {
             val json = JSONObject(raw)
             if (!json.optBoolean("isAuthenticated", false)) return AuthSession()
@@ -243,7 +284,8 @@ class AppPreferencesStore(context: Context) {
                 accessToken = json.optString("accessToken").cleanSchoolText(),
                 refreshToken = json.optString("refreshToken").cleanSchoolText(),
                 personId = json.optLong("personId", 0L),
-                provider = SchoolProvider.MAGISTER
+                provider = SchoolProvider.MAGISTER,
+                expiresAt = json.optLong("expiresAt", 0L)
             )
         } catch (_: Exception) {
             AuthSession()
@@ -347,6 +389,7 @@ class AppPreferencesStore(context: Context) {
     }
 
     fun clearSession() {
+        secretSessionPrefs.edit().remove(KEY_SESSION_JSON).commit()
         prefs.edit()
             .remove(KEY_SESSION_JSON)
             .remove(KEY_APPOINTMENTS_JSON)
@@ -358,6 +401,7 @@ class AppPreferencesStore(context: Context) {
             .remove(KEY_ABSENCES_JSON)
             .remove(KEY_BUS_SNAPSHOT_JSON)
             .remove(KEY_LAST_SMART_BUS_KEY)
+            .remove(KEY_CHANGED_LESSON_DIFFS_JSON)
             .remove(KEY_LAST_SYNC)
             .remove(KEY_NOTIFIED_CANCELED_KEYS)
             .remove(KEY_NOTIFIED_CHANGE_KEYS)
@@ -367,7 +411,7 @@ class AppPreferencesStore(context: Context) {
             .remove(KEY_HAS_TESTS_BASELINE)
             .remove(KEY_UNBOXED_GRADE_IDS)
             .remove(KEY_HAS_UNBOXED_BASELINE)
-            .apply()
+            .commit()
     }
 
     fun saveAppointments(appointments: List<Appointment>) {
@@ -1033,6 +1077,142 @@ class AppPreferencesStore(context: Context) {
         prefs.edit().putString(KEY_TEST_PREP_JSON, root.toString()).apply()
     }
 
+    fun getCommuteModes(): List<CommuteModeConfig> {
+        val raw = prefs.getString(KEY_COMMUTE_MODES_JSON, null)
+        val parsed = if (!raw.isNullOrBlank()) {
+            try {
+                val arr = JSONArray(raw)
+                buildList {
+                    for (i in 0 until arr.length()) {
+                        val o = arr.optJSONObject(i) ?: continue
+                        val type = runCatching { CommuteModeType.valueOf(o.optString("type")) }
+                            .getOrDefault(CommuteModeType.BUS)
+                        add(
+                            CommuteModeConfig(
+                                id = o.optString("id", "mode_$i"),
+                                type = type,
+                                label = o.optString("label", if (type == CommuteModeType.BIKE) "Fiets" else "Bus"),
+                                busLine = o.optString("busLine", ""),
+                                bikeMinutes = o.optInt("bikeMinutes", 25).coerceIn(5, 90)
+                            )
+                        )
+                    }
+                }.take(3)
+            } catch (_: Exception) {
+                emptyList()
+            }
+        } else emptyList()
+
+        if (parsed.isNotEmpty()) return parsed
+
+        val primaryBus = getSavedBusLine()
+        return buildList {
+            if (primaryBus.isNotBlank()) {
+                add(CommuteModeConfig("bus_1", CommuteModeType.BUS, "Lijn $primaryBus", busLine = primaryBus))
+            }
+            add(CommuteModeConfig("bike_1", CommuteModeType.BIKE, "Fiets", bikeMinutes = 25))
+        }
+    }
+
+    fun saveCommuteModes(modes: List<CommuteModeConfig>) {
+        val bounded = modes.take(3)
+        val arr = JSONArray()
+        bounded.forEach { m ->
+            arr.put(JSONObject().apply {
+                put("id", m.id)
+                put("type", m.type.name)
+                put("label", m.label)
+                put("busLine", m.busLine)
+                put("bikeMinutes", m.bikeMinutes)
+            })
+        }
+        prefs.edit().putString(KEY_COMMUTE_MODES_JSON, arr.toString()).apply()
+    }
+
+    fun getActiveCommuteModeId(): String =
+        prefs.getString(KEY_ACTIVE_COMMUTE_MODE_ID, "") ?: ""
+
+    fun setActiveCommuteModeId(id: String) {
+        prefs.edit().putString(KEY_ACTIVE_COMMUTE_MODE_ID, id).apply()
+    }
+
+    fun isMorningLockNotificationEnabled(): Boolean =
+        prefs.getBoolean(KEY_MORNING_LOCK_NOTIF_ENABLED, true)
+
+    fun setMorningLockNotificationEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_MORNING_LOCK_NOTIF_ENABLED, enabled).apply()
+    }
+
+    private fun currentIsoWeekKey(): String {
+        val cal = Calendar.getInstance()
+        val year = cal.get(Calendar.YEAR)
+        val week = cal.get(Calendar.WEEK_OF_YEAR)
+        return String.format(Locale.US, "%04d-W%02d", year, week)
+    }
+
+    fun getWeeklyFocusMinutes(): Int {
+        val storedWeek = prefs.getString(KEY_FOCUS_WEEK_KEY, "") ?: ""
+        val nowWeek = currentIsoWeekKey()
+        return if (storedWeek == nowWeek) prefs.getInt(KEY_WEEKLY_FOCUS_MINUTES, 0).coerceAtLeast(0) else 0
+    }
+
+    fun addWeeklyFocusMinutes(minutes: Int): Int {
+        val added = minutes.coerceAtLeast(1)
+        val nowWeek = currentIsoWeekKey()
+        val updated = getWeeklyFocusMinutes() + added
+        prefs.edit()
+            .putString(KEY_FOCUS_WEEK_KEY, nowWeek)
+            .putInt(KEY_WEEKLY_FOCUS_MINUTES, updated)
+            .apply()
+        return updated
+    }
+
+    fun getChangedLessonDiffs(): Map<Long, String> {
+        val raw = prefs.getString(KEY_CHANGED_LESSON_DIFFS_JSON, null) ?: return emptyMap()
+        return try {
+            val obj = JSONObject(raw)
+            val nowMs = System.currentTimeMillis()
+            val map = mutableMapOf<Long, String>()
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val id = k.toLongOrNull() ?: continue
+                val entry = obj.optJSONObject(k)
+                if (entry != null) {
+                    val ts = entry.optLong("ts", 0L)
+                    val summary = entry.optString("summary", "")
+                    if (summary.isNotBlank() && (ts == 0L || nowMs - ts < 36 * 60 * 60 * 1000L)) {
+                        map[id] = summary
+                    }
+                } else {
+                    val summary = obj.optString(k, "")
+                    if (summary.isNotBlank()) map[id] = summary
+                }
+            }
+            map
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    fun mergeChangedLessonDiffs(newDiffs: Map<Long, String>, activeLessonIds: Set<Long>? = null) {
+        if (newDiffs.isEmpty() && activeLessonIds == null) return
+        val existing = getChangedLessonDiffs().toMutableMap()
+        newDiffs.forEach { (id, summary) -> existing[id] = summary }
+        val filtered = if (activeLessonIds != null) {
+            existing.filterKeys { it in activeLessonIds }
+        } else existing
+        val nowMs = System.currentTimeMillis()
+        val root = JSONObject()
+        filtered.entries.take(80).forEach { (id, summary) ->
+            root.put(id.toString(), JSONObject().apply {
+                put("summary", summary)
+                put("ts", nowMs)
+            })
+        }
+        prefs.edit().putString(KEY_CHANGED_LESSON_DIFFS_JSON, root.toString()).apply()
+    }
+
     fun getLocalSyncUpdatedAt(): Long = prefs.getLong(KEY_LOCAL_SYNC_UPDATED_AT, 0L)
 
     fun setLocalSyncUpdatedAt(timestampMs: Long) {
@@ -1054,6 +1234,8 @@ class AppPreferencesStore(context: Context) {
             put("uiScale", getUiScale().toDouble())
             put("eloUrl", getEloUrl())
             put("savedBusLine", getSavedBusLine())
+            put("activeCommuteModeId", getActiveCommuteModeId())
+            put("morningLockNotificationEnabled", isMorningLockNotificationEnabled())
             put("navPromptDismissed", isNavPromptDismissed())
             put("tutorialSeen", hasSeenTutorial())
             put("offlineModeEnabled", isOfflineModeEnabled())
@@ -1106,6 +1288,18 @@ class AppPreferencesStore(context: Context) {
                 })
             }
             put("studySites", sitesArr)
+
+            val commuteArr = JSONArray()
+            getCommuteModes().forEach { mode ->
+                commuteArr.put(JSONObject().apply {
+                    put("id", mode.id)
+                    put("type", mode.type.name)
+                    put("label", mode.label)
+                    put("busLine", mode.busLine)
+                    put("bikeMinutes", mode.bikeMinutes)
+                })
+            }
+            put("commuteModes", commuteArr)
         }
         return root.toString(2)
     }
@@ -1143,6 +1337,36 @@ class AppPreferencesStore(context: Context) {
         if (root.has("savedBusLine")) {
             setSavedBusLine(root.optString("savedBusLine", ""))
             restoredCount++
+        }
+        if (root.has("activeCommuteModeId")) {
+            setActiveCommuteModeId(root.optString("activeCommuteModeId", ""))
+            restoredCount++
+        }
+        if (root.has("morningLockNotificationEnabled")) {
+            setMorningLockNotificationEnabled(root.optBoolean("morningLockNotificationEnabled", true))
+            restoredCount++
+        }
+        root.optJSONArray("commuteModes")?.let { arr ->
+            val modes = buildList {
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val type = runCatching { CommuteModeType.valueOf(o.optString("type")) }
+                        .getOrDefault(CommuteModeType.BUS)
+                    add(
+                        CommuteModeConfig(
+                            id = o.optString("id", "mode_$i"),
+                            type = type,
+                            label = o.optString("label", if (type == CommuteModeType.BIKE) "Fiets" else "Bus"),
+                            busLine = o.optString("busLine", ""),
+                            bikeMinutes = o.optInt("bikeMinutes", 25).coerceIn(5, 90)
+                        )
+                    )
+                }
+            }.take(3)
+            if (modes.isNotEmpty()) {
+                saveCommuteModes(modes)
+                restoredCount++
+            }
         }
         if (root.has("navPromptDismissed")) {
             setNavPromptDismissed(root.optBoolean("navPromptDismissed", false))
@@ -1282,6 +1506,7 @@ class AppPreferencesStore(context: Context) {
 
     companion object {
         private const val PREFS_NAME = "agenda_plus_prefs"
+        private const val SECRET_SESSION_PREFS_NAME = "agenda_plus_secret_session_prefs"
         private const val KEY_ONBOARDING_DONE = "onboarding_done"
         private const val KEY_TUTORIAL_SEEN = "tutorial_seen"
         private const val KEY_NAV_PROMPT_DISMISSED = "nav_prompt_dismissed"
@@ -1332,6 +1557,12 @@ class AppPreferencesStore(context: Context) {
         private const val KEY_BUS_WALK_MINUTES = "bus_walk_minutes"
         private const val KEY_BUS_BUFFER_MINUTES = "bus_buffer_minutes"
         private const val KEY_LAST_SMART_BUS_KEY = "last_smart_bus_key"
+        private const val KEY_COMMUTE_MODES_JSON = "commute_modes_json"
+        private const val KEY_ACTIVE_COMMUTE_MODE_ID = "active_commute_mode_id"
+        private const val KEY_MORNING_LOCK_NOTIF_ENABLED = "morning_lock_notif_enabled"
+        private const val KEY_WEEKLY_FOCUS_MINUTES = "weekly_focus_minutes"
+        private const val KEY_FOCUS_WEEK_KEY = "focus_week_key"
+        private const val KEY_CHANGED_LESSON_DIFFS_JSON = "changed_lesson_diffs_json"
         private const val KEY_LOCAL_SYNC_UPDATED_AT = "local_sync_updated_at"
         const val DEFAULT_ELO_URL = "https://www.itslearning.com"
 

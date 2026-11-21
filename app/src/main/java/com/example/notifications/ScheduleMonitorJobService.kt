@@ -7,6 +7,7 @@ import android.app.job.JobService
 import android.content.ComponentName
 import android.content.Context
 import com.example.data.AppPreferencesStore
+import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
 import com.example.network.MagisterClient
 import com.example.util.NetworkStatusHelper
@@ -38,30 +39,27 @@ class ScheduleMonitorJobService : JobService() {
             try {
                 val previousAppointments = store.loadAppointments()
                 val magisterClient = MagisterClient()
-                var activeToken: String = initialToken
-
-                if (magisterClient.isAccessTokenExpired(activeToken)) {
-                    val refresh = session.refreshToken
-                    if (!refresh.isNullOrBlank()) {
-                        val refreshed = magisterClient.refreshAccessToken(refresh)
-                        if (refreshed != null) {
-                            activeToken = refreshed.first
-                            store.saveSession(
-                                session.copy(
-                                    accessToken = refreshed.first,
-                                    refreshToken = refreshed.second ?: refresh
-                                )
-                            )
-                        }
+                val tokenRes = com.example.network.MagisterTokenManager.getValidAccessToken(
+                    context = appContext,
+                    forceRefresh = false,
+                    client = magisterClient
+                )
+                val activeToken = when (tokenRes) {
+                    is com.example.network.TokenAcquireResult.Valid -> tokenRes.accessToken
+                    is com.example.network.TokenAcquireResult.TransientFailure -> tokenRes.fallbackToken ?: initialToken
+                    is com.example.network.TokenAcquireResult.RequiresReauth,
+                    com.example.network.TokenAcquireResult.NotAuthenticated -> {
+                        jobFinished(params, false)
+                        return@launch
                     }
                 }
-
-                val bundle = magisterClient.fetchAllMagisterData(tenant, activeToken, session.personId)
+                val latestSession = store.loadSession()
+                val bundle = magisterClient.fetchAllMagisterData(tenant, activeToken, latestSession.personId)
 
                 val cleaned = bundle.appointments.map { appt ->
                     appt.copy(
                         title = appt.title.cleanSchoolText() ?: "Les",
-                        subjectName = appt.subjectName.cleanSchoolText() ?: "Les",
+                        subjectName = appt.subjectName.capitalizeSubjectName().ifBlank { "Les" },
                         teacherName = appt.teacherName.cleanSchoolText() ?: "",
                         teacherInitials = appt.teacherInitials.cleanSchoolText() ?: "",
                         classroom = appt.classroom.cleanSchoolText() ?: "",

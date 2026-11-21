@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.MenuBook
@@ -20,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.example.model.TestPrepChecklist
+import com.example.model.capitalizeSubjectName
 import com.example.ui.components.OneUiPillBadge
 import com.example.ui.components.appCardShape
 import com.example.ui.components.appInnerCardShape
@@ -34,9 +36,11 @@ import com.example.ui.components.nothingCardBorder
 @Composable
 fun TestPrepChecklistSheet(
     checklist: TestPrepChecklist,
+    targetDateIso: String? = null,
     onToggleTopic: (String) -> Unit,
     onAddTopic: (String) -> Unit,
     onRemoveTopic: (String) -> Unit,
+    onAutoSplitToDate: (String?) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     var newTopicInput by remember { mutableStateOf("") }
@@ -80,16 +84,17 @@ fun TestPrepChecklistSheet(
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
+                        val displaySubject = checklist.subject.capitalizeSubjectName().ifBlank { "Toets" }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (isOneUi85) {
-                                OneUiPillBadge(text = checklist.subject)
+                                OneUiPillBadge(text = displaySubject)
                             } else {
                                 Surface(
                                     shape = RoundedCornerShape(percent = 50),
                                     color = MaterialTheme.colorScheme.primaryContainer
                                 ) {
                                     Text(
-                                        text = checklist.subject,
+                                        text = displaySubject,
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -157,6 +162,23 @@ fun TestPrepChecklistSheet(
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                     )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    FilledTonalButton(
+                        onClick = { onAutoSplitToDate(targetDateIso) },
+                        shape = RoundedCornerShape(percent = 50),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("test_prep_auto_split_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Auto-splits tot toetsdatum", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
 

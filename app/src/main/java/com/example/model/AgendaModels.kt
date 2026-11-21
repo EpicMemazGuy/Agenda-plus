@@ -118,7 +118,28 @@ data class BusVehiclePoint(
     val latitude: Double,
     val longitude: Double,
     val stopName: String,
-    val expectedTime: String
+    val expectedTime: String,
+    val delayMinutes: Int = 0
+)
+
+enum class CommuteModeType(val labelDutch: String) {
+    BUS("Bus"),
+    BIKE("Fiets")
+}
+
+data class CommuteModeConfig(
+    val id: String,
+    val type: CommuteModeType,
+    val label: String,
+    val busLine: String = "",
+    val bikeMinutes: Int = 20
+)
+
+data class RainForecastWindow(
+    val maxProbabilityPercent: Int = 0,
+    val maxPrecipitationMm: Double = 0.0,
+    val isRainExpected: Boolean = false,
+    val summaryDutch: String = ""
 )
 
 data class BusTrackingState(
@@ -339,7 +360,10 @@ data class WeatherInfo(
     val weatherCode: Int,
     val isDay: Boolean,
     val latitude: Double,
-    val longitude: Double
+    val longitude: Double,
+    val hourlyTimesIso: List<String> = emptyList(),
+    val hourlyPrecipProb: List<Int> = emptyList(),
+    val hourlyPrecipMm: List<Double> = emptyList()
 )
 
 data class AuthSession(
@@ -351,7 +375,8 @@ data class AuthSession(
     val accessToken: String? = null,
     val refreshToken: String? = null,
     val personId: Long = 0L,
-    val provider: SchoolProvider = SchoolProvider.MAGISTER
+    val provider: SchoolProvider = SchoolProvider.MAGISTER,
+    val expiresAt: Long = 0L
 )
 
 data class TestPrepSubtopic(
@@ -384,7 +409,11 @@ data class SmartBusAdvice(
     val firstActiveLesson: Appointment,
     val shiftReasonMessage: String? = null,
     val alertKey: String = "",
-    val shouldNotifyPriority: Boolean = false
+    val shouldNotifyPriority: Boolean = false,
+    val commuteMode: CommuteModeType = CommuteModeType.BUS,
+    val delayMinutes: Int = 0,
+    val rainWarning: String? = null,
+    val longerSleepMinutes: Int = 0
 )
 
 data class BusWidgetSnapshot(
@@ -402,6 +431,13 @@ fun String?.cleanSchoolText(): String? {
     if (trimmed.equals("null", ignoreCase = true)) return null
     if (trimmed.equals("undefined", ignoreCase = true)) return null
     return trimmed
+}
+
+fun String?.capitalizeSubjectName(): String {
+    val clean = this.cleanSchoolText() ?: return ""
+    return clean.replaceFirstChar { ch ->
+        if (ch.isLowerCase()) ch.titlecase(java.util.Locale.forLanguageTag("nl-NL")) else ch.toString()
+    }
 }
 
 private val TEST_KEYWORD_REGEX = Regex(

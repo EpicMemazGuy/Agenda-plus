@@ -10,11 +10,14 @@ import com.example.model.*
 import com.example.network.AuthResult
 import com.example.network.CitySearchResult
 import com.example.network.MagisterClient
+import com.example.network.MagisterTokenManager
+import com.example.network.TokenAcquireResult
 import com.example.network.TransitClient
 import com.example.network.WeatherClient
 import com.example.notifications.ScheduleMonitorJobService
 import com.example.notifications.SmartBusPlanner
 import com.example.notifications.UitvalNotificationHelper
+import com.example.notifications.WorkManagerScheduler
 import com.example.services.PullSyncOutcome
 import com.example.services.SyncManager
 import com.example.services.SyncSourceOverride
@@ -110,6 +113,24 @@ class AgendaRepository(private val context: Context? = null) {
     private val _busArrivalBufferMinutes = MutableStateFlow(prefs?.getBusArrivalBufferMinutes() ?: 10)
     val busArrivalBufferMinutes: StateFlow<Int> = _busArrivalBufferMinutes.asStateFlow()
 
+    private val _commuteModes = MutableStateFlow(prefs?.getCommuteModes() ?: listOf(CommuteModeConfig("bike_1", CommuteModeType.BIKE, "Fiets", bikeMinutes = 25)))
+    val commuteModes: StateFlow<List<CommuteModeConfig>> = _commuteModes.asStateFlow()
+
+    private val _activeCommuteModeId = MutableStateFlow(
+        prefs?.getActiveCommuteModeId()?.takeIf { id -> _commuteModes.value.any { it.id == id } }
+            ?: _commuteModes.value.firstOrNull()?.id.orEmpty()
+    )
+    val activeCommuteModeId: StateFlow<String> = _activeCommuteModeId.asStateFlow()
+
+    private val _morningLockNotificationEnabled = MutableStateFlow(prefs?.isMorningLockNotificationEnabled() ?: true)
+    val morningLockNotificationEnabled: StateFlow<Boolean> = _morningLockNotificationEnabled.asStateFlow()
+
+    private val _weeklyFocusMinutes = MutableStateFlow(prefs?.getWeeklyFocusMinutes() ?: 0)
+    val weeklyFocusMinutes: StateFlow<Int> = _weeklyFocusMinutes.asStateFlow()
+
+    private val _changedLessonDiffs = MutableStateFlow(prefs?.getChangedLessonDiffs() ?: emptyMap())
+    val changedLessonDiffs: StateFlow<Map<Long, String>> = _changedLessonDiffs.asStateFlow()
+
     private val _smartBusAdvice = MutableStateFlow<SmartBusAdvice?>(null)
     val smartBusAdvice: StateFlow<SmartBusAdvice?> = _smartBusAdvice.asStateFlow()
 
@@ -200,8 +221,13 @@ class AgendaRepository(private val context: Context? = null) {
     val unboxedGradeIds: StateFlow<Set<String>> = _unboxedGradeIds.asStateFlow()
 
     init {
-        if (initialSession.isAuthenticated && isAnyNotificationEnabled()) {
-            context?.let { ScheduleMonitorJobService.schedule(it) }
+        if (initialSession.isAuthenticated) {
+            context?.let { ctx ->
+                WorkManagerScheduler.scheduleKeepAliveOnly(ctx)
+                if (isAnyNotificationEnabled()) {
+                    ScheduleMonitorJobService.schedule(ctx)
+                }
+            }
         }
     }
 
@@ -243,6 +269,7 @@ class AgendaRepository(private val context: Context? = null) {
         val cleanId = result.studentId.cleanSchoolText() ?: ""
         val cleanClass = result.studentClass.cleanSchoolText() ?: ""
 
+        val expiresAt = System.currentTimeMillis() + (result.expiresInSeconds.coerceAtLeast(60L) * 1000L)
         val session = AuthSession(
             isAuthenticated = true,
             studentName = cleanName,
@@ -252,10 +279,11 @@ class AgendaRepository(private val context: Context? = null) {
             accessToken = result.accessToken,
             refreshToken = result.refreshToken,
             personId = result.personId,
-            provider = SchoolProvider.MAGISTER
+            provider = SchoolProvider.MAGISTER,
+            expiresAt = expiresAt
         )
         _currentSession.value = session
-        prefs?.saveSession(session)
+        prefs?.saveSessionSync(session)
         prefs?.setOnboardingCompleted(true)
         _hasCompletedOnboarding.value = true
 
@@ -270,7 +298,12 @@ class AgendaRepository(private val context: Context? = null) {
             }
         }
 
-        context?.let { ScheduleMonitorJobService.schedule(it) }
+        context?.let { ctx ->
+            WorkManagerScheduler.scheduleKeepAliveOnly(ctx)
+            if (isAnyNotificationEnabled()) {
+                ScheduleMonitorJobService.schedule(ctx)
+            }
+        }
         syncLiveSchoolData(finalTenant, result.accessToken, result.personId)
         refreshWeather()
     }
@@ -289,7 +322,7 @@ class AgendaRepository(private val context: Context? = null) {
             val cleanedAppointments = bundle.appointments.map { appt ->
                 appt.copy(
                     title = appt.title.cleanSchoolText() ?: "Les",
-                    subjectName = appt.subjectName.cleanSchoolText() ?: "Les",
+                    subjectName = appt.subjectName.capitalizeSubjectName().ifBlank { "Les" },
                     teacherName = appt.teacherName.cleanSchoolText() ?: "",
                     teacherInitials = appt.teacherInitials.cleanSchoolText() ?: "",
                     classroom = appt.classroom.cleanSchoolText() ?: "",
@@ -340,6 +373,7 @@ class AgendaRepository(private val context: Context? = null) {
                     newGrades = bundle.grades,
                     newTasks = bundle.tasks
                 )
+                _changedLessonDiffs.value = prefs?.getChangedLessonDiffs() ?: emptyMap()
             }
             recalculateSmartBusAndBridges()
             prefs?.touchLocalSyncUpdatedAt()
@@ -416,16 +450,80 @@ class AgendaRepository(private val context: Context? = null) {
         _savedBusLine.value = clean
         prefs?.setSavedBusLine(clean)
         if (clean.isNotBlank()) {
+            val currentModes = _commuteModes.value.toMutableList()
+            val existingBusIdx = currentModes.indexOfFirst { it.id == _activeCommuteModeId.value && it.type == CommuteModeType.BUS }
+                .takeIf { it >= 0 }
+                ?: currentModes.indexOfFirst { it.type == CommuteModeType.BUS }
+            val updatedMode = CommuteModeConfig(
+                id = if (existingBusIdx >= 0) currentModes[existingBusIdx].id else "bus_1",
+                type = CommuteModeType.BUS,
+                label = "Lijn $clean",
+                busLine = clean
+            )
+            if (existingBusIdx >= 0) {
+                currentModes[existingBusIdx] = updatedMode
+            } else {
+                currentModes.add(0, updatedMode)
+            }
+            saveCommuteModes(currentModes.take(3))
+            _activeCommuteModeId.value = updatedMode.id
+            prefs?.setActiveCommuteModeId(updatedMode.id)
             toggleTodayBlock(TodayBlockType.BUS_TIME, true)
         }
         notifyLocalDataChanged()
         refreshBusTracking(userLat, userLon)
     }
 
+    fun saveCommuteModes(modes: List<CommuteModeConfig>) {
+        val bounded = modes.take(3)
+        _commuteModes.value = bounded
+        prefs?.saveCommuteModes(bounded)
+        if (bounded.none { it.id == _activeCommuteModeId.value } && bounded.isNotEmpty()) {
+            _activeCommuteModeId.value = bounded.first().id
+            prefs?.setActiveCommuteModeId(bounded.first().id)
+        }
+        recalculateSmartBusAndBridges()
+    }
+
+    suspend fun selectCommuteMode(modeId: String, userLat: Double? = null, userLon: Double? = null) {
+        val mode = _commuteModes.value.firstOrNull { it.id == modeId } ?: return
+        _activeCommuteModeId.value = mode.id
+        prefs?.setActiveCommuteModeId(mode.id)
+        if (mode.type == CommuteModeType.BUS && mode.busLine.isNotBlank()) {
+            _savedBusLine.value = mode.busLine
+            prefs?.setSavedBusLine(mode.busLine)
+            refreshBusTracking(userLat, userLon)
+        } else {
+            recalculateSmartBusAndBridges()
+        }
+    }
+
+    fun setMorningLockNotificationEnabled(enabled: Boolean) {
+        _morningLockNotificationEnabled.value = enabled
+        prefs?.setMorningLockNotificationEnabled(enabled)
+        if (!enabled) {
+            context?.let { UitvalNotificationHelper.cancelMorningOngoingNotification(it) }
+        } else {
+            recalculateSmartBusAndBridges()
+        }
+    }
+
+    fun recordFocusMinutesCompleted(minutes: Int, completedTaskId: String? = null) {
+        val updatedTotal = prefs?.addWeeklyFocusMinutes(minutes) ?: (_weeklyFocusMinutes.value + minutes)
+        _weeklyFocusMinutes.value = updatedTotal
+        if (!completedTaskId.isNullOrBlank()) {
+            val task = _tasks.value.firstOrNull { it.id == completedTaskId }
+            if (task != null && !task.isCompleted) {
+                toggleTaskCompletion(completedTaskId)
+            }
+        }
+    }
+
     suspend fun refreshBusTracking(userLat: Double?, userLon: Double?) {
         val line = _savedBusLine.value.trim()
         if (line.isBlank()) {
             _busTrackingState.value = BusTrackingState()
+            recalculateSmartBusAndBridges()
             return
         }
         if (isEffectivelyOffline()) {
@@ -434,6 +532,7 @@ class AgendaRepository(private val context: Context? = null) {
                 isLoading = false,
                 errorMessage = "Offline-modus actief: live busgegevens tijdelijk niet beschikbaar."
             )
+            recalculateSmartBusAndBridges()
             return
         }
         val schoolAddr = _schoolAddress.value ?: prefs?.loadSchoolAddress()
@@ -451,6 +550,14 @@ class AgendaRepository(private val context: Context? = null) {
 
     private fun recalculateSmartBusAndBridges() {
         val busState = _busTrackingState.value
+        val activeMode = _commuteModes.value.firstOrNull { it.id == _activeCommuteModeId.value }
+            ?: _commuteModes.value.firstOrNull()
+        val activeLine = if (activeMode?.type == CommuteModeType.BUS && activeMode.busLine.isNotBlank()) {
+            activeMode.busLine
+        } else {
+            _savedBusLine.value
+        }
+
         val advice = if (_smartBusAlertsEnabled.value) {
             SmartBusPlanner.computeAdvice(
                 todayAppointments = _appointments.value,
@@ -458,7 +565,9 @@ class AgendaRepository(private val context: Context? = null) {
                 busTrackingState = busState,
                 walkMinutes = _busWalkMinutes.value,
                 arrivalBufferMinutes = _busArrivalBufferMinutes.value,
-                savedBusLine = _savedBusLine.value
+                savedBusLine = activeLine,
+                activeCommuteMode = activeMode,
+                weatherInfo = _weatherInfo.value
             )
         } else null
         _smartBusAdvice.value = advice
@@ -471,7 +580,7 @@ class AgendaRepository(private val context: Context? = null) {
                     stopName = nearest?.name ?: "",
                     expectedTime = nearest?.expectedArrival ?: advice?.busDepartureTime ?: "",
                     delayMinutes = nearest?.delayMinutes ?: 0,
-                    smartAdviceText = advice?.let { "Vertrek ${it.leaveHomeTime} • Lijn ${it.busLine}" } ?: "",
+                    smartAdviceText = advice?.let { "Vertrek ${it.leaveHomeTime} • ${it.busLine}" } ?: "",
                     updatedLabel = busState.lastUpdatedLabel
                 )
             )
@@ -481,13 +590,18 @@ class AgendaRepository(private val context: Context? = null) {
             if (advice != null && advice.shouldNotifyPriority && advice.alertKey != prefs?.getLastSmartBusAlertKey()) {
                 prefs?.setLastSmartBusAlertKey(advice.alertKey)
                 val body = advice.shiftReasonMessage
-                    ?: "Vertrek om ${advice.leaveHomeTime} voor lijn ${advice.busLine} (${advice.busDepartureTime})."
+                    ?: "Vertrek om ${advice.leaveHomeTime} (${advice.busLine} • ${advice.busDepartureTime})."
                 UitvalNotificationHelper.postSmartBusNotification(
                     context = ctx,
-                    title = "Slimme Busmelding: Lijn ${advice.busLine}",
+                    title = "Slimme Reismelding",
                     body = body
                 )
             }
+            UitvalNotificationHelper.postOrUpdateMorningOngoingNotification(
+                context = ctx,
+                appointments = _appointments.value,
+                busAdvice = advice
+            )
             NothingGlyphBridge.updateGlyphCountdown(
                 context = ctx,
                 appointments = _appointments.value,
@@ -669,6 +783,7 @@ class AgendaRepository(private val context: Context? = null) {
             val info = weatherClient.fetchCurrentWeather(loc.cityName, loc.latitude, loc.longitude)
             if (info != null) {
                 _weatherInfo.value = info
+                recalculateSmartBusAndBridges()
             }
         } finally {
             _isWeatherLoading.value = false
@@ -846,6 +961,19 @@ class AgendaRepository(private val context: Context? = null) {
         notifyLocalDataChanged()
     }
 
+    fun autoSplitTestPrepChecklist(key: String, targetDateIso: String? = null) {
+        val list = _testPrepChecklists.value[key] ?: return
+        val scheduledTopics = buildAutoSplitStudyPlan(
+            currentTopics = list.topics,
+            subject = list.subject,
+            targetDateIso = targetDateIso
+        )
+        val updatedList = list.copy(topics = scheduledTopics)
+        _testPrepChecklists.value = _testPrepChecklists.value.toMutableMap().apply { put(key, updatedList) }
+        prefs?.saveTestPrepChecklist(updatedList)
+        notifyLocalDataChanged()
+    }
+
     suspend fun upsertCustomScheduleItem(item: CustomScheduleItem) {
         customScheduleRepo?.upsert(item)
         notifyLocalDataChanged()
@@ -962,26 +1090,21 @@ class AgendaRepository(private val context: Context? = null) {
             _currentSession.value.isAuthenticated &&
             !isEffectivelyOffline()
         ) {
-            var session = _currentSession.value
+            val tokenAcquire = MagisterTokenManager.getValidAccessToken(
+                context = ctx,
+                forceRefresh = false,
+                client = magisterClient,
+                onSessionUpdated = { _currentSession.value = it }
+            )
+            val token = when (tokenAcquire) {
+                is TokenAcquireResult.Valid -> tokenAcquire.accessToken
+                is TokenAcquireResult.TransientFailure -> tokenAcquire.fallbackToken
+                is TokenAcquireResult.RequiresReauth, TokenAcquireResult.NotAuthenticated -> null
+            }
+            val session = _currentSession.value
             val tenant = session.school
-            var token = session.accessToken
             val personId = session.personId
             if (tenant != null && !token.isNullOrBlank() && personId > 0L) {
-                if (magisterClient.isAccessTokenExpired(token)) {
-                    val refreshTok = session.refreshToken
-                    if (!refreshTok.isNullOrBlank()) {
-                        val refreshed = magisterClient.refreshAccessToken(refreshTok)
-                        if (refreshed != null) {
-                            token = refreshed.first
-                            session = session.copy(
-                                accessToken = refreshed.first,
-                                refreshToken = refreshed.second ?: refreshTok
-                            )
-                            _currentSession.value = session
-                            prefs?.saveSession(session)
-                        }
-                    }
-                }
                 if (needsCoreRefresh) {
                     runCatching {
                         val bundle = magisterClient.fetchAllMagisterData(tenant, token, personId)
@@ -1277,28 +1400,111 @@ class AgendaRepository(private val context: Context? = null) {
             _lastSyncTime.value = "Offline-cache actief"
             return
         }
+        val ctx = context
         val session = _currentSession.value
         val tenant = session.school
-        var token = session.accessToken
-        if (session.isAuthenticated && tenant != null && !token.isNullOrBlank()) {
-            if (magisterClient.isAccessTokenExpired(token)) {
-                val refreshTok = session.refreshToken
-                if (!refreshTok.isNullOrBlank()) {
-                    val refreshed = magisterClient.refreshAccessToken(refreshTok)
-                    if (refreshed != null) {
-                        token = refreshed.first
-                        val updatedSession = session.copy(
-                            accessToken = refreshed.first,
-                            refreshToken = refreshed.second ?: refreshTok
-                        )
-                        _currentSession.value = updatedSession
-                        prefs?.saveSession(updatedSession)
+        val initialToken = session.accessToken
+        if (session.isAuthenticated && tenant != null && !initialToken.isNullOrBlank()) {
+            val activeToken = if (ctx != null) {
+                when (
+                    val res = MagisterTokenManager.getValidAccessToken(
+                        context = ctx,
+                        forceRefresh = false,
+                        client = magisterClient,
+                        onSessionUpdated = { _currentSession.value = it }
+                    )
+                ) {
+                    is TokenAcquireResult.Valid -> res.accessToken
+                    is TokenAcquireResult.TransientFailure -> res.fallbackToken ?: initialToken
+                    is TokenAcquireResult.RequiresReauth -> {
+                        _lastSyncTime.value = "Magister sessie verlopen — log opnieuw in"
+                        return
                     }
+                    TokenAcquireResult.NotAuthenticated -> return
                 }
-            }
-            syncLiveSchoolData(tenant, token, session.personId)
+            } else initialToken
+
+            val latest = _currentSession.value
+            syncLiveSchoolData(latest.school ?: tenant, activeToken, latest.personId)
         } else {
             _lastSyncTime.value = "Niet verbonden"
+        }
+    }
+
+    companion object {
+        fun buildAutoSplitStudyPlan(
+            currentTopics: List<TestPrepSubtopic>,
+            subject: String,
+            targetDateIso: String?,
+            todayIso: String = SmartBusPlanner.currentTodayIso()
+        ): List<TestPrepSubtopic> {
+            val isoParser = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            val nlFmt = SimpleDateFormat("EEE d MMM", Locale.forLanguageTag("nl-NL"))
+
+            val todayCal = Calendar.getInstance().apply {
+                val parsed = runCatching { isoParser.parse(todayIso.take(10)) }.getOrNull()
+                if (parsed != null) time = parsed
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val targetCal = Calendar.getInstance().apply {
+                val parsed = targetDateIso?.take(10)?.let { runCatching { isoParser.parse(it) }.getOrNull() }
+                if (parsed != null) {
+                    time = parsed
+                } else {
+                    time = todayCal.time
+                    add(Calendar.DAY_OF_YEAR, 4)
+                }
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+
+            val diffDays = ((targetCal.timeInMillis - todayCal.timeInMillis) / (24L * 60L * 60L * 1000L))
+                .toInt()
+                .coerceIn(1, 21)
+
+            // Strip any previous date prefix e.g. "[Ma 18 nov] " so re-splitting is idempotent
+            val baseTopics = currentTopics
+                .map { t ->
+                    val stripped = t.title.replace(Regex("^\\[[^\\]]+]\\s*"), "").trim()
+                    t.copy(title = stripped)
+                }
+                .filter { !it.title.startsWith("Eindherhaling:") }
+                .ifEmpty {
+                    listOf(
+                        TestPrepSubtopic("auto_0", "Theorie & begrippen $subject".trim()),
+                        TestPrepSubtopic("auto_1", "Oefenopgaven maken"),
+                        TestPrepSubtopic("auto_2", "Samenvatting doornemen")
+                    )
+                }
+
+            val studyDaysCount = (diffDays - 1).coerceAtLeast(1)
+            val distributed = baseTopics.mapIndexed { idx, topic ->
+                val dayOffset = (idx * studyDaysCount) / baseTopics.size
+                val cal = (todayCal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
+                val dayLabel = nlFmt.format(cal.time).replaceFirstChar { it.uppercase() }
+                topic.copy(
+                    id = topic.id.ifBlank { "split_$idx" },
+                    title = "[$dayLabel] ${topic.title}"
+                )
+            }
+
+            val reviewCal = (targetCal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
+            val reviewLabel = if (reviewCal.timeInMillis >= todayCal.timeInMillis) {
+                nlFmt.format(reviewCal.time).replaceFirstChar { it.uppercase() }
+            } else {
+                nlFmt.format(todayCal.time).replaceFirstChar { it.uppercase() }
+            }
+            val reviewTopic = TestPrepSubtopic(
+                id = "final_review",
+                title = "[$reviewLabel] Eindherhaling: Oefenvragen & lastige stof",
+                isChecked = currentTopics.firstOrNull { it.id == "final_review" }?.isChecked ?: false
+            )
+            return distributed + reviewTopic
         }
     }
 }

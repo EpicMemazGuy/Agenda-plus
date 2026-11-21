@@ -19,6 +19,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -36,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.example.model.BusTrackingState
+import com.example.model.CommuteModeConfig
+import com.example.model.CommuteModeType
 import com.example.model.SmartBusAdvice
 import com.example.ui.theme.LocalDarkThemeActive
 import org.json.JSONArray
@@ -47,6 +51,10 @@ fun BusLiveMapCard(
     savedBusLine: String,
     isOffline: Boolean,
     smartBusAdvice: SmartBusAdvice? = null,
+    commuteModes: List<CommuteModeConfig> = emptyList(),
+    activeCommuteModeId: String = "",
+    onSelectCommuteMode: (modeId: String, userLat: Double?, userLon: Double?) -> Unit = { _, _, _ -> },
+    onSaveCommuteModes: (List<CommuteModeConfig>) -> Unit = {},
     onSetBusLine: (line: String, userLat: Double?, userLon: Double?) -> Unit,
     onRefreshBus: (userLat: Double?, userLon: Double?) -> Unit,
     modifier: Modifier = Modifier
@@ -57,9 +65,14 @@ fun BusLiveMapCard(
     val isDarkMap = nothingMode || LocalDarkThemeActive.current
     var lineInput by remember(savedBusLine) { mutableStateOf(savedBusLine) }
     var isEditingLine by remember(savedBusLine) { mutableStateOf(savedBusLine.isBlank()) }
+    var showModesDialog by remember { mutableStateOf(false) }
     var userLat by remember { mutableStateOf(busTrackingState.userLat) }
     var userLon by remember { mutableStateOf(busTrackingState.userLon) }
     var locationNotice by remember { mutableStateOf<String?>(null) }
+    val activeMode = remember(commuteModes, activeCommuteModeId) {
+        commuteModes.firstOrNull { it.id == activeCommuteModeId } ?: commuteModes.firstOrNull()
+    }
+    val isBikeMode = activeMode?.type == CommuteModeType.BIKE
 
     fun fetchDeviceLocationAndTrack(targetLine: String?) {
         resolveCurrentLocation(
@@ -150,14 +163,20 @@ fun BusLiveMapCard(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = if (savedBusLine.isNotBlank()) "Bustijd • Lijn $savedBusLine" else "Bustijd & Kaart",
+                            text = when {
+                                isBikeMode -> "Reistijd • ${activeMode?.label ?: "Fiets"} (${activeMode?.bikeMinutes ?: 25} min)"
+                                savedBusLine.isNotBlank() -> "Bustijd • Lijn $savedBusLine"
+                                else -> "Bustijd & Kaart"
+                            },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = busTrackingState.routeName.ifBlank {
-                                "Live OVapi halte- en buslocaties (NL)"
+                            text = if (isBikeMode) {
+                                "Fietsmodus actief • Inclusief regen-check"
+                            } else {
+                                busTrackingState.routeName.ifBlank { "Live OVapi halte- en buslocaties (NL)" }
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -168,6 +187,18 @@ fun BusLiveMapCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { showModesDialog = true },
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .testTag("bus_modes_config_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Vervoersmodi instellen",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(
                         onClick = { isEditingLine = !isEditingLine },
                         modifier = Modifier
@@ -182,7 +213,7 @@ fun BusLiveMapCard(
                     }
                     IconButton(
                         onClick = { onRefreshBus(userLat, userLon) },
-                        enabled = savedBusLine.isNotBlank() && !busTrackingState.isLoading,
+                        enabled = !isBikeMode && savedBusLine.isNotBlank() && !busTrackingState.isLoading,
                         modifier = Modifier
                             .minimumInteractiveComponentSize()
                             .testTag("bus_refresh_button")
@@ -203,8 +234,49 @@ fun BusLiveMapCard(
                 }
             }
 
+            // Quick-switch commute mode pills (e.g. Bus 156 / Bus 306 / Fiets)
+            if (commuteModes.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("commute_modes_row"),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(commuteModes, key = { it.id }) { mode ->
+                        val selected = mode.id == (activeMode?.id ?: "")
+                        FilterChip(
+                            selected = selected,
+                            onClick = { onSelectCommuteMode(mode.id, userLat, userLon) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (mode.type == CommuteModeType.BIKE) {
+                                        Icons.Default.PedalBike
+                                    } else {
+                                        Icons.Default.DirectionsBus
+                                    },
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = if (mode.type == CommuteModeType.BIKE) {
+                                        "${mode.label} (${mode.bikeMinutes}m)"
+                                    } else {
+                                        mode.label
+                                    },
+                                    maxLines = 1
+                                )
+                            },
+                            modifier = Modifier.testTag("commute_mode_chip_${mode.id}")
+                        )
+                    }
+                }
+            }
+
             // Bus line input bar
-            if (isEditingLine || savedBusLine.isBlank()) {
+            if (!isBikeMode && (isEditingLine || savedBusLine.isBlank())) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -237,7 +309,7 @@ fun BusLiveMapCard(
                 }
             }
 
-            // Smart Leave-Home Bus Advice Banner
+            // Smart Leave-Home Bus / Bike Advice Banner
             smartBusAdvice?.let { advice ->
                 Spacer(modifier = Modifier.height(10.dp))
                 val isShiftPriority = !advice.shiftReasonMessage.isNullOrBlank()
@@ -249,37 +321,98 @@ fun BusLiveMapCard(
                         .fillMaxWidth()
                         .testTag("smart_bus_advice_banner")
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = if (isShiftPriority) Icons.Default.WarningAmber else Icons.Default.Schedule,
-                            contentDescription = null,
-                            tint = if (isShiftPriority) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = advice.shiftReasonMessage
-                                    ?: "Vertrek thuis om ${advice.leaveHomeTime}",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isShiftPriority) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = when {
+                                    isShiftPriority -> Icons.Default.WarningAmber
+                                    advice.commuteMode == CommuteModeType.BIKE -> Icons.Default.PedalBike
+                                    else -> Icons.Default.Schedule
+                                },
+                                contentDescription = null,
+                                tint = if (isShiftPriority) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(20.dp)
                             )
-                            Text(
-                                text = "Lijn ${advice.busLine} (${advice.busDepartureTime}) • ${advice.stopName} • Eerste les ${advice.firstActiveLesson.startTime}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (isShiftPriority) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = advice.shiftReasonMessage
+                                        ?: "Vertrek thuis om ${advice.leaveHomeTime}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isShiftPriority) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                val subtitleText = if (advice.commuteMode == CommuteModeType.BIKE) {
+                                    "${advice.stopName} • Eerste les ${advice.firstActiveLesson.startTime}"
+                                } else {
+                                    "Lijn ${advice.busLine} (${advice.busDepartureTime}) • ${advice.stopName} • Eerste les ${advice.firstActiveLesson.startTime}"
+                                }
+                                Text(
+                                    text = subtitleText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isShiftPriority) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+
+                        if (advice.longerSleepMinutes > 0 || advice.delayMinutes > 0 || !advice.rainWarning.isNullOrBlank()) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (advice.longerSleepMinutes > 0) {
+                                    item {
+                                        OneUiPillBadge(
+                                            text = "+${advice.longerSleepMinutes} min langer slapen",
+                                            modifier = Modifier.testTag("smart_bus_sleep_badge")
+                                        )
+                                    }
+                                }
+                                if (advice.delayMinutes > 0) {
+                                    item {
+                                        OneUiPillBadge(
+                                            text = "+${advice.delayMinutes} min vertraging",
+                                            isError = true,
+                                            modifier = Modifier.testTag("smart_bus_delay_badge")
+                                        )
+                                    }
+                                }
+                                advice.rainWarning?.takeIf { it.isNotBlank() }?.let { rain ->
+                                    item {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                                            modifier = Modifier.testTag("smart_bus_rain_warning")
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.WaterDrop,
+                                                    contentDescription = "Regenwaarschuwing",
+                                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                                Text(
+                                                    text = rain,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
 
             // GPS / Nearest Stop Action Button
-            if (savedBusLine.isNotBlank()) {
+            if (!isBikeMode && savedBusLine.isNotBlank()) {
                 Spacer(modifier = Modifier.height(10.dp))
                 OutlinedButton(
                     onClick = { requestGpsAndRefresh() },
@@ -424,7 +557,7 @@ fun BusLiveMapCard(
             }
 
             // Interactive OpenStreetMap Leaflet Map
-            if (busTrackingState.stops.isNotEmpty() || busTrackingState.liveVehicles.isNotEmpty()) {
+            if (!isBikeMode && (busTrackingState.stops.isNotEmpty() || busTrackingState.liveVehicles.isNotEmpty())) {
                 Spacer(modifier = Modifier.height(12.dp))
                 val mapHtml = remember(
                     busTrackingState.stops,
@@ -606,6 +739,76 @@ fun BusLiveMapCard(
             }
         }
     }
+
+    if (showModesDialog) {
+        val bus1Initial = commuteModes.filter { it.type == CommuteModeType.BUS }.getOrNull(0)?.busLine ?: savedBusLine
+        val bus2Initial = commuteModes.filter { it.type == CommuteModeType.BUS }.getOrNull(1)?.busLine.orEmpty()
+        val bikeInitial = commuteModes.firstOrNull { it.type == CommuteModeType.BIKE }?.bikeMinutes ?: 25
+        var bus1 by remember(showModesDialog) { mutableStateOf(bus1Initial) }
+        var bus2 by remember(showModesDialog) { mutableStateOf(bus2Initial) }
+        var bikeMinText by remember(showModesDialog) { mutableStateOf(bikeInitial.toString()) }
+
+        AlertDialog(
+            onDismissRequest = { showModesDialog = false },
+            title = { Text("Vervoersmodi instellen") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = bus1,
+                        onValueChange = { bus1 = it },
+                        label = { Text("Primaire buslijn") },
+                        placeholder = { Text("Bijv. 156") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("modes_dialog_bus1_input")
+                    )
+                    OutlinedTextField(
+                        value = bus2,
+                        onValueChange = { bus2 = it },
+                        label = { Text("Backup buslijn (optioneel)") },
+                        placeholder = { Text("Bijv. 306") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("modes_dialog_bus2_input")
+                    )
+                    OutlinedTextField(
+                        value = bikeMinText,
+                        onValueChange = { bikeMinText = it.filter { ch -> ch.isDigit() }.take(2) },
+                        label = { Text("Fietstijd (minuten)") },
+                        placeholder = { Text("25") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("modes_dialog_bike_input")
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val b1 = bus1.trim()
+                        val b2 = bus2.trim()
+                        val bikeMins = (bikeMinText.toIntOrNull() ?: 25).coerceIn(5, 60)
+                        val updated = buildList {
+                            if (b1.isNotBlank()) {
+                                add(CommuteModeConfig("bus_1", CommuteModeType.BUS, "Lijn $b1", busLine = b1))
+                            }
+                            if (b2.isNotBlank() && b2 != b1) {
+                                add(CommuteModeConfig("bus_2", CommuteModeType.BUS, "Lijn $b2", busLine = b2))
+                            }
+                            add(CommuteModeConfig("bike_1", CommuteModeType.BIKE, "Fiets", bikeMinutes = bikeMins))
+                        }.take(3)
+                        onSaveCommuteModes(updated)
+                        showModesDialog = false
+                    },
+                    modifier = Modifier.testTag("modes_dialog_save_button")
+                ) {
+                    Text("Opslaan")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showModesDialog = false }) {
+                    Text("Annuleren")
+                }
+            }
+        )
+    }
 }
 
 private fun openWalkingDirectionsInGoogleMaps(
@@ -716,6 +919,7 @@ private fun buildLeafletMapHtml(
                 put("dest", bus.destination)
                 put("stop", bus.stopName)
                 put("eta", bus.expectedTime)
+                put("delay", bus.delayMinutes)
                 put("lat", bus.latitude)
                 put("lon", bus.longitude)
             }
@@ -817,17 +1021,37 @@ private fun buildLeafletMapHtml(
               L.polyline(routeCoords, { color: '$lineColor', weight: 3, opacity: 0.65 }).addTo(map);
             }
 
+            var placedBuses = [];
             buses.forEach(function(b) {
               bounds.push([b.lat, b.lon]);
+              var nearbyCount = 0;
+              placedBuses.forEach(function(p) {
+                if (Math.abs(p.lat - b.lat) < 0.00045 && Math.abs(p.lon - b.lon) < 0.00045) {
+                  nearbyCount++;
+                }
+              });
+              placedBuses.push({ lat: b.lat, lon: b.lon });
+
+              var renderLat = b.lat;
+              var renderLon = b.lon;
+              if (nearbyCount > 0) {
+                var angle = (nearbyCount * 2.1);
+                var radiusDeg = 0.00038 * (1 + Math.floor(nearbyCount / 4) * 0.5);
+                renderLat += Math.sin(angle) * radiusDeg;
+                renderLon += Math.cos(angle) * radiusDeg;
+              }
+
+              var delayBadge = (b.delay && b.delay > 0) ? (' +' + b.delay + 'm') : '';
               var busIcon = L.divIcon({
                 className: 'bus-marker',
-                html: '<div style="background:$busColor;color:#FFF;border:2px solid #FFF;border-radius:999px;padding:2px 7px;font-weight:bold;font-size:11px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.4);">BUS ' + b.line + '</div>',
-                iconSize: [54, 22],
-                iconAnchor: [27, 11]
+                html: '<div style="background:$busColor;color:#FFF;border:2px solid #FFF;border-radius:999px;padding:2px 7px;font-weight:bold;font-size:11px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.4);">BUS ' + b.line + delayBadge + '</div>',
+                iconSize: [68, 22],
+                iconAnchor: [34, 11]
               });
-              L.marker([b.lat, b.lon], { icon: busIcon })
+              var delayPopup = (b.delay && b.delay > 0) ? ('<br><span style="color:#DC2626;font-weight:bold;">Vertraging: +' + b.delay + ' min</span>') : '';
+              L.marker([renderLat, renderLon], { icon: busIcon, zIndexOffset: 500 + nearbyCount })
                 .addTo(map)
-                .bindPopup('<b>Lijn ' + b.line + '</b><br>' + b.dest + '<br>Bij halte: ' + b.stop + ' (' + b.eta + ')');
+                .bindPopup('<b>Lijn ' + b.line + '</b><br>Bestemming: ' + b.dest + '<br>Bij halte: ' + b.stop + ' (' + b.eta + ')' + delayPopup);
             });
 
             if (userPos) {

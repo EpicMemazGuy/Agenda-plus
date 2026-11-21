@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.model.GradeItem
 import com.example.model.SubjectGradeSummary
+import com.example.model.capitalizeSubjectName
 import com.example.ui.components.appCardShape
 import com.example.ui.components.appSheetContainerColor
 import com.example.ui.components.appSheetShape
@@ -91,7 +92,7 @@ fun WhatIfBottomSheet(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "${selectedSubject.subjectName} • Huidig gemiddelde: ${selectedSubject.weightedAverage}",
+                        text = "${selectedSubject.subjectName.capitalizeSubjectName()} • Huidig gemiddelde: ${selectedSubject.weightedAverage}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -146,7 +147,7 @@ fun WhatIfBottomSheet(
                         FilterChip(
                             selected = isSelected,
                             onClick = { selectedSubject = subj },
-                            label = { Text("${subj.subjectName} (${subj.weightedAverage})") }
+                            label = { Text("${subj.subjectName.capitalizeSubjectName()} (${subj.weightedAverage})") }
                         )
                     }
                 }
@@ -198,25 +199,27 @@ fun WhatIfBottomSheet(
                 }
             }
 
-            if (calculatorMode == 1) {
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val presets = listOf(5.5, 6.0, 6.5, 7.0, 7.5, 8.0)
-                    items(presets) { preset ->
-                        FilterChip(
-                            selected = targetAverage == preset,
-                            onClick = { targetAverage = preset },
-                            label = { Text("$preset") }
-                        )
-                    }
+            Spacer(modifier = Modifier.height(8.dp))
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.testTag("what_if_target_presets_row")
+            ) {
+                val presets = listOf(5.5, 6.0, 6.5, 7.0, 7.5, 8.0)
+                items(presets) { preset ->
+                    FilterChip(
+                        selected = targetAverage == preset,
+                        onClick = { targetAverage = preset },
+                        label = { Text("$preset") },
+                        modifier = Modifier.testTag("target_preset_${preset}")
+                    )
                 }
             }
 
             Slider(
-                value = targetAverage.toFloat(),
+                value = targetAverage.toFloat().coerceIn(1.0f, 10.0f),
                 onValueChange = { targetAverage = round(it * 10) / 10.0 },
-                valueRange = if (calculatorMode == 1) 1.0f..10.0f else 5.0f..9.0f,
-                steps = if (calculatorMode == 1) 89 else 39,
+                valueRange = 1.0f..10.0f,
+                steps = 89,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("target_average_slider")
@@ -250,8 +253,27 @@ fun WhatIfBottomSheet(
                 }
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("what_if_weight_chips_row"),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(1, 2, 3, 4).forEach { w ->
+                    FilterChip(
+                        selected = testWeight.toInt() == w,
+                        onClick = { testWeight = w.toDouble() },
+                        label = { Text("${w}x") },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("weight_chip_${w}x")
+                    )
+                }
+            }
+
             Slider(
-                value = testWeight.toFloat(),
+                value = testWeight.toFloat().coerceIn(1f, 5f),
                 onValueChange = { testWeight = it.toDouble() },
                 valueRange = 1f..5f,
                 steps = 3,
@@ -333,7 +355,7 @@ fun WhatIfBottomSheet(
 
                     Text(
                         text = when {
-                            isSafe -> "Zelfs met het laagste cijfer (1.0) behoud je minimaal een $targetAverage voor ${selectedSubject.subjectName}!"
+                            isSafe -> "Zelfs met het laagste cijfer (1.0) behoud je minimaal een $targetAverage voor ${selectedSubject.subjectName.capitalizeSubjectName()}!"
                             isFeasible -> "Haal minimaal een $requiredScore (weging ${testWeight.toInt()}x) om gemiddeld op een $targetAverage uit te komen."
                             else -> "Om op $targetAverage uit te komen heb je een $requiredScore nodig. Dat is hoger dan 10.0 en helaas wiskundig niet haalbaar met weging ${testWeight.toInt()}x."
                         },

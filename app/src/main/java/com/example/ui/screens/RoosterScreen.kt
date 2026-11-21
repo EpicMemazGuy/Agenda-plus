@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -23,6 +27,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -36,6 +41,7 @@ import com.example.model.HomeworkTask
 import com.example.model.KwtSlot
 import com.example.model.TaskCategory
 import com.example.model.TestPrepChecklist
+import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
 import com.example.model.isTestKeywordMatch
 import com.example.ui.components.CustomScheduleItemCard
@@ -66,7 +72,8 @@ data class DayItem(
     val nameDutch: String,
     val dateString: String,
     val dateIso: String,
-    val hasDisruption: Boolean
+    val hasDisruption: Boolean,
+    val workloadCount: Int = 0
 )
 
 data class UpcomingTestEntry(
@@ -98,6 +105,7 @@ fun RoosterScreen(
     kwtSlots: List<KwtSlot> = emptyList(),
     customScheduleItems: List<CustomScheduleItem> = emptyList(),
     testPrepChecklists: Map<String, TestPrepChecklist> = emptyMap(),
+    changedLessonDiffs: Map<Long, String> = emptyMap(),
     onSelectDay: (Int) -> Unit,
     onSelectViewMode: (Int) -> Unit,
     onOpenKwtSlot: (Appointment) -> Unit = {},
@@ -105,10 +113,11 @@ fun RoosterScreen(
     onEditCustomScheduleItem: (CustomScheduleItem) -> Unit = {},
     onToggleCustomScheduleItem: (Long, Boolean) -> Unit = { _, _ -> },
     onDeleteCustomScheduleItem: (Long) -> Unit = {},
-    onOpenTestPrep: (key: String, subject: String, title: String, toetsstof: String) -> Unit = { _, _, _, _ -> },
+    onOpenTestPrep: (key: String, subject: String, title: String, toetsstof: String, targetDateIso: String?) -> Unit = { _, _, _, _, _ -> },
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val oneUiMode = isOneUi85
     val listState = rememberLazyListState()
     val isScrolled by remember {
@@ -119,7 +128,7 @@ fun RoosterScreen(
     }
     var weekOffset by remember { mutableIntStateOf(0) }
 
-    val (weekNumber, days) = remember(weekOffset, appointments) {
+    val (weekNumber, days) = remember(weekOffset, appointments, tasks) {
         val cal = Calendar.getInstance()
         val dow = cal.get(Calendar.DAY_OF_WEEK)
         val daysToMonday = when (dow) {
@@ -141,13 +150,19 @@ fun RoosterScreen(
                 val matchesDay = if (appt.dateIso.isNotBlank()) appt.dateIso == dateIso else appt.dayOfWeek == dayIdx
                 matchesDay && (appt.isCanceled || appt.isRelocated || appt.isSubstitution)
             }
+            val openTaskCount = tasks.count { t -> !t.isCompleted && t.dueDay == dateIso }
+            val testCount = appointments.count { appt ->
+                val matchesDay = if (appt.dateIso.isNotBlank()) appt.dateIso == dateIso else appt.dayOfWeek == dayIdx
+                matchesDay && !appt.isCanceled && appt.isTestOrExam
+            }
             cal.add(Calendar.DAY_OF_YEAR, 1)
             DayItem(
                 dayNumber = dayIdx,
                 nameDutch = dayLabels[dayIdx - 1],
                 dateString = dateLabel,
                 dateIso = dateIso,
-                hasDisruption = hasDisruption
+                hasDisruption = hasDisruption,
+                workloadCount = openTaskCount + testCount
             )
         }
         targetWeekNumber to generatedDays
@@ -389,18 +404,38 @@ fun RoosterScreen(
                                 )
 
                                 Spacer(modifier = Modifier.height(3.dp))
-                                if (day.hasDisruption) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(5.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (isSelected) MaterialTheme.colorScheme.primary
-                                                else MaterialTheme.colorScheme.error
-                                            )
-                                    )
-                                } else {
-                                    Spacer(modifier = Modifier.size(5.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (day.hasDisruption) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(5.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.error
+                                                )
+                                        )
+                                    }
+                                    if (day.workloadCount > 0) {
+                                        val heatColor = when {
+                                            day.workloadCount >= 3 -> MaterialTheme.colorScheme.error
+                                            day.workloadCount == 2 -> MaterialTheme.colorScheme.tertiary
+                                            else -> MaterialTheme.colorScheme.primary
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .width((day.workloadCount.coerceAtMost(3) * 5).dp)
+                                                .height(4.dp)
+                                                .clip(CircleShape)
+                                                .background(heatColor)
+                                        )
+                                    }
+                                    if (!day.hasDisruption && day.workloadCount == 0) {
+                                        Spacer(modifier = Modifier.size(5.dp))
+                                    }
                                 }
                             }
                         }
@@ -413,8 +448,70 @@ fun RoosterScreen(
             item(key = "rooster_add_custom_row") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    OutlinedButton(
+                        onClick = {
+                            val cal = Calendar.getInstance()
+                            cal.add(Calendar.DAY_OF_YEAR, 1)
+                            val isoFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                            val tomorrowIso = isoFmt.format(cal.time)
+                            val tomorrowLessons = appointments
+                                .filter { it.dateIso == tomorrowIso }
+                                .sortedWith(compareBy({ it.periodIndex }, { it.startTime }))
+                            val targetLessons = if (tomorrowLessons.isNotEmpty()) {
+                                tomorrowLessons
+                            } else {
+                                appointments
+                                    .filter {
+                                        if (hasIsoDates) it.dateIso == selectedDayItem.dateIso
+                                        else it.dayOfWeek == selectedDayItem.dayNumber
+                                    }
+                                    .sortedWith(compareBy({ it.periodIndex }, { it.startTime }))
+                            }
+                            val headerLabel = if (tomorrowLessons.isNotEmpty()) {
+                                "Rooster morgen ($tomorrowIso)"
+                            } else {
+                                "Rooster ${selectedDayItem.nameDutch} ${selectedDayItem.dateString}"
+                            }
+                            val summary = buildString {
+                                appendLine(headerLabel)
+                                if (targetLessons.isEmpty()) {
+                                    appendLine("Geen lessen gepland.")
+                                } else {
+                                    targetLessons.forEach { appt ->
+                                        val subj = (appt.subjectName.cleanSchoolText() ?: appt.title).capitalizeSubjectName()
+                                        val room = appt.classroom.cleanSchoolText()?.let { " • Lok. $it" } ?: ""
+                                        val status = when {
+                                            appt.isCanceled -> " [UITVAL]"
+                                            appt.isRelocated -> " [GEWIJZIGD]"
+                                            else -> ""
+                                        }
+                                        appendLine("${appt.periodIndex}e (${appt.startTime}): $subj$room$status")
+                                    }
+                                }
+                            }.trim()
+                            val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                            cb?.setPrimaryClip(ClipData.newPlainText("Rooster", summary))
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, headerLabel)
+                                putExtra(Intent.EXTRA_TEXT, summary)
+                            }
+                            runCatching {
+                                context.startActivity(Intent.createChooser(shareIntent, "Deel Rooster"))
+                            }
+                        },
+                        shape = RoundedCornerShape(percent = 50),
+                        modifier = Modifier
+                            .height(40.dp)
+                            .testTag("rooster_share_button")
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = "Deel Rooster", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Deel Rooster")
+                    }
                     FilledTonalButton(
                         onClick = { onAddCustomScheduleItem(selectedDayItem.dateIso, selectedDayItem.dayNumber) },
                         shape = RoundedCornerShape(percent = 50),
@@ -424,7 +521,7 @@ fun RoosterScreen(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Persoonlijk blok toevoegen")
+                        Text("Persoonlijk blok")
                     }
                 }
             }
@@ -476,7 +573,15 @@ fun RoosterScreen(
                     UpcomingTestCard(
                         test = test,
                         checklistProgressText = checklist?.let { "${it.completedCount}/${it.topics.size} klaar" },
-                        onClick = { onOpenTestPrep(test.id, test.subject, "${test.typeBadge} ${test.subject}", test.description) }
+                        onClick = {
+                            onOpenTestPrep(
+                                test.id,
+                                test.subject.capitalizeSubjectName(),
+                                "${test.typeBadge} ${test.subject.capitalizeSubjectName()}",
+                                test.description,
+                                test.dateIso
+                            )
+                        }
                     )
                 }
             }
@@ -560,6 +665,7 @@ fun RoosterScreen(
                                 CompactRoosterRow(
                                     appointment = appt,
                                     isKwtSelectable = isKwtItem,
+                                    changedDiff = changedLessonDiffs[appt.id],
                                     onOpenKwt = { onOpenKwtSlot(appt) }
                                 )
                                 if (idx < dayAppointments.lastIndex) {
@@ -615,6 +721,7 @@ fun RoosterScreen(
                                 RoosterPeriodCard(
                                     appointment = appt,
                                     isKwtSelectable = isKwtItem,
+                                    changedDiff = changedLessonDiffs[appt.id],
                                     onOpenKwt = { onOpenKwtSlot(appt) }
                                 )
                             }
@@ -638,6 +745,7 @@ fun RoosterScreen(
 fun CompactRoosterRow(
     appointment: Appointment,
     isKwtSelectable: Boolean = false,
+    changedDiff: String? = null,
     onOpenKwt: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -730,7 +838,7 @@ fun CompactRoosterRow(
                     horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     Text(
-                        text = appointment.title.cleanSchoolText() ?: appointment.subjectName,
+                        text = (appointment.title.cleanSchoolText() ?: appointment.subjectName).capitalizeSubjectName(),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
                         textDecoration = if (isCanceled) TextDecoration.LineThrough else TextDecoration.None,
@@ -769,6 +877,23 @@ fun CompactRoosterRow(
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    } else if (!changedDiff.isNullOrBlank()) {
+                        if (isOneUi85) {
+                            OneUiPillBadge(text = "GEWIJZIGD")
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = "GEWIJZIGD",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                                 )
                             }
@@ -883,6 +1008,7 @@ fun CompactRoosterRow(
 fun RoosterPeriodCard(
     appointment: Appointment,
     isKwtSelectable: Boolean = false,
+    changedDiff: String? = null,
     onOpenKwt: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -930,7 +1056,7 @@ fun RoosterPeriodCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = appointment.title.cleanSchoolText() ?: appointment.subjectName,
+                            text = (appointment.title.cleanSchoolText() ?: appointment.subjectName).capitalizeSubjectName(),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             textDecoration = if (isCanceled) TextDecoration.LineThrough else TextDecoration.None,
@@ -972,6 +1098,9 @@ fun RoosterPeriodCard(
                                     )
                                 }
                             }
+                        } else if (!changedDiff.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            OneUiPillBadge(text = "GEWIJZIGD")
                         }
                     }
 
@@ -985,6 +1114,14 @@ fun RoosterPeriodCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = if (isCanceled) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (!changedDiff.isNullOrBlank()) {
+                        Text(
+                            text = changedDiff,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
 
                 if (cleanRoom != null) {
@@ -1111,7 +1248,7 @@ private fun UpcomingTestCard(
                         }
                     }
                     Text(
-                        text = test.subject,
+                        text = test.subject.capitalizeSubjectName(),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,

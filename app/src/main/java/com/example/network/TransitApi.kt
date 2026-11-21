@@ -380,7 +380,11 @@ class TransitClient(private val prefs: AppPreferencesStore? = null) {
                                     .ifBlank { pass.optString("ExpectedArrivalTime") }
                                     .ifBlank { pass.optString("TargetDepartureTime") }
                                     .ifBlank { pass.optString("TargetArrivalTime") }
+                                val targetRaw = pass.optString("TargetDepartureTime")
+                                    .ifBlank { pass.optString("TargetArrivalTime") }
                                 val hhmm = extractTimeHHmm(expectedRaw) ?: "--:--"
+                                val schedHhmm = extractTimeHHmm(targetRaw)
+                                val delayMin = computeDelayMinutes(schedHhmm, hhmm)
                                 vehicles.add(
                                     BusVehiclePoint(
                                         id = ak,
@@ -390,7 +394,8 @@ class TransitClient(private val prefs: AppPreferencesStore? = null) {
                                         latitude = vLat,
                                         longitude = vLon,
                                         stopName = pass.optString("TimingPointName").cleanSchoolText() ?: "Onderweg",
-                                        expectedTime = hhmm
+                                        expectedTime = hhmm,
+                                        delayMinutes = delayMin
                                     )
                                 )
                             }

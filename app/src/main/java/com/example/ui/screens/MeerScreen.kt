@@ -115,6 +115,8 @@ fun MeerScreen(
     onExportBackupJson: () -> String = { "{}" },
     onImportBackupJson: (String) -> Result<Int> = { Result.failure(UnsupportedOperationException()) },
     webSyncState: WebSyncStatus = WebSyncStatus(),
+    weeklyFocusMinutes: Int = 0,
+    onOpenClassmateGapFinder: () -> Unit = {},
     onPairUri: (String) -> Result<Unit> = { Result.success(Unit) },
     onSyncNow: () -> Unit = {},
     onPullLatest: () -> Unit = {},
@@ -282,6 +284,52 @@ fun MeerScreen(
                         }
                     }
 
+                    // Weekly Focus Stats card
+                    item(key = "meer_weekly_focus") {
+                        Surface(
+                            shape = appCardShape(standard = 20.dp, nothing = 24.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            border = nothingCardBorder(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("meer_weekly_focus_card")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Timer,
+                                            contentDescription = "Studiefocus",
+                                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Focus deze week: $weeklyFocusMinutes min",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Start een Pomodoro-sessie via het tabblad Huiswerk",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     // Web Sync & Pairing section
                     item(key = "meer_web_sync") {
                         WebSyncCard(
@@ -336,6 +384,17 @@ fun MeerScreen(
                             badgeText = if (absences.isNotEmpty()) absences.size.toString() else null,
                             onClick = { onSelectSection(MeerSection.AFWEZIGHEID) },
                             tag = "meer_tile_afwezigheid"
+                        )
+                    }
+
+                    item(key = "meer_gap_finder") {
+                        MeerMenuTile(
+                            title = "Zelfde Tussenuur / Uitval",
+                            subtitle = "Vergelijk vrije uren met een klasgenoot (zero-PII versleuteld)",
+                            icon = Icons.Default.Group,
+                            badgeText = null,
+                            onClick = onOpenClassmateGapFinder,
+                            tag = "meer_tile_gap_finder"
                         )
                     }
 

@@ -16,6 +16,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.model.CommuteModeConfig
+import com.example.model.CommuteModeType
 import com.example.model.SchoolAddress
 import com.example.model.TodayBlockConfig
 import com.example.model.TodayBlockType
@@ -35,11 +37,15 @@ fun TodayModifySheet(
     schoolAddress: SchoolAddress?,
     savedBusLine: String,
     isOffline: Boolean,
+    commuteModes: List<CommuteModeConfig> = emptyList(),
+    morningLockNotificationEnabled: Boolean = true,
     onToggleBlock: (TodayBlockType, Boolean) -> Unit,
     onMoveBlock: (TodayBlockType, Int) -> Unit,
     onSearchSchoolAddress: suspend (String) -> List<SchoolAddress>,
     onSaveSchoolAddress: (SchoolAddress) -> Unit,
     onSetBusLine: (String) -> Unit,
+    onSaveCommuteModes: (List<CommuteModeConfig>) -> Unit = {},
+    onSetMorningLockNotificationEnabled: (Boolean) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -47,6 +53,12 @@ fun TodayModifySheet(
     var addressResults by remember { mutableStateOf<List<SchoolAddress>>(emptyList()) }
     var isSearchingAddress by remember { mutableStateOf(false) }
     var busLineInput by remember(savedBusLine) { mutableStateOf(savedBusLine) }
+    var backupBusInput by remember(commuteModes) {
+        mutableStateOf(commuteModes.filter { it.type == CommuteModeType.BUS }.getOrNull(1)?.busLine.orEmpty())
+    }
+    var bikeMinutesInput by remember(commuteModes) {
+        mutableStateOf((commuteModes.firstOrNull { it.type == CommuteModeType.BIKE }?.bikeMinutes ?: 25).toString())
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -283,6 +295,85 @@ fun TodayModifySheet(
                         ) {
                             Text("Instellen")
                         }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = backupBusInput,
+                            onValueChange = { backupBusInput = it },
+                            label = { Text("Backup buslijn") },
+                            placeholder = { Text("Bijv. 306") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("modify_sheet_backup_bus_input")
+                        )
+                        OutlinedTextField(
+                            value = bikeMinutesInput,
+                            onValueChange = { bikeMinutesInput = it.filter { ch -> ch.isDigit() }.take(2) },
+                            label = { Text("Fiets (min)") },
+                            placeholder = { Text("25") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .width(110.dp)
+                                .testTag("modify_sheet_bike_minutes_input")
+                        )
+                    }
+
+                    FilledTonalButton(
+                        onClick = {
+                            val b1 = busLineInput.trim()
+                            val b2 = backupBusInput.trim()
+                            val bikeMins = (bikeMinutesInput.toIntOrNull() ?: 25).coerceIn(5, 60)
+                            val updated = buildList {
+                                if (b1.isNotBlank()) {
+                                    add(CommuteModeConfig("bus_1", CommuteModeType.BUS, "Lijn $b1", busLine = b1))
+                                }
+                                if (b2.isNotBlank() && b2 != b1) {
+                                    add(CommuteModeConfig("bus_2", CommuteModeType.BUS, "Lijn $b2", busLine = b2))
+                                }
+                                add(CommuteModeConfig("bike_1", CommuteModeType.BIKE, "Fiets", bikeMinutes = bikeMins))
+                            }.take(3)
+                            onSaveCommuteModes(updated)
+                        },
+                        shape = RoundedCornerShape(percent = 50),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("modify_sheet_save_commute_modes_button")
+                    ) {
+                        Text("Vervoersmodi opslaan (max. 3)")
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Ochtend-vergrendelschermmelding",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Toon afteller, lokaal en live bus op schooldagen",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = morningLockNotificationEnabled,
+                            onCheckedChange = onSetMorningLockNotificationEnabled,
+                            modifier = Modifier.testTag("toggle_morning_lock_notif")
+                        )
                     }
                 }
             }

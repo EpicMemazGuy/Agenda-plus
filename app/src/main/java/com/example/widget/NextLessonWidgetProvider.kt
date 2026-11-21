@@ -12,6 +12,7 @@ import com.example.MainActivity
 import com.example.R
 import com.example.data.AppPreferencesStore
 import com.example.model.AppThemeStyle
+import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -150,9 +151,10 @@ class NextLessonWidgetProvider : AppWidgetProvider() {
                     val room = nextUpcoming.classroom.cleanSchoolText()
 
                     views.setTextViewText(R.id.widget_status_badge, badge)
+                    val subjTitle = nextUpcoming.subjectName.capitalizeSubjectName()
                     views.setTextViewText(
                         R.id.widget_subject,
-                        if (isNothing) nextUpcoming.subjectName.uppercase() else nextUpcoming.subjectName
+                        if (isNothing) subjTitle.uppercase() else subjTitle
                     )
                     views.setTextViewText(R.id.widget_time, timeText)
                     if (isNothing) {

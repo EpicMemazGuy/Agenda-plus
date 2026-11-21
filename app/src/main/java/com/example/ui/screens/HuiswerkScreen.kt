@@ -21,9 +21,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.example.model.HomeworkTask
+import com.example.model.StudyGuide
 import com.example.model.TaskCategory
 import com.example.model.TaskPriority
 import com.example.model.TestPrepChecklist
+import com.example.model.capitalizeSubjectName
 import com.example.model.isTestKeywordMatch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -43,10 +45,14 @@ fun HuiswerkScreen(
     tasks: List<HomeworkTask>,
     selectedCategory: TaskCategory?,
     testPrepChecklists: Map<String, TestPrepChecklist> = emptyMap(),
+    studyGuides: List<StudyGuide> = emptyList(),
+    eloUrl: String = "",
     onSelectCategory: (TaskCategory?) -> Unit,
     onToggleTask: (String) -> Unit,
     onAddTaskClick: () -> Unit,
-    onOpenTestPrep: (key: String, subject: String, title: String, toetsstof: String) -> Unit = { _, _, _, _ -> },
+    onOpenTestPrep: (key: String, subject: String, title: String, toetsstof: String, targetDateIso: String?) -> Unit = { _, _, _, _, _ -> },
+    onOpenResourceUrl: (title: String, url: String) -> Unit = { _, _ -> },
+    onStartFocusSession: (HomeworkTask) -> Unit = {},
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -250,17 +256,40 @@ fun HuiswerkScreen(
                         isTestKeywordMatch(task.description)
                     val checklistKey = "task_${task.id}"
                     val checklist = testPrepChecklists[checklistKey]
+                    val normalizedSubj = task.subject.trim().lowercase(Locale.getDefault())
+                    val matchedResourceUrl = remember(task.subject, studyGuides, eloUrl) {
+                        val guideUrl = studyGuides.firstOrNull { guide ->
+                            val gs = guide.subjectName.trim().lowercase(Locale.getDefault())
+                            val gc = guide.subjectCode.trim().lowercase(Locale.getDefault())
+                            (gs.isNotBlank() && (normalizedSubj.contains(gs) || gs.contains(normalizedSubj))) ||
+                                (gc.isNotBlank() && normalizedSubj == gc)
+                        }?.parts?.flatMap { it.resources }
+                            ?.firstOrNull { it.url.startsWith("http") }
+                            ?.url
+                        guideUrl ?: eloUrl.takeIf { it.startsWith("http") }
+                    }
                     TaskCard(
                         task = task,
                         isTest = isTest,
                         checklistProgressText = checklist?.let { "${it.completedCount}/${it.topics.size} klaar" },
+                        hasResourceLink = matchedResourceUrl != null,
                         onToggle = { onToggleTask(task.id) },
+                        onStartFocus = { onStartFocusSession(task) },
+                        onOpenResource = matchedResourceUrl?.let { url ->
+                            { onOpenResourceUrl("${task.subject.capitalizeSubjectName()} • Bron", url) }
+                        },
                         onOpenStudyMode = if (isTest) {
                             {
                                 val combinedStof = listOf(task.title, task.description)
                                     .filter { it.isNotBlank() }
                                     .joinToString("\n")
-                                onOpenTestPrep(checklistKey, task.subject, task.title, combinedStof)
+                                onOpenTestPrep(
+                                    checklistKey,
+                                    task.subject.capitalizeSubjectName(),
+                                    task.title,
+                                    combinedStof,
+                                    task.dueDay
+                                )
                             }
                         } else null
                     )
@@ -275,7 +304,10 @@ fun TaskCard(
     task: HomeworkTask,
     isTest: Boolean = false,
     checklistProgressText: String? = null,
+    hasResourceLink: Boolean = false,
     onToggle: () -> Unit,
+    onStartFocus: () -> Unit = {},
+    onOpenResource: (() -> Unit)? = null,
     onOpenStudyMode: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -319,8 +351,9 @@ fun TaskCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    val displaySubject = task.subject.capitalizeSubjectName()
                     if (isOneUi85) {
-                        OneUiPillBadge(text = task.subject)
+                        OneUiPillBadge(text = displaySubject)
                         OneUiPillBadge(
                             text = task.category.labelDutch,
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -335,7 +368,7 @@ fun TaskCard(
                             color = MaterialTheme.colorScheme.primaryContainer
                         ) {
                             Text(
-                                text = task.subject,
+                                text = displaySubject,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -416,6 +449,40 @@ fun TaskCard(
                             text = checklistProgressText ?: "Studiechecklist",
                             modifier = Modifier.testTag("open_study_mode_${task.id}")
                         )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilledTonalButton(
+                        onClick = onStartFocus,
+                        shape = RoundedCornerShape(percent = 50),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        modifier = Modifier
+                            .height(34.dp)
+                            .testTag("focus_task_${task.id}")
+                    ) {
+                        Icon(Icons.Default.Timer, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Focus", style = MaterialTheme.typography.labelMedium)
+                    }
+                    if (hasResourceLink && onOpenResource != null) {
+                        OutlinedButton(
+                            onClick = onOpenResource,
+                            shape = RoundedCornerShape(percent = 50),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                            modifier = Modifier
+                                .height(34.dp)
+                                .testTag("open_elo_resource_${task.id}")
+                        ) {
+                            Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Open ELO / Bron", style = MaterialTheme.typography.labelMedium)
+                        }
                     }
                 }
             }

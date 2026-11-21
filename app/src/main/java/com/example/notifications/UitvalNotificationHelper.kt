@@ -19,6 +19,7 @@ import com.example.model.GradeItem
 import com.example.model.HomeworkTask
 import com.example.model.SubjectGradeSummary
 import com.example.model.TaskCategory
+import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
 import com.example.model.isTestKeywordMatch
 import java.text.SimpleDateFormat
@@ -56,6 +57,11 @@ object UitvalNotificationHelper {
     const val SMART_BUS_CHANNEL_ID = "smart_bus_alerts_channel"
     private const val SMART_BUS_CHANNEL_NAME = "Slimme Busmeldingen"
     private const val SMART_BUS_CHANNEL_DESC = "Directe vertrektijd-updates wanneer het 1e uur uitvalt."
+
+    const val ONGOING_MORNING_CHANNEL_ID = "morning_live_status_channel"
+    private const val ONGOING_MORNING_CHANNEL_NAME = "Ochtend Les- & Bus-status"
+    private const val ONGOING_MORNING_CHANNEL_DESC = "Stille lockscreen afteller tijdens schoolochtenden met lokaal en busvertrek."
+    private const val ONGOING_MORNING_NOTIF_ID = 82001
 
     fun isWithinQuietHours(nowMinutes: Int, startMinutes: Int, endMinutes: Int): Boolean {
         val wrappedNow = ((nowMinutes % 1440) + 1440) % 1440
@@ -109,6 +115,18 @@ object UitvalNotificationHelper {
                     }
                     manager.createNotificationChannel(channel)
                 }
+            }
+            if (manager.getNotificationChannel(ONGOING_MORNING_CHANNEL_ID) == null) {
+                val silentChannel = NotificationChannel(
+                    ONGOING_MORNING_CHANNEL_ID,
+                    ONGOING_MORNING_CHANNEL_NAME,
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = ONGOING_MORNING_CHANNEL_DESC
+                    enableVibration(false)
+                    setShowBadge(false)
+                }
+                manager.createNotificationChannel(silentChannel)
             }
         }
     }
@@ -177,7 +195,8 @@ object UitvalNotificationHelper {
             val prev = prevById[appt.id] ?: continue
             val roomChanged = prev.classroom.trim() != appt.classroom.trim() && appt.classroom.isNotBlank()
             val timeChanged = prev.startTime != appt.startTime || prev.endTime != appt.endTime
-            if (!roomChanged && !timeChanged) continue
+            val periodChanged = prev.periodIndex != appt.periodIndex && appt.periodIndex > 0
+            if (!roomChanged && !timeChanged && !periodChanged) continue
 
             val key = scheduleChangeKey(appt)
             if (updatedKeys.contains(key)) continue
@@ -186,6 +205,9 @@ object UitvalNotificationHelper {
             if (roomChanged) {
                 val oldRoom = prev.classroom.cleanSchoolText() ?: "?"
                 parts.add("Lokaal $oldRoom -> ${appt.classroom}")
+            }
+            if (periodChanged) {
+                parts.add("${prev.periodIndex}e -> ${appt.periodIndex}e uur")
             }
             if (timeChanged) {
                 parts.add("Tijd ${prev.startTime} -> ${appt.startTime}-${appt.endTime}")
@@ -303,6 +325,19 @@ object UitvalNotificationHelper {
             todayIso = todayIso
         )
         store.setNotifiedChangeKeys(updatedChangeKeys)
+        if (scheduleChangesRaw.isNotEmpty() || newlyCanceledRaw.isNotEmpty()) {
+            val diffsToStore = mutableMapOf<Long, String>()
+            scheduleChangesRaw.forEach { alert ->
+                diffsToStore[alert.appointment.id] = alert.changeSummary
+            }
+            newlyCanceledRaw.forEach { appt ->
+                diffsToStore[appt.id] = "Uitval (${appt.periodIndex}e uur)"
+            }
+            store.mergeChangedLessonDiffs(
+                newDiffs = diffsToStore,
+                activeLessonIds = newAppointments.map { it.id }.toSet()
+            )
+        }
 
         // 2. Nieuwe cijfers
         val (newGradeItemsRaw, updatedGradeIds) = findNewGrades(
@@ -455,6 +490,77 @@ object UitvalNotificationHelper {
         try {
             NotificationManagerCompat.from(context).notify(81001, notification)
         } catch (_: SecurityException) {
+        }
+    }
+
+    fun postOrUpdateMorningOngoingNotification(
+        context: Context,
+        appointments: List<Appointment>,
+        busAdvice: com.example.model.SmartBusAdvice?,
+        nowMinutes: Int = currentClockMinutes(),
+        todayIso: String = SmartBusPlanner.currentTodayIso()
+    ) {
+        val store = AppPreferencesStore(context)
+        if (!store.isMorningLockNotificationEnabled() || nowMinutes !in (6 * 60)..(12 * 60)) {
+            cancelMorningOngoingNotification(context)
+            return
+        }
+        val nextLesson = appointments
+            .filter { (it.dateIso.isBlank() || it.dateIso == todayIso) && !it.isCanceled }
+            .mapNotNull { appt ->
+                val startMin = SmartBusPlanner.parseTimeMinutes(appt.startTime) ?: return@mapNotNull null
+                if (startMin + 5 < nowMinutes) null else appt to startMin
+            }
+            .minByOrNull { it.second }
+
+        if (nextLesson == null) {
+            cancelMorningOngoingNotification(context)
+            return
+        }
+
+        if (!hasNotificationPermission(context)) return
+        ensureChannel(context)
+
+        val (appt, startMin) = nextLesson
+        val diffMin = (startMin - nowMinutes).coerceAtLeast(0)
+        val subject = appt.subjectName.capitalizeSubjectName().ifBlank { "Les" }
+        val roomLabel = appt.classroom.cleanSchoolText()?.let { "Lok. $it" } ?: "Lokaal ?"
+        val countdownLabel = if (diffMin == 0) "Nu" else "over $diffMin min"
+        val title = "$subject $countdownLabel • $roomLabel"
+
+        val busPart = busAdvice?.let { advice ->
+            val busStart = SmartBusPlanner.parseTimeMinutes(advice.busDepartureTime)
+            val busWait = if (busStart != null) (busStart - nowMinutes).coerceAtLeast(0) else null
+            if (advice.commuteMode == com.example.model.CommuteModeType.BIKE) {
+                "Fiets vertrek om ${advice.leaveHomeTime} (${advice.rainWarning ?: "droog weer"})"
+            } else {
+                val waitTxt = if (busWait != null && busWait <= 90) "over $busWait min" else "om ${advice.busDepartureTime}"
+                val delayTxt = if (advice.delayMinutes > 0) " (+${advice.delayMinutes}m)" else ""
+                "Lijn ${advice.busLine} $waitTxt$delayTxt • ${advice.stopName}"
+            }
+        } ?: "${appt.periodIndex}e uur (${appt.startTime} - ${appt.endTime})"
+
+        val notification = NotificationCompat.Builder(context, ONGOING_MORNING_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification_uitval)
+            .setContentTitle(title)
+            .setContentText(busPart)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(mainPendingIntent(context, ONGOING_MORNING_NOTIF_ID))
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context).notify(ONGOING_MORNING_NOTIF_ID, notification)
+        } catch (_: SecurityException) {
+        }
+    }
+
+    fun cancelMorningOngoingNotification(context: Context) {
+        try {
+            NotificationManagerCompat.from(context).cancel(ONGOING_MORNING_NOTIF_ID)
+        } catch (_: Exception) {
         }
     }
 

@@ -12,9 +12,14 @@ import com.example.data.AppPreferencesStore
 import com.example.hardware.NothingGlyphBridge
 import com.example.hardware.WearSyncBridge
 import com.example.model.BusWidgetSnapshot
+import com.example.model.CommuteModeType
+import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
 import com.example.network.MagisterClient
+import com.example.network.MagisterTokenManager
+import com.example.network.TokenAcquireResult
 import com.example.network.TransitClient
+import com.example.network.WeatherClient
 import com.example.util.NetworkStatusHelper
 import com.example.widget.WidgetUpdater
 import java.util.concurrent.TimeUnit
@@ -28,8 +33,7 @@ class ScheduleSyncWorker(
         val store = AppPreferencesStore(applicationContext)
         val session = store.loadSession()
         val tenant = session.school
-        val initialToken = session.accessToken
-        if (!session.isAuthenticated || tenant == null || initialToken.isNullOrBlank()) {
+        if (!session.isAuthenticated || tenant == null) {
             return Result.success()
         }
 
@@ -40,29 +44,23 @@ class ScheduleSyncWorker(
         return try {
             val previousAppointments = store.loadAppointments()
             val magisterClient = MagisterClient()
-            var activeToken: String = initialToken
-
-            if (magisterClient.isAccessTokenExpired(activeToken)) {
-                val refresh = session.refreshToken
-                if (!refresh.isNullOrBlank()) {
-                    val refreshed = magisterClient.refreshAccessToken(refresh)
-                    if (refreshed != null) {
-                        activeToken = refreshed.first
-                        store.saveSession(
-                            session.copy(
-                                accessToken = refreshed.first,
-                                refreshToken = refreshed.second ?: refresh
-                            )
-                        )
-                    }
-                }
+            val tokenResult = MagisterTokenManager.getValidAccessToken(
+                context = applicationContext,
+                forceRefresh = false,
+                client = magisterClient
+            )
+            val activeToken = when (tokenResult) {
+                is TokenAcquireResult.Valid -> tokenResult.accessToken
+                is TokenAcquireResult.TransientFailure -> tokenResult.fallbackToken ?: return Result.retry()
+                is TokenAcquireResult.RequiresReauth, TokenAcquireResult.NotAuthenticated -> return Result.success()
             }
 
-            val bundle = magisterClient.fetchAllMagisterData(tenant, activeToken, session.personId)
+            val latestSession = store.loadSession()
+            val bundle = magisterClient.fetchAllMagisterData(tenant, activeToken, latestSession.personId)
             val cleaned = bundle.appointments.map { appt ->
                 appt.copy(
                     title = appt.title.cleanSchoolText() ?: "Les",
-                    subjectName = appt.subjectName.cleanSchoolText() ?: "Les",
+                    subjectName = appt.subjectName.capitalizeSubjectName().ifBlank { "Les" },
                     teacherName = appt.teacherName.cleanSchoolText() ?: "",
                     teacherInitials = appt.teacherInitials.cleanSchoolText() ?: "",
                     classroom = appt.classroom.cleanSchoolText() ?: "",
@@ -89,7 +87,14 @@ class ScheduleSyncWorker(
                 )
             }
 
-            val savedBusLine = store.getSavedBusLine()
+            val commuteModes = store.getCommuteModes()
+            val activeId = store.getActiveCommuteModeId()
+            val activeMode = commuteModes.firstOrNull { it.id == activeId } ?: commuteModes.firstOrNull()
+            val savedBusLine = when {
+                activeMode?.type == CommuteModeType.BUS && activeMode.busLine.isNotBlank() -> activeMode.busLine
+                else -> store.getSavedBusLine()
+            }
+
             val busTracking = if (savedBusLine.isNotBlank()) {
                 val schoolAddr = store.loadSchoolAddress()
                 val cityHint = listOfNotNull(
@@ -102,13 +107,20 @@ class ScheduleSyncWorker(
                 TransitClient(store).fetchLiveBusTracking(savedBusLine, cityHint, null, null)
             } else null
 
+            val weatherLoc = store.getWeatherLocation()
+            val weatherInfo = runCatching {
+                WeatherClient().fetchCurrentWeather(weatherLoc.cityName, weatherLoc.latitude, weatherLoc.longitude)
+            }.getOrNull()
+
             val advice = SmartBusPlanner.computeAdvice(
                 todayAppointments = cleaned,
                 previousAppointments = previousAppointments,
                 busTrackingState = busTracking,
                 walkMinutes = store.getBusWalkMinutes(),
                 arrivalBufferMinutes = store.getBusArrivalBufferMinutes(),
-                savedBusLine = savedBusLine
+                savedBusLine = savedBusLine,
+                activeCommuteMode = activeMode,
+                weatherInfo = weatherInfo
             )
 
             if (busTracking != null) {
@@ -131,10 +143,16 @@ class ScheduleSyncWorker(
                     ?: "Vertrek om ${advice.leaveHomeTime} voor lijn ${advice.busLine} (${advice.busDepartureTime})."
                 UitvalNotificationHelper.postSmartBusNotification(
                     context = applicationContext,
-                    title = "Slimme Busmelding: Lijn ${advice.busLine}",
+                    title = "Slimme Reismelding",
                     body = body
                 )
             }
+
+            UitvalNotificationHelper.postOrUpdateMorningOngoingNotification(
+                context = applicationContext,
+                appointments = cleaned,
+                busAdvice = advice
+            )
 
             NothingGlyphBridge.updateGlyphCountdown(
                 context = applicationContext,
@@ -157,28 +175,85 @@ class ScheduleSyncWorker(
     }
 }
 
+/**
+ * 12-hour keep-alive worker so rotating Magister OAuth2 refresh tokens stay valid
+ * across weekends, school holidays, and periods when notifications are toggled off.
+ */
+class TokenKeepAliveWorker(
+    appContext: Context,
+    workerParams: WorkerParameters
+) : CoroutineWorker(appContext, workerParams) {
+
+    override suspend fun doWork(): Result {
+        val store = AppPreferencesStore(applicationContext)
+        val session = store.loadSession()
+        if (!session.isAuthenticated || session.refreshToken.isNullOrBlank()) {
+            return Result.success()
+        }
+        if (store.isOfflineModeEnabled() || !NetworkStatusHelper.isOnline(applicationContext)) {
+            return Result.retry()
+        }
+
+        return when (MagisterTokenManager.getValidAccessToken(applicationContext, forceRefresh = true)) {
+            is TokenAcquireResult.Valid -> Result.success()
+            is TokenAcquireResult.TransientFailure -> Result.retry()
+            is TokenAcquireResult.RequiresReauth, TokenAcquireResult.NotAuthenticated -> Result.success()
+        }
+    }
+}
+
 object WorkManagerScheduler {
     private const val UNIQUE_WORK_NAME = "agenda_plus_background_sync"
+    private const val UNIQUE_KEEP_ALIVE_WORK_NAME = "agenda_plus_token_keep_alive"
 
     fun schedule(context: Context) {
+        val appContext = context.applicationContext
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
         val request = PeriodicWorkRequestBuilder<ScheduleSyncWorker>(15, TimeUnit.MINUTES)
             .setConstraints(constraints)
             .build()
+        val keepAliveRequest = PeriodicWorkRequestBuilder<TokenKeepAliveWorker>(12, TimeUnit.HOURS)
+            .setConstraints(constraints)
+            .build()
         runCatching {
-            WorkManager.getInstance(context.applicationContext).enqueueUniquePeriodicWork(
+            val wm = WorkManager.getInstance(appContext)
+            wm.enqueueUniquePeriodicWork(
                 UNIQUE_WORK_NAME,
                 ExistingPeriodicWorkPolicy.KEEP,
                 request
+            )
+            wm.enqueueUniquePeriodicWork(
+                UNIQUE_KEEP_ALIVE_WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                keepAliveRequest
+            )
+        }
+    }
+
+    fun scheduleKeepAliveOnly(context: Context) {
+        val appContext = context.applicationContext
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val keepAliveRequest = PeriodicWorkRequestBuilder<TokenKeepAliveWorker>(12, TimeUnit.HOURS)
+            .setConstraints(constraints)
+            .build()
+        runCatching {
+            WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
+                UNIQUE_KEEP_ALIVE_WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                keepAliveRequest
             )
         }
     }
 
     fun cancel(context: Context) {
         runCatching {
-            WorkManager.getInstance(context.applicationContext).cancelUniqueWork(UNIQUE_WORK_NAME)
+            val wm = WorkManager.getInstance(context.applicationContext)
+            wm.cancelUniqueWork(UNIQUE_WORK_NAME)
+            wm.cancelUniqueWork(UNIQUE_KEEP_ALIVE_WORK_NAME)
         }
     }
 }

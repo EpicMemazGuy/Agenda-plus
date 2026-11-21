@@ -13,6 +13,7 @@ import com.example.MainActivity
 import com.example.R
 import com.example.data.AppPreferencesStore
 import com.example.model.AppThemeStyle
+import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -130,9 +131,10 @@ class RoosterBusWidgetProvider : AppWidgetProvider() {
                         R.id.widget_rb_time,
                         "${nextUpcoming.startTime}-${nextUpcoming.endTime} (${nextUpcoming.periodIndex}e)"
                     )
+                    val subjTitle = nextUpcoming.subjectName.capitalizeSubjectName()
                     views.setTextViewText(
                         R.id.widget_rb_lesson,
-                        if (isNothing) nextUpcoming.subjectName.uppercase() else nextUpcoming.subjectName
+                        if (isNothing) subjTitle.uppercase() else subjTitle
                     )
                     val room = nextUpcoming.classroom.cleanSchoolText()
                     if (room != null) {

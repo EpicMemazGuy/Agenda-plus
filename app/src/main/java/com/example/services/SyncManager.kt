@@ -965,4 +965,282 @@ object SyncManager {
         "plinko_drop" -> GradeUnboxingMode.PLINKO_DROP
         else -> null
     }
+
+    // =========================================================================
+    // Zero-Account "Zelfde Tussenuur / Uitval" Classmate Gap Finder (E2EE)
+    // =========================================================================
+
+    data class GapSlot(
+        val dateIso: String,
+        val period: Int,
+        val startTime: String,
+        val endTime: String,
+        val kind: String, // "uitval" or "tussenuur"
+        val label: String
+    )
+
+    data class ClassmateGapSchedule(
+        val alias: String,
+        val generatedAt: Long,
+        val freeSlots: List<GapSlot>
+    )
+
+    data class OverlapGapMatch(
+        val dateIso: String,
+        val period: Int,
+        val startTime: String,
+        val endTime: String,
+        val myKind: String,
+        val classmateKind: String
+    )
+
+    private val STANDARD_SCHOOL_BELLS = mapOf(
+        1 to ("08:30" to "09:20"),
+        2 to ("09:20" to "10:10"),
+        3 to ("10:30" to "11:20"),
+        4 to ("11:20" to "12:10"),
+        5 to ("12:40" to "13:30"),
+        6 to ("13:30" to "14:20"),
+        7 to ("14:20" to "15:10"),
+        8 to ("15:10" to "16:00")
+    )
+
+    fun computeFreeAndCanceledSlots(
+        appointments: List<Appointment>,
+        todayIsoOverride: String? = null
+    ): List<GapSlot> {
+        val isoFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val cal = Calendar.getInstance()
+        val todayIso = todayIsoOverride ?: isoFmt.format(cal.time)
+        val parsedToday = runCatching { isoFmt.parse(todayIso) }.getOrNull()
+        val horizonCal = Calendar.getInstance().apply {
+            if (parsedToday != null) time = parsedToday
+            add(Calendar.DAY_OF_YEAR, 14)
+        }
+        val maxIso = isoFmt.format(horizonCal.time)
+
+        val upcoming = appointments.filter { appt ->
+            appt.dateIso.length >= 10 && appt.dateIso.take(10) in todayIso..maxIso
+        }
+
+        val byDay = upcoming.groupBy { it.dateIso.take(10) }
+        val result = mutableListOf<GapSlot>()
+
+        byDay.toSortedMap().forEach { (dateIso, dayAppts) ->
+            // Explicit canceled lessons ("uitval")
+            dayAppts.filter { it.isCanceled }.forEach { appt ->
+                result.add(
+                    GapSlot(
+                        dateIso = dateIso,
+                        period = appt.periodIndex.coerceAtLeast(1),
+                        startTime = appt.startTime,
+                        endTime = appt.endTime,
+                        kind = "uitval",
+                        label = "${appt.periodIndex}e uur (uitval)"
+                    )
+                )
+            }
+
+            // Internal free periods between active classes ("tussenuur")
+            val activePeriods = dayAppts.filter { !it.isCanceled && it.periodIndex > 0 }
+                .map { it.periodIndex }
+                .distinct()
+                .sorted()
+            if (activePeriods.size >= 2) {
+                val minP = activePeriods.first()
+                val maxP = activePeriods.last()
+                val activeSet = activePeriods.toSet()
+                val canceledSet = dayAppts.filter { it.isCanceled }.map { it.periodIndex }.toSet()
+                for (p in (minP + 1) until maxP) {
+                    if (p !in activeSet && p !in canceledSet) {
+                        val bell = STANDARD_SCHOOL_BELLS[p] ?: ("${7 + p}:30" to "${8 + p}:20")
+                        result.add(
+                            GapSlot(
+                                dateIso = dateIso,
+                                period = p,
+                                startTime = bell.first,
+                                endTime = bell.second,
+                                kind = "tussenuur",
+                                label = "${p}e uur (tussenuur)"
+                            )
+                        )
+                    }
+                }
+            }
+        }
+        return result.distinctBy { "${it.dateIso}_${it.period}_${it.kind}" }
+            .sortedWith(compareBy({ it.dateIso }, { it.period }))
+    }
+
+    /**
+     * Strictly zero-PII payload containing ONLY alias, freePeriods (`tussenuur`) and canceledHours (`uitval`).
+     * Never exports grades, homework, teachers, classrooms, or real student identity.
+     */
+    fun buildGapSharePayloadJson(
+        alias: String,
+        appointments: List<Appointment>,
+        todayIsoOverride: String? = null
+    ): JSONObject {
+        val cleanAlias = alias.cleanSchoolText()?.take(24) ?: "Klasgenoot"
+        val slots = computeFreeAndCanceledSlots(appointments, todayIsoOverride)
+        val arr = JSONArray()
+        slots.forEach { slot ->
+            arr.put(JSONObject().apply {
+                put("date", slot.dateIso)
+                put("period", slot.period)
+                put("start", slot.startTime)
+                put("end", slot.endTime)
+                put("kind", slot.kind)
+                put("label", slot.label)
+            })
+        }
+        return JSONObject().apply {
+            put("schema", "agendaplus_gaps_v1")
+            put("alias", cleanAlias)
+            put("generatedAt", System.currentTimeMillis())
+            put("freeSlots", arr)
+        }
+    }
+
+    suspend fun exportGapShareLink(
+        alias: String,
+        appointments: List<Appointment>
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val shareId = java.util.UUID.randomUUID().toString().lowercase(Locale.US)
+            val keyBytes = ByteArray(AES_KEY_BYTES).also { secureRandom.nextBytes(it) }
+            val urlSafeKey = Base64.encodeToString(
+                keyBytes,
+                Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
+            )
+            val payloadStr = buildGapSharePayloadJson(alias, appointments).toString()
+            val blob = encryptPayload(keyBytes, payloadStr)
+            val postBody = JSONObject().apply {
+                put("version", System.currentTimeMillis())
+                put("iv", blob.ivBase64)
+                put("ciphertext", blob.ciphertextBase64)
+            }.toString()
+
+            val request = Request.Builder()
+                .url("$SYNC_BASE_URL/$shareId")
+                .post(postBody.toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(
+                        IllegalStateException("Tussenuur delen mislukt (HTTP ${response.code})")
+                    )
+                }
+            }
+            Result.success("agendaplus://tussenuur?id=$shareId&key=$urlSafeKey")
+        } catch (t: Throwable) {
+            Result.failure(t)
+        }
+    }
+
+    fun parseGapShareUri(rawUri: String): Result<PairingCredentials> = runCatching {
+        val trimmed = rawUri.trim()
+        val uri = Uri.parse(trimmed)
+        require(uri.scheme.equals("agendaplus", ignoreCase = true)) {
+            "Gebruik een geldige agendaplus://tussenuur-link."
+        }
+        val id = uri.getQueryParameter("id")?.trim()?.lowercase(Locale.US).orEmpty()
+        val keyRaw = uri.getQueryParameter("key")?.trim().orEmpty()
+        require(UUID_V4_REGEX.matches(id) || UUID_GENERIC_REGEX.matches(id)) {
+            "Ongeldige deel-ID in link."
+        }
+        val normalized = keyRaw.replace('-', '+').replace('_', '/')
+        val padded = when (normalized.length % 4) {
+            2 -> "$normalized=="
+            3 -> "$normalized="
+            else -> normalized
+        }
+        val keyBytes = Base64.decode(padded, Base64.DEFAULT)
+        require(keyBytes.size == AES_KEY_BYTES) {
+            "Ongeldige encryptiesleutel in deel-link."
+        }
+        PairingCredentials(syncId = id, aesKeyBytes = keyBytes)
+    }
+
+    suspend fun fetchClassmateGapSchedule(uriString: String): Result<ClassmateGapSchedule> =
+        withContext(Dispatchers.IO) {
+            val creds = parseGapShareUri(uriString).getOrElse { return@withContext Result.failure(it) }
+            try {
+                val request = Request.Builder()
+                    .url("$SYNC_BASE_URL/${creds.syncId}")
+                    .get()
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        return@withContext Result.failure(
+                            IllegalStateException("Klasgenootrooster ophalen mislukt (HTTP ${response.code})")
+                        )
+                    }
+                    val body = response.body?.string().orEmpty()
+                    val root = JSONObject(body)
+                    val iv = root.optString("iv", "")
+                    val ciphertext = root.optString("ciphertext", "")
+                    val plaintext = decryptPayload(creds.aesKeyBytes, iv, ciphertext).getOrElse {
+                        return@withContext Result.failure(it)
+                    }
+                    val json = JSONObject(plaintext)
+                    require(json.optString("schema") == "agendaplus_gaps_v1") {
+                        "Deze link is geen tussenuur-roosterlink."
+                    }
+                    val arr = json.optJSONArray("freeSlots") ?: JSONArray()
+                    val slots = buildList {
+                        for (i in 0 until arr.length()) {
+                            val o = arr.optJSONObject(i) ?: continue
+                            add(
+                                GapSlot(
+                                    dateIso = o.optString("date", ""),
+                                    period = o.optInt("period", 1),
+                                    startTime = o.optString("start", ""),
+                                    endTime = o.optString("end", ""),
+                                    kind = o.optString("kind", "uitval"),
+                                    label = o.optString("label", "")
+                                )
+                            )
+                        }
+                    }
+                    Result.success(
+                        ClassmateGapSchedule(
+                            alias = json.optString("alias", "Klasgenoot"),
+                            generatedAt = json.optLong("generatedAt", 0L),
+                            freeSlots = slots
+                        )
+                    )
+                }
+            } catch (t: Throwable) {
+                Result.failure(t)
+            }
+        }
+
+    fun findOverlappingGaps(
+        myAppointments: List<Appointment>,
+        friendSchedule: ClassmateGapSchedule,
+        todayIsoOverride: String? = null
+    ): List<OverlapGapMatch> {
+        val myGaps = computeFreeAndCanceledSlots(myAppointments, todayIsoOverride)
+        val matches = mutableListOf<OverlapGapMatch>()
+        for (mine in myGaps) {
+            val match = friendSchedule.freeSlots.firstOrNull { theirs ->
+                theirs.dateIso == mine.dateIso &&
+                    (theirs.period == mine.period || theirs.startTime == mine.startTime)
+            }
+            if (match != null) {
+                matches.add(
+                    OverlapGapMatch(
+                        dateIso = mine.dateIso,
+                        period = mine.period,
+                        startTime = mine.startTime,
+                        endTime = mine.endTime,
+                        myKind = mine.kind,
+                        classmateKind = match.kind
+                    )
+                )
+            }
+        }
+        return matches.sortedWith(compareBy({ it.dateIso }, { it.period }))
+    }
 }

@@ -72,6 +72,9 @@ fun TodayFeedScreen(
     savedBusLine: String,
     busTrackingState: BusTrackingState,
     smartBusAdvice: SmartBusAdvice? = null,
+    commuteModes: List<CommuteModeConfig> = emptyList(),
+    activeCommuteModeId: String = "",
+    changedLessonDiffs: Map<Long, String> = emptyMap(),
     customScheduleItems: List<CustomScheduleItem> = emptyList(),
     onNavigateToRooster: () -> Unit,
     onNavigateToTasks: () -> Unit,
@@ -85,6 +88,8 @@ fun TodayFeedScreen(
     onOpenTodayModifySheet: () -> Unit,
     onSetBusLine: (String, Double?, Double?) -> Unit,
     onRefreshBusTracking: (Double?, Double?) -> Unit,
+    onSelectCommuteMode: (String, Double?, Double?) -> Unit = { _, _, _ -> },
+    onSaveCommuteModes: (List<CommuteModeConfig>) -> Unit = {},
     onAddCustomScheduleItem: () -> Unit = {},
     onEditCustomScheduleItem: (CustomScheduleItem) -> Unit = {},
     onToggleCustomScheduleItem: (Long, Boolean) -> Unit = { _, _ -> },
@@ -302,6 +307,7 @@ fun TodayFeedScreen(
                                 HeroClassCard(
                                     appointment = nextClass,
                                     statusLabel = statusBadgeText.ifBlank { "${nextClass.startTime} - ${nextClass.endTime}" },
+                                    changedDiff = changedLessonDiffs[nextClass.id],
                                     onCardClick = onNavigateToRooster
                                 )
                             } else {
@@ -429,6 +435,10 @@ fun TodayFeedScreen(
                             savedBusLine = savedBusLine,
                             isOffline = isOffline,
                             smartBusAdvice = smartBusAdvice,
+                            commuteModes = commuteModes,
+                            activeCommuteModeId = activeCommuteModeId,
+                            onSelectCommuteMode = onSelectCommuteMode,
+                            onSaveCommuteModes = onSaveCommuteModes,
                             onSetBusLine = onSetBusLine,
                             onRefreshBus = onRefreshBusTracking
                         )
@@ -628,7 +638,7 @@ fun TodayFeedScreen(
                                                 color = MaterialTheme.colorScheme.secondaryContainer
                                             ) {
                                                 Text(
-                                                    text = task.subject,
+                                                    text = task.subject.capitalizeSubjectName(),
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
@@ -728,6 +738,7 @@ fun TodayFeedScreen(
                                 CompactRoosterRow(
                                     appointment = appt,
                                     isKwtSelectable = isKwtItem,
+                                    changedDiff = changedLessonDiffs[appt.id],
                                     onOpenKwt = { onOpenKwtSlot(appt) }
                                 )
                                 if (idx < todayClasses.lastIndex) {
@@ -758,6 +769,7 @@ fun TodayFeedScreen(
                         TodayClassRow(
                             appointment = entry.appointment,
                             isKwtSelectable = isKwtItem,
+                            changedDiff = changedLessonDiffs[entry.appointment.id],
                             onOpenKwt = { onOpenKwtSlot(entry.appointment) }
                         )
                     }
@@ -1230,6 +1242,7 @@ private fun weatherIconForCode(code: Int, isDay: Boolean): ImageVector = when (c
 fun HeroClassCard(
     appointment: Appointment,
     statusLabel: String,
+    changedDiff: String? = null,
     onCardClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1291,10 +1304,15 @@ fun HeroClassCard(
                 )
             }
 
+            if (!changedDiff.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OneUiPillBadge(text = "Gewijzigd: $changedDiff")
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = appointment.subjectName.cleanSchoolText() ?: appointment.title,
+                text = (appointment.subjectName.cleanSchoolText() ?: appointment.title).capitalizeSubjectName(),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -1391,6 +1409,7 @@ fun HeroClassCard(
 fun TodayClassRow(
     appointment: Appointment,
     isKwtSelectable: Boolean = false,
+    changedDiff: String? = null,
     onOpenKwt: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -1437,7 +1456,7 @@ fun TodayClassRow(
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = appointment.title.cleanSchoolText() ?: appointment.subjectName,
+                        text = (appointment.title.cleanSchoolText() ?: appointment.subjectName).capitalizeSubjectName(),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold,
                         textDecoration = if (isCanceled) TextDecoration.LineThrough else TextDecoration.None,
@@ -1460,7 +1479,7 @@ fun TodayClassRow(
                                 )
                             }
                         }
-                    } else if (appointment.isRelocated) {
+                    } else if (appointment.isRelocated || !changedDiff.isNullOrBlank()) {
                         Spacer(modifier = Modifier.width(6.dp))
                         if (oneUiMode) {
                             OneUiPillBadge(text = "Gewijzigd")
@@ -1489,6 +1508,14 @@ fun TodayClassRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isCanceled) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (!changedDiff.isNullOrBlank()) {
+                    Text(
+                        text = changedDiff,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
 
             if (cleanRoom != null) {

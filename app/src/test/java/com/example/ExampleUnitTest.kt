@@ -5,6 +5,7 @@ import com.example.model.AppThemeStyle
 import com.example.model.AgendaStyle
 import com.example.model.SchoolProvider
 import com.example.model.UiScalePreset
+import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
 import com.example.network.PkceHelper
 import com.example.ui.AppTab
@@ -200,5 +201,179 @@ class ExampleUnitTest {
         )
         assertEquals(1, reCanceledTriggered.size)
         assertEquals(2L, reCanceledTriggered.first().id)
+    }
+
+    @Test
+    fun test_auth_url_includes_offline_access_scope() {
+        val repo = AgendaRepository()
+        val url = repo.getAuthorizationUrl(null, "test_verifier", "test_state")
+        assertTrue(url.contains("offline_access"))
+    }
+
+    @Test
+    fun test_capitalize_subject_name_normalizes_lowercase() {
+        assertEquals("", (null as String?).capitalizeSubjectName())
+        assertEquals("", "   ".capitalizeSubjectName())
+        assertEquals("Lichamelijke opvoeding", "lichamelijke opvoeding".capitalizeSubjectName())
+        assertEquals("Natuur en zorg", "natuur en zorg".capitalizeSubjectName())
+        assertEquals("Aardrijkskunde", "aardrijkskunde".capitalizeSubjectName())
+        assertEquals("Wiskunde B", "Wiskunde B".capitalizeSubjectName())
+    }
+
+    @Test
+    fun test_smart_bus_planner_bike_uitval_and_rain_warning() {
+        val today = "2026-11-18"
+        val prevHour1 = com.example.model.Appointment(
+            id = 10L, title = "Engels", subjectCode = "EN", subjectName = "Engels",
+            teacherName = "Bakker", teacherInitials = "BAK", classroom = "101",
+            periodIndex = 1, startTime = "08:30", endTime = "09:20", dayOfWeek = 3,
+            isCanceled = false, dateIso = today
+        )
+        val hour2 = com.example.model.Appointment(
+            id = 11L, title = "Wiskunde", subjectCode = "WI", subjectName = "wiskunde",
+            teacherName = "De Vries", teacherInitials = "VRI", classroom = "202",
+            periodIndex = 2, startTime = "09:20", endTime = "10:10", dayOfWeek = 3,
+            isCanceled = false, dateIso = today
+        )
+        val todayCanceledHour1 = prevHour1.copy(isCanceled = true)
+
+        val weatherWithRain = com.example.model.WeatherInfo(
+            cityName = "Utrecht",
+            temperatureC = 11.0,
+            minTempC = 8.0,
+            maxTempC = 13.0,
+            windKmh = 18.0,
+            conditionDutch = "Regen",
+            weatherCode = 63,
+            isDay = true,
+            latitude = 52.09,
+            longitude = 5.12,
+            hourlyTimesIso = listOf("2026-11-18T08:00", "2026-11-18T09:00"),
+            hourlyPrecipProb = listOf(80, 20),
+            hourlyPrecipMm = listOf(2.4, 0.0)
+        )
+        val bikeMode = com.example.model.CommuteModeConfig(
+            id = "bike_1",
+            type = com.example.model.CommuteModeType.BIKE,
+            label = "Fiets",
+            bikeMinutes = 25
+        )
+
+        val advice = com.example.notifications.SmartBusPlanner.computeAdvice(
+            todayAppointments = listOf(todayCanceledHour1, hour2),
+            previousAppointments = listOf(prevHour1, hour2),
+            busTrackingState = null,
+            walkMinutes = 5,
+            arrivalBufferMinutes = 10,
+            nowMinutes = 7 * 60 + 30,
+            todayIso = today,
+            activeCommuteMode = bikeMode,
+            weatherInfo = weatherWithRain
+        )
+
+        assertNotNull(advice)
+        assertEquals(com.example.model.CommuteModeType.BIKE, advice!!.commuteMode)
+        assertEquals("08:45", advice.leaveHomeTime) // 09:20 - 25m bike - 10m buffer = 08:45
+        assertEquals(50, advice.longerSleepMinutes)
+        assertTrue(advice.shouldNotifyPriority)
+        assertNotNull(advice.rainWarning)
+        assertTrue(advice.rainWarning!!.contains("Regen"))
+    }
+
+    @Test
+    fun test_auto_split_study_plan_distribution_and_idempotency() {
+        val topics = listOf(
+            com.example.model.TestPrepSubtopic("t1", "Hoofdstuk 1 lezen", false),
+            com.example.model.TestPrepSubtopic("t2", "Opgaven paragraaf 2", true),
+            com.example.model.TestPrepSubtopic("t3", "Formules oefenen", false)
+        )
+        val split1 = AgendaRepository.buildAutoSplitStudyPlan(
+            currentTopics = topics,
+            subject = "Natuurkunde",
+            targetDateIso = "2026-11-24",
+            todayIso = "2026-11-18"
+        )
+        assertEquals(4, split1.size) // 3 topics + final_review
+        assertTrue(split1.all { it.title.startsWith("[") && it.title.contains("]") })
+        assertEquals("final_review", split1.last().id)
+        assertTrue(split1[1].isChecked)
+
+        // Running again must be idempotent (no double brackets, single final_review)
+        val split2 = AgendaRepository.buildAutoSplitStudyPlan(
+            currentTopics = split1,
+            subject = "Natuurkunde",
+            targetDateIso = "2026-11-24",
+            todayIso = "2026-11-18"
+        )
+        assertEquals(4, split2.size)
+        assertEquals(1, split2.count { it.id == "final_review" })
+        assertFalse(split2.first().title.contains("[["))
+        assertEquals(split1.map { it.title }, split2.map { it.title })
+    }
+
+    @Test
+    fun test_overgangsnorm_status_rules_and_overrides() {
+        val summaries = listOf(
+            com.example.model.SubjectGradeSummary("NE", "Nederlands", 5.2, emptyList()),
+            com.example.model.SubjectGradeSummary("EN", "Engels", 6.2, emptyList()),
+            com.example.model.SubjectGradeSummary("WI", "Wiskunde B", 5.1, emptyList()),
+            com.example.model.SubjectGradeSummary("GS", "Geschiedenis", 7.0, emptyList())
+        )
+
+        // 2 kernvak fives -> Bespreekgeval, kernvakkenValid == false
+        val statusTwoKernFives = com.example.ui.dialogs.calculateOvergangsNormStatus(summaries)
+        assertEquals(2, statusTwoKernFives.totalTekortenpunten)
+        assertEquals(2, statusTwoKernFives.kernvakFives)
+        assertFalse(statusTwoKernFives.kernvakkenValid)
+        assertEquals("Bespreekgeval", statusTwoKernFives.verdict)
+
+        // What-If override improves Wiskunde B to 6.0 -> Bevorderbaar
+        val improved = com.example.ui.dialogs.calculateOvergangsNormStatus(
+            summaries = summaries,
+            overrides = mapOf("WI_Wiskunde B" to 6.0)
+        )
+        assertEquals(1, improved.totalTekortenpunten)
+        assertTrue(improved.kernvakkenValid)
+        assertEquals("Bevorderbaar", improved.verdict)
+
+        // Severe drop on Wiskunde B (3.2 -> 3p), Engels (4.1 -> 2p), Geschiedenis (4.1 -> 2p) + NE (5.2 -> 1p) => 8 tekortpunten -> Zittenblijven risico
+        val failing = com.example.ui.dialogs.calculateOvergangsNormStatus(
+            summaries = summaries,
+            overrides = mapOf("WI_Wiskunde B" to 3.2, "GS_Geschiedenis" to 4.1, "EN_Engels" to 4.1)
+        )
+        assertEquals(8, failing.totalTekortenpunten)
+        assertEquals(2, failing.kernvakFourOrLess)
+        assertEquals("Zittenblijven risico", failing.verdict)
+    }
+
+    @Test
+    fun test_uitval_helper_find_schedule_changes() {
+        val today = "2026-11-18"
+        val oldAppt = com.example.model.Appointment(
+            id = 55L, title = "Biologie", subjectCode = "BI", subjectName = "Biologie",
+            teacherName = "Smit", teacherInitials = "SMI", classroom = "105",
+            periodIndex = 2, startTime = "09:20", endTime = "10:10", dayOfWeek = 3,
+            isCanceled = false, dateIso = today
+        )
+        val movedAppt = oldAppt.copy(classroom = "304", periodIndex = 4, startTime = "11:20", endTime = "12:10")
+
+        val (alerts, keys) = com.example.notifications.UitvalNotificationHelper.findScheduleChanges(
+            previousAppointments = listOf(oldAppt),
+            newAppointments = listOf(movedAppt),
+            previouslyNotifiedChangeKeys = emptySet(),
+            todayIso = today
+        )
+        assertEquals(1, alerts.size)
+        assertTrue(alerts.first().changeSummary.contains("105 -> 304"))
+        assertTrue(alerts.first().changeSummary.contains("2e -> 4e uur"))
+
+        // Already notified key should not duplicate
+        val (repeatAlerts, _) = com.example.notifications.UitvalNotificationHelper.findScheduleChanges(
+            previousAppointments = listOf(oldAppt),
+            newAppointments = listOf(movedAppt),
+            previouslyNotifiedChangeKeys = keys,
+            todayIso = today
+        )
+        assertTrue(repeatAlerts.isEmpty())
     }
 }

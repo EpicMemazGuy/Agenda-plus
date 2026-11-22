@@ -188,29 +188,38 @@ object UitvalNotificationHelper {
         val alerts = mutableListOf<ScheduleChangeAlert>()
 
         for (appt in newAppointments) {
-            if (appt.isCanceled) continue
             val isTodayOrUpcoming = appt.dateIso.isBlank() || appt.dateIso >= todayIso
             if (!isTodayOrUpcoming) continue
 
             val prev = prevById[appt.id] ?: continue
+            val canceledChanged = prev.isCanceled != appt.isCanceled
+            if (appt.isCanceled && !canceledChanged) continue
             val roomChanged = prev.classroom.trim() != appt.classroom.trim() && appt.classroom.isNotBlank()
             val timeChanged = prev.startTime != appt.startTime || prev.endTime != appt.endTime
             val periodChanged = prev.periodIndex != appt.periodIndex && appt.periodIndex > 0
-            if (!roomChanged && !timeChanged && !periodChanged) continue
+            val teacherChanged = prev.teacherName.trim() != appt.teacherName.trim() && appt.teacherName.isNotBlank()
+            if (!canceledChanged && !roomChanged && !timeChanged && !periodChanged && !teacherChanged) continue
 
             val key = scheduleChangeKey(appt)
             if (updatedKeys.contains(key)) continue
 
             val parts = mutableListOf<String>()
+            if (canceledChanged) {
+                parts.add(if (appt.isCanceled) "Uitval" else "Les hervat")
+            }
             if (roomChanged) {
                 val oldRoom = prev.classroom.cleanSchoolText() ?: "?"
-                parts.add("Lokaal $oldRoom -> ${appt.classroom}")
+                parts.add("Lokaal: $oldRoom -> ${appt.classroom}")
             }
             if (periodChanged) {
                 parts.add("${prev.periodIndex}e -> ${appt.periodIndex}e uur")
             }
             if (timeChanged) {
-                parts.add("Tijd ${prev.startTime} -> ${appt.startTime}-${appt.endTime}")
+                parts.add("Tijd gewijzigd (${prev.startTime} -> ${appt.startTime})")
+            }
+            if (teacherChanged) {
+                val oldTeacher = prev.teacherName.cleanSchoolText() ?: "?"
+                parts.add("Docent: $oldTeacher -> ${appt.teacherName}")
             }
 
             updatedKeys.add(key)
@@ -325,13 +334,13 @@ object UitvalNotificationHelper {
             todayIso = todayIso
         )
         store.setNotifiedChangeKeys(updatedChangeKeys)
-        if (scheduleChangesRaw.isNotEmpty() || newlyCanceledRaw.isNotEmpty()) {
+        if (previousAppointments.isNotEmpty() && (scheduleChangesRaw.isNotEmpty() || newlyCanceledRaw.isNotEmpty())) {
             val diffsToStore = mutableMapOf<Long, String>()
             scheduleChangesRaw.forEach { alert ->
                 diffsToStore[alert.appointment.id] = alert.changeSummary
             }
             newlyCanceledRaw.forEach { appt ->
-                diffsToStore[appt.id] = "Uitval (${appt.periodIndex}e uur)"
+                diffsToStore[appt.id] = "Uitval"
             }
             store.mergeChangedLessonDiffs(
                 newDiffs = diffsToStore,

@@ -44,6 +44,11 @@ data class SubjectCustomizationState(
     val useSubjectColorsForMetroTiles: Boolean = false
 )
 
+data class DetectedSubject(
+    val code: String,
+    val detectedName: String
+)
+
 object SubjectCustomizationCatalog {
 
     val curatedColors: List<SubjectColorOption> = listOf(
@@ -150,6 +155,63 @@ object SubjectCustomizationCatalog {
     )
 
     private val NON_SUBJECT_WORDS = setOf("", "les", "algemeen", "rooster", "afspraak", "overig")
+
+    fun normalizeCode(rawCode: String): String {
+        val clean = rawCode.trim().lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
+        return if (clean == "los") "lo" else clean.ifBlank { "les" }
+    }
+
+    fun collectDetectedSubjects(
+        appointments: List<Appointment>,
+        gradeSummaries: List<SubjectGradeSummary>,
+        tasks: List<HomeworkTask>,
+        customizations: Map<String, SubjectCustomization> = emptyMap()
+    ): List<DetectedSubject> {
+        val map = linkedMapOf<String, String>()
+        appointments.forEach { a ->
+            val code = normalizeCode(
+                extractNormalizedSubjectCode(
+                    rawSubject = a.subjectCode.ifBlank { a.subjectName },
+                    rawTitle = a.title
+                )
+            )
+            if (code != "les" && code !in map) {
+                map[code] = a.subjectName.cleanSchoolText() ?: code.uppercase(Locale.ROOT)
+            }
+        }
+        gradeSummaries.forEach { g ->
+            val code = normalizeCode(
+                extractNormalizedSubjectCode(
+                    rawSubject = g.subjectCode.ifBlank { g.subjectName },
+                    rawTitle = g.subjectName
+                )
+            )
+            if (code != "les" && code !in map) {
+                map[code] = g.subjectName.cleanSchoolText() ?: code.uppercase(Locale.ROOT)
+            }
+        }
+        tasks.forEach { t ->
+            val code = normalizeCode(
+                extractNormalizedSubjectCode(
+                    rawSubject = t.subject,
+                    rawTitle = t.title
+                )
+            )
+            if (code != "les" && code !in map) {
+                map[code] = t.subject.cleanSchoolText() ?: code.uppercase(Locale.ROOT)
+            }
+        }
+        customizations.keys.forEach { rawKey ->
+            val code = normalizeCode(rawKey)
+            if (code != "les" && code !in map) {
+                map[code] = customizations[rawKey]?.nickname?.takeIf { it.isNotBlank() }
+                    ?: code.uppercase(Locale.ROOT)
+            }
+        }
+        return map.entries
+            .map { DetectedSubject(code = it.key, detectedName = it.value) }
+            .sortedBy { it.code }
+    }
 
     fun extractNormalizedSubjectCode(
         rawSubject: String?,

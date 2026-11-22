@@ -8,4 +8,13 @@
     <color name="oneui_widget_text_primary">#FFF5F6FA</color>
     <color name="oneui_widget_text_secondary">#FF9EA3B0</color>
     <color name="oneui_widget_accent">#FF3E91FF</color>
+    <color name="ios_widget_bg">#D41C1C1E</color>
+    <color name="ios_widget_border">#2EFFFFFF</color>
+    <color name="ios_widget_row_bg">#BF2C2C2E</color>
+    <color name="ios_widget_pill_bg">#2E0A84FF</color>
+    <color name="ios_widget_error_pill_bg">#2EFF453A</color>
+    <color name="ios_widget_text_primary">#FFFFFFFF</color>
+    <color name="ios_widget_text_secondary">#FFAEAEB2</color>
+    <color name="ios_widget_accent">#FF0A84FF</color>
+    <color name="ios_widget_error">#FFFF453A</color>
 </resources>

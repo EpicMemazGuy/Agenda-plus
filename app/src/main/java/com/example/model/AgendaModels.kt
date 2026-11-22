@@ -65,7 +65,9 @@ enum class MetroAccent(
     COBALT("Cobalt", 0xFF1BA1E2L, "#1BA1E2"),
     EMERALD("Emerald", 0xFF008A00L, "#008A00"),
     CRIMSON("Crimson", 0xFFE51400L, "#E51400"),
-    AMBER("Amber", 0xFFF0A30AL, "#F0A30A")
+    AMBER("Amber", 0xFFF0A30AL, "#F0A30A");
+
+    val argb: Long get() = colorHex
 }
 
 enum class DarkModePreference(val labelDutch: String) {

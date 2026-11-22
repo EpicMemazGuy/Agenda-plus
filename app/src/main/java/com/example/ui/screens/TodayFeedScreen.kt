@@ -26,27 +26,37 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import com.example.data.db.CustomScheduleItem
 import com.example.model.*
 import com.example.network.CitySearchResult
+import com.example.ui.components.AppThemedHeader
 import com.example.ui.components.BusLiveMapCard
 import com.example.ui.components.CustomScheduleItemCard
 import com.example.ui.components.LocalOneUiScreenInsets
+import com.example.ui.components.LocalSubjectCustomizationState
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.NothingDotMatrixSpinner
 import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
 import com.example.ui.components.ScheduleLoadingSkeleton
+import com.example.ui.components.appButtonShape
 import com.example.ui.components.appCardShape
 import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appLiquidGlassContainerColor
 import com.example.ui.components.appScreenHorizontalPadding
 import com.example.ui.components.appSheetContainerColor
 import com.example.ui.components.appThumbnailShape
+import com.example.ui.components.isIosLiquidGlass
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.isOneUi85
+import com.example.ui.components.isWindowsPhone
 import com.example.ui.components.nothingCardBorder
 import com.example.ui.components.oneUiPillContainerColor
 import com.example.ui.components.oneUiPillContentColor
+import com.example.ui.components.rememberSubjectDisplay
+import com.example.ui.theme.MetroCrimson
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -100,12 +110,15 @@ fun TodayFeedScreen(
 ) {
     val context = LocalContext.current
     val oneUiMode = isOneUi85
+    val windowsPhoneMode = isWindowsPhone
+    val iosMode = isIosLiquidGlass
+    val usesFrostedInset = oneUiMode || iosMode
     val listState = rememberLazyListState()
     val isScrolled by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 70 }
     }
-    LaunchedEffect(isScrolled, oneUiMode) {
-        onHeaderCollapsedChange(oneUiMode && isScrolled)
+    LaunchedEffect(isScrolled, usesFrostedInset) {
+        onHeaderCollapsedChange(usesFrostedInset && isScrolled)
     }
     var showCityPickerDialog by remember { mutableStateOf(false) }
 
@@ -226,9 +239,9 @@ fun TodayFeedScreen(
             bottom = oneUiInsets.calculateBottomPadding() + 28.dp
         )
     ) {
-        if (oneUiMode) {
-            item(key = "oneui_today_header") {
-                OneUiExpandingHeader(
+        if (oneUiMode || windowsPhoneMode || iosMode) {
+            item(key = "themed_today_header") {
+                AppThemedHeader(
                     title = "Vandaag",
                     subtitle = "$dayNameDutch • $activeLessonCount ${if (activeLessonCount == 1) "lesuur" else "lesuren"}",
                     isScrolled = isScrolled
@@ -604,6 +617,17 @@ fun TodayFeedScreen(
                         }
                     } else {
                         items(urgentTasks, key = { "today_hw_${it.id}" }) { task ->
+                            val taskSubjectDisplay = rememberSubjectDisplay(rawTitleOrName = task.subject)
+                            val taskBadgeColor = if (!isNothingOs && taskSubjectDisplay.customColor != null) {
+                                taskSubjectDisplay.customColor.copy(alpha = 0.16f)
+                            } else {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            }
+                            val taskBadgeContentColor = if (!isNothingOs && taskSubjectDisplay.customColor != null) {
+                                taskSubjectDisplay.customColor
+                            } else {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            }
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -611,7 +635,7 @@ fun TodayFeedScreen(
                                 shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                                 border = nothingCardBorder(isAlert = task.priority == TaskPriority.HIGH && !task.isCompleted),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                    containerColor = appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)
                                 )
                             ) {
                                 Row(
@@ -634,15 +658,27 @@ fun TodayFeedScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Surface(
-                                                shape = RoundedCornerShape(percent = 50),
-                                                color = MaterialTheme.colorScheme.secondaryContainer
+                                                shape = appButtonShape(),
+                                                color = taskBadgeColor
                                             ) {
-                                                Text(
-                                                    text = task.subject.capitalizeSubjectName(),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                                )
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = taskSubjectDisplay.icon,
+                                                        contentDescription = null,
+                                                        tint = taskBadgeContentColor,
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                    Text(
+                                                        text = taskSubjectDisplay.displayName,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = taskBadgeContentColor
+                                                    )
+                                                }
                                             }
                                             Spacer(modifier = Modifier.width(6.dp))
                                             if (task.dueDate.cleanSchoolText() != null) {
@@ -790,7 +826,7 @@ fun TodayFeedScreen(
             Spacer(modifier = Modifier.height(6.dp))
             OutlinedButton(
                 onClick = onOpenTodayModifySheet,
-                shape = RoundedCornerShape(percent = 50),
+                shape = appButtonShape(),
                 border = nothingCardBorder(),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1252,7 +1288,22 @@ fun HeroClassCard(
     val cleanHomework = appointment.homework.cleanSchoolText()
 
     val nothingMode = isNothingOs
+    val windowsPhoneMode = isWindowsPhone
+    val iosMode = isIosLiquidGlass
+    val subjectDisplay = rememberSubjectDisplay(
+        rawTitleOrName = appointment.subjectName.cleanSchoolText() ?: appointment.title,
+        rawCode = appointment.subjectCode
+    )
+
     val heroShape = appCardShape(standard = 26.dp, nothing = 26.dp)
+    val cardContainerColor = when {
+        windowsPhoneMode -> MaterialTheme.colorScheme.primary
+        iosMode -> appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainer)
+        else -> MaterialTheme.colorScheme.surfaceContainer
+    }
+    val heroPrimaryText = if (windowsPhoneMode) Color.White else MaterialTheme.colorScheme.onSurface
+    val heroSecondaryText = if (windowsPhoneMode) Color.White.copy(alpha = 0.86f) else MaterialTheme.colorScheme.onSurfaceVariant
+
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -1262,7 +1313,7 @@ fun HeroClassCard(
         shape = heroShape,
         border = nothingCardBorder(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
+            containerColor = cardContainerColor
         )
     ) {
         Column(
@@ -1274,8 +1325,13 @@ fun HeroClassCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    shape = RoundedCornerShape(percent = 50),
-                    color = if (nothingMode) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
+                    shape = appButtonShape(),
+                    color = when {
+                        windowsPhoneMode -> Color.Black.copy(alpha = 0.22f)
+                        nothingMode -> MaterialTheme.colorScheme.tertiary
+                        subjectDisplay.customColor != null && !nothingMode -> subjectDisplay.customColor
+                        else -> MaterialTheme.colorScheme.primary
+                    }
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
@@ -1284,15 +1340,23 @@ fun HeroClassCard(
                         Icon(
                             imageVector = Icons.Default.Timer,
                             contentDescription = null,
-                            tint = if (nothingMode) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onPrimary,
+                            tint = when {
+                                windowsPhoneMode -> Color.White
+                                nothingMode -> MaterialTheme.colorScheme.onTertiary
+                                else -> Color.White
+                            },
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (nothingMode) statusLabel.uppercase() else statusLabel,
+                            text = if (nothingMode || windowsPhoneMode) statusLabel.uppercase() else statusLabel,
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (nothingMode) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onPrimary
+                            color = when {
+                                windowsPhoneMode -> Color.White
+                                nothingMode -> MaterialTheme.colorScheme.onTertiary
+                                else -> Color.White
+                            }
                         )
                     }
                 }
@@ -1300,7 +1364,7 @@ fun HeroClassCard(
                 Text(
                     text = "${appointment.periodIndex}e uur (${appointment.startTime} - ${appointment.endTime})",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = heroSecondaryText
                 )
             }
 
@@ -1311,66 +1375,119 @@ fun HeroClassCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Text(
-                text = (appointment.subjectName.cleanSchoolText() ?: appointment.title).capitalizeSubjectName(),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Surface(
+                    shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
+                    color = when {
+                        windowsPhoneMode -> Color.Black.copy(alpha = 0.18f)
+                        !nothingMode && subjectDisplay.customColor != null -> subjectDisplay.customColor.copy(alpha = 0.16f)
+                        else -> MaterialTheme.colorScheme.primaryContainer
+                    },
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = subjectDisplay.icon,
+                            contentDescription = subjectDisplay.displayName,
+                            tint = when {
+                                windowsPhoneMode -> Color.White
+                                !nothingMode && subjectDisplay.customColor != null -> subjectDisplay.customColor
+                                else -> MaterialTheme.colorScheme.onPrimaryContainer
+                            },
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = subjectDisplay.displayName,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = if (windowsPhoneMode) FontWeight.Light else FontWeight.Bold,
+                        color = heroPrimaryText
+                    )
+                    if (subjectDisplay.showOriginalCode && subjectDisplay.rawCode.isNotBlank()) {
+                        Text(
+                            text = subjectDisplay.rawCode.uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = heroSecondaryText
+                        )
+                    }
+                }
+            }
 
             if (cleanRoom != null || cleanTeacher != null) {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    if (cleanRoom != null) {
-                        val roomText = if (appointment.isRelocated && cleanOrigRoom != null) {
-                            "Lokaal $cleanRoom (was $cleanOrigRoom)"
-                        } else {
-                            "Lokaal $cleanRoom"
-                        }
-                        Surface(
-                            shape = CircleShape,
-                            color = when {
-                                isOneUi85 -> oneUiPillContainerColor(isError = false)
-                                appointment.isRelocated -> MaterialTheme.colorScheme.primaryContainer
-                                else -> MaterialTheme.colorScheme.surfaceContainerHighest
-                            }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (cleanTeacher != null) {
+                            Surface(
+                                shape = appButtonShape(),
+                                color = if (windowsPhoneMode) Color.Black.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceContainerHighest
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Room,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp),
-                                    tint = if (isOneUi85) oneUiPillContentColor() else MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = roomText,
+                                    text = cleanTeacher,
                                     style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (isOneUi85) oneUiPillContentColor() else MaterialTheme.colorScheme.onSurface
+                                    color = heroPrimaryText,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                 )
+                            }
+                        }
+                        if (!windowsPhoneMode && cleanRoom != null) {
+                            val roomText = if (appointment.isRelocated && cleanOrigRoom != null) {
+                                "Lokaal $cleanRoom (was $cleanOrigRoom)"
+                            } else {
+                                "Lokaal $cleanRoom"
+                            }
+                            Surface(
+                                shape = appButtonShape(),
+                                color = when {
+                                    isOneUi85 -> oneUiPillContainerColor(isError = false)
+                                    appointment.isRelocated -> MaterialTheme.colorScheme.primaryContainer
+                                    else -> MaterialTheme.colorScheme.surfaceContainerHighest
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Room,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = if (isOneUi85) oneUiPillContentColor() else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = roomText,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isOneUi85) oneUiPillContentColor() else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
                             }
                         }
                     }
 
-                    if (cleanTeacher != null) {
-                        Surface(
-                            shape = RoundedCornerShape(percent = 50),
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest
-                        ) {
-                            Text(
-                                text = cleanTeacher,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
-                        }
+                    // Windows Phone Metro corner counter pinned bottom-right
+                    if (windowsPhoneMode && cleanRoom != null) {
+                        Text(
+                            text = cleanRoom.uppercase(),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp,
+                            color = Color.White
+                        )
                     }
                 }
             }
@@ -1379,7 +1496,7 @@ fun HeroClassCard(
                 Spacer(modifier = Modifier.height(12.dp))
                 Surface(
                     shape = appInnerCardShape(standard = 14.dp, nothing = 14.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    color = if (windowsPhoneMode) Color.Black.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceContainerLow,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -1389,14 +1506,14 @@ fun HeroClassCard(
                         Icon(
                             imageVector = Icons.Default.AssignmentLate,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = if (windowsPhoneMode) Color.White else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(17.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Huiswerk: $cleanHomework",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = heroPrimaryText
                         )
                     }
                 }
@@ -1418,7 +1535,35 @@ fun TodayClassRow(
     val cleanRoom = appointment.classroom.cleanSchoolText()
 
     val oneUiMode = isOneUi85
+    val nothingMode = isNothingOs
+    val windowsPhoneMode = isWindowsPhone
+    val customState = LocalSubjectCustomizationState.current
+    val subjectDisplay = rememberSubjectDisplay(
+        rawTitleOrName = appointment.subjectName.cleanSchoolText() ?: appointment.title,
+        rawCode = appointment.subjectCode
+    )
+    val hasGenuineDiff = !changedDiff.isNullOrBlank() || (appointment.isRelocated && !appointment.originalClassroom.isNullOrBlank())
+    val useMetroSubjectFill = windowsPhoneMode && !isCanceled && customState.useSubjectColorsForMetroTiles && subjectDisplay.customColor != null
+
     val rowShape = appCardShape(standard = 16.dp, nothing = 24.dp)
+    val rowBg = when {
+        windowsPhoneMode && isCanceled -> MetroCrimson
+        useMetroSubjectFill -> subjectDisplay.customColor!!
+        isCanceled -> MaterialTheme.colorScheme.errorContainer
+        else -> appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)
+    }
+    val onWhiteTile = windowsPhoneMode && (isCanceled || useMetroSubjectFill)
+    val primaryTextColor = when {
+        onWhiteTile -> Color.White
+        isCanceled -> MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val secondaryTextColor = when {
+        onWhiteTile -> Color.White.copy(alpha = 0.84f)
+        isCanceled -> MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -1428,26 +1573,61 @@ fun TodayClassRow(
             .testTag("today_class_item_${appointment.id}"),
         shape = rowShape,
         border = nothingCardBorder(isAlert = isCanceled),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isCanceled) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerLow
-        )
+        colors = CardDefaults.cardColors(containerColor = rowBg)
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Left vertical accent indicator bar when custom subject color or genuine status exists
+            if (!windowsPhoneMode && (!nothingMode || isCanceled || hasGenuineDiff || appointment.isTestOrExam)) {
+                val barColor = when {
+                    isCanceled || hasGenuineDiff -> MaterialTheme.colorScheme.error
+                    appointment.isTestOrExam -> Color(0xFFF59E0B)
+                    !nothingMode && subjectDisplay.customColor != null -> subjectDisplay.customColor
+                    nothingMode -> MaterialTheme.colorScheme.onSurface
+                    else -> MaterialTheme.colorScheme.primary
+                }
+                Box(
+                    modifier = Modifier
+                        .width(3.dp)
+                        .height(34.dp)
+                        .clip(appThumbnailShape(2.dp, 2.dp))
+                        .background(barColor)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+
             Surface(
                 shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
-                color = if (isCanceled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = when {
+                    onWhiteTile -> Color.Black.copy(alpha = 0.20f)
+                    isCanceled -> MaterialTheme.colorScheme.error
+                    !nothingMode && subjectDisplay.customColor != null -> subjectDisplay.customColor.copy(alpha = 0.16f)
+                    else -> MaterialTheme.colorScheme.surfaceContainerHigh
+                },
                 modifier = Modifier.size(40.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "${appointment.periodIndex}e",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (isCanceled) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurface
-                    )
+                    if (!nothingMode && !isCanceled) {
+                        Icon(
+                            imageVector = subjectDisplay.icon,
+                            contentDescription = subjectDisplay.displayName,
+                            tint = when {
+                                onWhiteTile -> Color.White
+                                subjectDisplay.customColor != null -> subjectDisplay.customColor
+                                else -> MaterialTheme.colorScheme.primary
+                            },
+                            modifier = Modifier.size(20.dp)
+                        )
+                    } else {
+                        Text(
+                            text = "${appointment.periodIndex}e",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (isCanceled) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
             }
 
@@ -1456,11 +1636,11 @@ fun TodayClassRow(
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = (appointment.title.cleanSchoolText() ?: appointment.subjectName).capitalizeSubjectName(),
+                        text = subjectDisplay.displayName,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold,
                         textDecoration = if (isCanceled) TextDecoration.LineThrough else TextDecoration.None,
-                        color = if (isCanceled) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
+                        color = primaryTextColor
                     )
                     if (isCanceled) {
                         Spacer(modifier = Modifier.width(6.dp))
@@ -1468,30 +1648,30 @@ fun TodayClassRow(
                             OneUiPillBadge(text = "Uitval", isError = true)
                         } else {
                             Surface(
-                                shape = RoundedCornerShape(percent = 50),
-                                color = MaterialTheme.colorScheme.error
+                                shape = appButtonShape(),
+                                color = if (onWhiteTile) Color.Black.copy(alpha = 0.25f) else MaterialTheme.colorScheme.error
                             ) {
                                 Text(
                                     text = "UITVAL",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onError,
+                                    color = if (onWhiteTile) Color.White else MaterialTheme.colorScheme.onError,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                         }
-                    } else if (appointment.isRelocated || !changedDiff.isNullOrBlank()) {
+                    } else if (hasGenuineDiff) {
                         Spacer(modifier = Modifier.width(6.dp))
                         if (oneUiMode) {
                             OneUiPillBadge(text = "Gewijzigd")
                         } else {
                             Surface(
-                                shape = RoundedCornerShape(percent = 50),
-                                color = MaterialTheme.colorScheme.primaryContainer
+                                shape = appButtonShape(),
+                                color = MaterialTheme.colorScheme.errorContainer
                             ) {
                                 Text(
                                     text = "GEWIJZIGD",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
@@ -1500,36 +1680,53 @@ fun TodayClassRow(
                 }
 
                 val subLine = buildString {
-                    append("${appointment.startTime} - ${appointment.endTime}")
+                    append("${appointment.periodIndex}e • ${appointment.startTime} - ${appointment.endTime}")
                     if (cleanTeacher != null) append(" • $cleanTeacher")
+                    if (subjectDisplay.showOriginalCode && subjectDisplay.rawCode.isNotBlank()) {
+                        append(" • ${subjectDisplay.rawCode.uppercase()}")
+                    }
                 }
                 Text(
                     text = subLine,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (isCanceled) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = secondaryTextColor
                 )
                 if (!changedDiff.isNullOrBlank()) {
                     Text(
                         text = changedDiff,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = if (onWhiteTile) Color.White else MaterialTheme.colorScheme.error
                     )
                 }
             }
 
             if (cleanRoom != null) {
-                if (oneUiMode) {
-                    OneUiPillBadge(text = "Lok. $cleanRoom", isError = isCanceled)
-                } else {
-                    Text(
-                        text = "Lok. $cleanRoom",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isCanceled) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
-                    )
+                when {
+                    windowsPhoneMode -> {
+                        Text(
+                            text = cleanRoom.uppercase(),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp,
+                            color = primaryTextColor,
+                            modifier = Modifier.align(Alignment.Bottom)
+                        )
+                    }
+                    oneUiMode -> {
+                        OneUiPillBadge(text = "Lok. $cleanRoom", isError = isCanceled)
+                    }
+                    else -> {
+                        Text(
+                            text = "Lok. $cleanRoom",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryTextColor
+                        )
+                    }
                 }
             }
         }
     }
 }
+

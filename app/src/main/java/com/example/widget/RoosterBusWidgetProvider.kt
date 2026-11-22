@@ -13,7 +13,8 @@ import com.example.MainActivity
 import com.example.R
 import com.example.data.AppPreferencesStore
 import com.example.model.AppThemeStyle
-import com.example.model.capitalizeSubjectName
+import com.example.model.SubjectCustomizationCatalog
+import com.example.model.SubjectCustomizationState
 import com.example.model.cleanSchoolText
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -57,11 +58,21 @@ class RoosterBusWidgetProvider : AppWidgetProvider() {
         ) {
             val store = AppPreferencesStore(context)
             val themeStyle = store.getAppThemeStyle()
+            val metroAccent = store.getMetroAccent()
+            val customState = SubjectCustomizationState(
+                customizations = store.loadSubjectCustomizations(),
+                smartDefaultNamesEnabled = store.isSmartSubjectNamesEnabled(),
+                useSubjectColorsForMetroTiles = store.isUseSubjectColorsForMetroTiles()
+            )
             val isNothing = themeStyle == AppThemeStyle.NOTHING_OS
             val isOneUi = themeStyle == AppThemeStyle.ONE_UI
+            val isMetro = themeStyle == AppThemeStyle.WINDOWS_PHONE
+            val isIos = themeStyle == AppThemeStyle.IOS_LIQUID_GLASS
             val layoutId = when (themeStyle) {
                 AppThemeStyle.NOTHING_OS -> R.layout.widget_rooster_bus_nothing
                 AppThemeStyle.ONE_UI -> R.layout.widget_rooster_bus_oneui
+                AppThemeStyle.WINDOWS_PHONE -> R.layout.widget_rooster_bus_metro
+                AppThemeStyle.IOS_LIQUID_GLASS -> R.layout.widget_rooster_bus_ios
                 AppThemeStyle.STANDARD -> R.layout.widget_rooster_bus
             }
             val views = RemoteViews(context.packageName, layoutId)
@@ -93,10 +104,24 @@ class RoosterBusWidgetProvider : AppWidgetProvider() {
             )
             views.setOnClickPendingIntent(R.id.widget_rb_refresh_btn, refreshPendingIntent)
 
+            if (isMetro) {
+                val accentInt = metroAccent.colorHex.toInt()
+                views.setInt(R.id.widget_rb_badge, "setBackgroundColor", accentInt)
+                views.setInt(R.id.widget_rb_room, "setBackgroundColor", accentInt)
+                views.setInt(R.id.widget_rb_bus_line, "setBackgroundColor", accentInt)
+            }
+
             if (!session.isAuthenticated) {
                 views.setTextViewText(R.id.widget_rb_badge, "AGENDA+")
                 views.setTextViewText(R.id.widget_rb_time, "Niet verbonden")
-                views.setTextViewText(R.id.widget_rb_lesson, if (isNothing) "LOG IN BIJ MAGISTER" else "Log in bij Magister")
+                views.setTextViewText(
+                    R.id.widget_rb_lesson,
+                    when {
+                        isNothing -> "LOG IN BIJ MAGISTER"
+                        isMetro -> "log in bij magister"
+                        else -> "Log in bij Magister"
+                    }
+                )
                 views.setViewVisibility(R.id.widget_rb_room, View.GONE)
             } else {
                 val cal = Calendar.getInstance()
@@ -120,7 +145,11 @@ class RoosterBusWidgetProvider : AppWidgetProvider() {
                     views.setTextViewText(R.id.widget_rb_time, "Vrij")
                     views.setTextViewText(
                         R.id.widget_rb_lesson,
-                        if (isNothing) "GEEN KOMENDE LESSEN" else "Geen komende lessen"
+                        when {
+                            isNothing -> "GEEN KOMENDE LESSEN"
+                            isMetro -> "geen komende lessen"
+                            else -> "Geen komende lessen"
+                        }
                     )
                     views.setViewVisibility(R.id.widget_rb_room, View.GONE)
                 } else {
@@ -131,14 +160,27 @@ class RoosterBusWidgetProvider : AppWidgetProvider() {
                         R.id.widget_rb_time,
                         "${nextUpcoming.startTime}-${nextUpcoming.endTime} (${nextUpcoming.periodIndex}e)"
                     )
-                    val subjTitle = nextUpcoming.subjectName.capitalizeSubjectName()
+                    val resolvedSubject = SubjectCustomizationCatalog.resolveSubject(
+                        rawSubject = nextUpcoming.subjectName.cleanSchoolText() ?: nextUpcoming.title,
+                        rawTitle = nextUpcoming.title,
+                        explicitCode = nextUpcoming.subjectCode,
+                        state = customState
+                    )
+                    val subjTitle = resolvedSubject.displayName
                     views.setTextViewText(
                         R.id.widget_rb_lesson,
-                        if (isNothing) subjTitle.uppercase() else subjTitle
+                        when {
+                            isNothing -> subjTitle.uppercase(Locale("nl", "NL"))
+                            isMetro -> subjTitle.lowercase(Locale("nl", "NL"))
+                            else -> subjTitle
+                        }
                     )
                     val room = nextUpcoming.classroom.cleanSchoolText()
                     if (room != null) {
-                        views.setTextViewText(R.id.widget_rb_room, "Lok. $room")
+                        views.setTextViewText(
+                            R.id.widget_rb_room,
+                            if (isMetro) room.uppercase(Locale("nl", "NL")) else "Lok. $room"
+                        )
                         views.setViewVisibility(R.id.widget_rb_room, View.VISIBLE)
                     } else {
                         views.setViewVisibility(R.id.widget_rb_room, View.GONE)
@@ -170,8 +212,12 @@ class RoosterBusWidgetProvider : AppWidgetProvider() {
                     "--:--"
                 }
                 views.setTextViewText(R.id.widget_rb_bus_eta, etaText)
-                if (isOneUi && busSnapshot != null && busSnapshot.delayMinutes > 0) {
-                    views.setTextColor(R.id.widget_rb_bus_eta, Color.parseColor("#E53935"))
+                if (busSnapshot != null && busSnapshot.delayMinutes > 0) {
+                    when {
+                        isOneUi -> views.setTextColor(R.id.widget_rb_bus_eta, Color.parseColor("#E53935"))
+                        isIos -> views.setTextColor(R.id.widget_rb_bus_eta, context.getColor(R.color.ios_widget_error))
+                        isMetro -> views.setTextColor(R.id.widget_rb_bus_eta, Color.parseColor("#E51400"))
+                    }
                 }
             }
 

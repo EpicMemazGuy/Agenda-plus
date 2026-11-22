@@ -19,29 +19,42 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.model.GradeItem
 import com.example.model.GradeScopeFilter
 import com.example.model.SubjectGradeSummary
 import com.example.model.capitalizeSubjectName
 import java.util.Locale
+import com.example.ui.components.AppThemedHeader
 import com.example.ui.components.LocalOneUiScreenInsets
+import com.example.ui.components.LocalSubjectCustomizationState
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.NothingConcentricGradeRing
-import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
+import com.example.ui.components.appButtonShape
 import com.example.ui.components.appCardShape
 import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appLiquidGlassContainerColor
 import com.example.ui.components.appScreenHorizontalPadding
+import com.example.ui.components.appThumbnailShape
+import com.example.ui.components.contrastForeground
+import com.example.ui.components.isIosLiquidGlass
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.isOneUi85
+import com.example.ui.components.isWindowsPhone
 import com.example.ui.components.nothingCardBorder
 import com.example.ui.components.oneUiPillContainerColor
 import com.example.ui.components.oneUiPillContentColor
 import com.example.ui.components.oneUiSpring
 import com.example.ui.components.oneUiTween
+import com.example.ui.components.rememberSubjectDisplay
+import com.example.ui.theme.MetroCrimson
 import kotlin.math.round
 
 fun filterGradeSummariesByScope(
@@ -80,16 +93,20 @@ fun CijfersScreen(
     onOpenExportSheet: () -> Unit = {},
     onOpenOvergangsSimulator: () -> Unit = {},
     onPlayGradeUnboxing: (GradeItem) -> Unit = {},
+    onEditSubject: (code: String, detectedName: String) -> Unit = { _, _ -> },
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val oneUiMode = isOneUi85
+    val windowsPhoneMode = isWindowsPhone
+    val iosMode = isIosLiquidGlass
+    val usesFrostedInset = oneUiMode || iosMode
     val listState = rememberLazyListState()
     val isScrolled by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 70 }
     }
-    LaunchedEffect(isScrolled, oneUiMode) {
-        onHeaderCollapsedChange(oneUiMode && isScrolled)
+    LaunchedEffect(isScrolled, usesFrostedInset) {
+        onHeaderCollapsedChange(usesFrostedInset && isScrolled)
     }
 
     var selectedScope by remember { mutableStateOf(GradeScopeFilter.ALL) }
@@ -129,9 +146,9 @@ fun CijfersScreen(
             bottom = oneUiInsets.calculateBottomPadding() + 24.dp
         )
     ) {
-        if (oneUiMode) {
-            item(key = "oneui_cijfers_header") {
-                OneUiExpandingHeader(
+        if (oneUiMode || windowsPhoneMode || iosMode) {
+            item(key = "themed_cijfers_header") {
+                AppThemedHeader(
                     title = "Cijfers",
                     subtitle = "Algemeen gemiddelde: $overallAverage",
                     isScrolled = isScrolled
@@ -148,7 +165,7 @@ fun CijfersScreen(
                 shape = appCardShape(standard = 28.dp, nothing = 28.dp),
                 border = nothingCardBorder(),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    containerColor = appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainer)
                 )
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -192,7 +209,11 @@ fun CijfersScreen(
                             }
                         }
 
-                        val overgangShape = if (oneUiMode) CircleShape else RoundedCornerShape(20.dp)
+                        val overgangShape = when {
+                            windowsPhoneMode -> RectangleShape
+                            oneUiMode || iosMode -> CircleShape
+                            else -> RoundedCornerShape(20.dp)
+                        }
                         Surface(
                             shape = overgangShape,
                             color = if (oneUiMode) oneUiPillContainerColor(isError = failingSubjects > 0) else MaterialTheme.colorScheme.primaryContainer,
@@ -228,7 +249,7 @@ fun CijfersScreen(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(percent = 50),
+                            shape = appButtonShape(),
                             color = MaterialTheme.colorScheme.surfaceContainerHighest,
                             modifier = Modifier.weight(1f)
                         ) {
@@ -242,7 +263,7 @@ fun CijfersScreen(
                         }
 
                         Surface(
-                            shape = RoundedCornerShape(percent = 50),
+                            shape = appButtonShape(),
                             color = if (failingSubjects > 0) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
                             modifier = Modifier.weight(1f)
                         ) {
@@ -270,7 +291,7 @@ fun CijfersScreen(
                     SegmentedButton(
                         selected = selectedScope == scopeFilter,
                         onClick = { selectedScope = scopeFilter },
-                        shape = SegmentedButtonDefaults.itemShape(idx, GradeScopeFilter.entries.size),
+                        shape = if (windowsPhoneMode) RectangleShape else SegmentedButtonDefaults.itemShape(idx, GradeScopeFilter.entries.size),
                         modifier = Modifier.testTag("grade_scope_${scopeFilter.name}")
                     ) {
                         Text(scopeFilter.labelDutch, maxLines = 1)
@@ -288,7 +309,7 @@ fun CijfersScreen(
                 ) {
                     FilledTonalButton(
                         onClick = onOpenExportSheet,
-                        shape = RoundedCornerShape(percent = 50),
+                        shape = appButtonShape(),
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
@@ -306,7 +327,7 @@ fun CijfersScreen(
                     if (latestGrade != null) {
                         Button(
                             onClick = { onPlayGradeUnboxing(latestGrade) },
-                            shape = RoundedCornerShape(percent = 50),
+                            shape = appButtonShape(),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (nextUnrevealedGrade != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                             ),
@@ -392,7 +413,8 @@ fun CijfersScreen(
                     gradeUnboxingEnabled = gradeUnboxingEnabled,
                     unboxedGradeIds = unboxedGradeIds,
                     onWhatIfClick = { onOpenWhatIf(summary) },
-                    onUnboxGrade = onPlayGradeUnboxing
+                    onUnboxGrade = onPlayGradeUnboxing,
+                    onEditSubject = onEditSubject
                 )
             }
         }
@@ -406,9 +428,29 @@ fun SubjectGradeCard(
     unboxedGradeIds: Set<String> = emptySet(),
     onWhatIfClick: () -> Unit,
     onUnboxGrade: (GradeItem) -> Unit = {},
+    onEditSubject: (code: String, detectedName: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val windowsPhoneMode = isWindowsPhone
+    val nothingMode = isNothingOs
+    val customState = LocalSubjectCustomizationState.current
+    val subjectDisplay = rememberSubjectDisplay(
+        rawTitleOrName = summary.subjectName,
+        rawCode = summary.subjectCode
+    )
+    val useMetroSubjectFill = windowsPhoneMode && summary.isPassingAverage &&
+        customState.useSubjectColorsForMetroTiles && subjectDisplay.customColor != null
+    val isCrimsonMetro = windowsPhoneMode && !summary.isPassingAverage
+    val metroCustomBg = when {
+        isCrimsonMetro -> MetroCrimson
+        useMetroSubjectFill -> subjectDisplay.customColor!!
+        else -> null
+    }
+    val onMetroColored = metroCustomBg != null
+    val cardBg = metroCustomBg ?: appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)
+    val primaryTextColor = if (onMetroColored) metroCustomBg!!.contrastForeground() else MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = if (onMetroColored) metroCustomBg!!.contrastForeground().copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
 
     Card(
         modifier = modifier
@@ -416,13 +458,10 @@ fun SubjectGradeCard(
             .testTag("subject_card_${summary.subjectCode}"),
         shape = appCardShape(standard = 22.dp, nothing = 24.dp),
         border = nothingCardBorder(isAlert = !summary.isPassingAverage),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        )
+        colors = CardDefaults.cardColors(containerColor = cardBg)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             val rowTouchShape = appInnerCardShape(standard = 12.dp, nothing = 12.dp)
-            val displaySubject = summary.subjectName.capitalizeSubjectName()
             val trendDelta = remember(summary) {
                 if (summary.grades.size < 2) {
                     null
@@ -445,16 +484,44 @@ fun SubjectGradeCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                Surface(
+                    shape = appThumbnailShape(standard = 10.dp, nothing = 10.dp),
+                    color = when {
+                        onMetroColored -> Color.Black.copy(alpha = 0.22f)
+                        !nothingMode && subjectDisplay.customColor != null -> subjectDisplay.customColor.copy(alpha = 0.16f)
+                        else -> MaterialTheme.colorScheme.surfaceContainerHigh
+                    },
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = subjectDisplay.icon,
+                            contentDescription = null,
+                            tint = when {
+                                onMetroColored -> Color.White
+                                !nothingMode && subjectDisplay.customColor != null -> subjectDisplay.customColor
+                                else -> MaterialTheme.colorScheme.primary
+                            },
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
                 Column(modifier = Modifier.weight(1f)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = displaySubject,
+                            text = subjectDisplay.displayName,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = primaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                         if (isNearEdge) {
                             OneUiPillBadge(
@@ -467,10 +534,19 @@ fun SubjectGradeCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        if (subjectDisplay.originalCodeLabel != null) {
+                            Text(
+                                text = subjectDisplay.originalCodeLabel!!,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = secondaryTextColor
+                            )
+                            Text("•", style = MaterialTheme.typography.labelSmall, color = secondaryTextColor)
+                        }
                         Text(
-                            text = "${summary.grades.size} cijfers ingevoerd",
+                            text = "${summary.grades.size} cijfers",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = secondaryTextColor
                         )
                         trendDelta?.let { delta ->
                             val sign = if (delta > 0) "+" else ""
@@ -483,36 +559,63 @@ fun SubjectGradeCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Average Pill
-                    Surface(
-                        shape = RoundedCornerShape(percent = 50),
-                        color = when {
-                            isOneUi85 -> oneUiPillContainerColor(isError = !summary.isPassingAverage)
-                            summary.isPassingAverage -> MaterialTheme.colorScheme.primaryContainer
-                            else -> MaterialTheme.colorScheme.errorContainer
-                        }
-                    ) {
+                    // Average Pill or Metro bold counter
+                    if (windowsPhoneMode) {
                         Text(
                             text = "${summary.weightedAverage}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Light,
+                            color = if (onMetroColored) primaryTextColor else if (summary.isPassingAverage) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 6.dp)
+                        )
+                    } else {
+                        Surface(
+                            shape = appButtonShape(),
                             color = when {
-                                isOneUi85 -> oneUiPillContentColor(isError = !summary.isPassingAverage)
-                                summary.isPassingAverage -> MaterialTheme.colorScheme.onPrimaryContainer
-                                else -> MaterialTheme.colorScheme.onErrorContainer
-                            },
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                isOneUi85 -> oneUiPillContainerColor(isError = !summary.isPassingAverage)
+                                summary.isPassingAverage -> MaterialTheme.colorScheme.primaryContainer
+                                else -> MaterialTheme.colorScheme.errorContainer
+                            }
+                        ) {
+                            Text(
+                                text = "${summary.weightedAverage}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = when {
+                                    isOneUi85 -> oneUiPillContentColor(isError = !summary.isPassingAverage)
+                                    summary.isPassingAverage -> MaterialTheme.colorScheme.onPrimaryContainer
+                                    else -> MaterialTheme.colorScheme.onErrorContainer
+                                },
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = { onEditSubject(subjectDisplay.normalizedCode, subjectDisplay.rawSubjectText) },
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .testTag("edit_subject_${summary.subjectCode}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Vak aanpassen",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
 
                     IconButton(
                         onClick = { expanded = !expanded },
-                        modifier = Modifier.testTag("expand_subject_${summary.subjectCode}")
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .testTag("expand_subject_${summary.subjectCode}")
                     ) {
                         Icon(
                             imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                             contentDescription = "Details",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = secondaryTextColor
                         )
                     }
                 }
@@ -553,7 +656,7 @@ fun SubjectGradeCard(
                                         text = grade.description,
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface,
+                                        color = primaryTextColor,
                                         modifier = Modifier.weight(1f, fill = false)
                                     )
                                     if (grade.isPta) {
@@ -568,13 +671,14 @@ fun SubjectGradeCard(
                                         "${grade.date} • Weging ${grade.weight}x • Periode ${grade.period}"
                                     },
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = if (isUnrevealed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (isUnrevealed && !onMetroColored) MaterialTheme.colorScheme.primary else secondaryTextColor
                                 )
                             }
 
                             Surface(
-                                shape = if (isOneUi85) CircleShape else RoundedCornerShape(8.dp),
+                                shape = appButtonShape(standard = 8.dp),
                                 color = when {
+                                    onMetroColored -> Color.Black.copy(alpha = 0.24f)
                                     isUnrevealed -> MaterialTheme.colorScheme.primary
                                     isOneUi85 && !grade.isPassing -> oneUiPillContainerColor(isError = true)
                                     isOneUi85 && grade.isPassing -> oneUiPillContainerColor(isError = false)
@@ -587,6 +691,7 @@ fun SubjectGradeCard(
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = when {
+                                        onMetroColored -> Color.White
                                         isUnrevealed -> MaterialTheme.colorScheme.onPrimary
                                         isOneUi85 -> oneUiPillContentColor(isError = !grade.isPassing)
                                         grade.isPassing -> MaterialTheme.colorScheme.onSurface
@@ -605,9 +710,10 @@ fun SubjectGradeCard(
 
                     Button(
                         onClick = onWhatIfClick,
-                        shape = RoundedCornerShape(percent = 50),
+                        shape = appButtonShape(),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
+                            containerColor = if (onMetroColored) Color.Black.copy(alpha = 0.35f) else MaterialTheme.colorScheme.primary,
+                            contentColor = if (onMetroColored) Color.White else MaterialTheme.colorScheme.onPrimary
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -619,7 +725,7 @@ fun SubjectGradeCard(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("What-If Cijfer Berekenen voor ${summary.subjectName.capitalizeSubjectName()}")
+                        Text("What-If Cijfer Berekenen voor ${subjectDisplay.displayName}")
                     }
                 }
             }

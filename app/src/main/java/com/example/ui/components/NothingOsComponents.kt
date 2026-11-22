@@ -369,6 +369,70 @@ fun IosLargeTitleHeader(
 }
 
 @Composable
+fun AppThemedHeader(
+    title: String,
+    subtitle: String? = null,
+    isScrolled: Boolean = false,
+    modifier: Modifier = Modifier,
+    trailingContent: (@Composable () -> Unit)? = null
+) {
+    when (LocalAppThemeStyle.current) {
+        AppThemeStyle.ONE_UI -> OneUiExpandingHeader(
+            title = title,
+            subtitle = subtitle,
+            isScrolled = isScrolled,
+            modifier = modifier,
+            trailingContent = trailingContent
+        )
+        AppThemeStyle.WINDOWS_PHONE -> MetroPanoramaHeader(
+            title = title,
+            subtitle = subtitle,
+            modifier = modifier,
+            trailingContent = trailingContent
+        )
+        AppThemeStyle.IOS_LIQUID_GLASS -> IosLargeTitleHeader(
+            title = title,
+            subtitle = subtitle,
+            isScrolled = isScrolled,
+            modifier = modifier,
+            trailingContent = trailingContent
+        )
+        AppThemeStyle.NOTHING_OS, AppThemeStyle.STANDARD -> {
+            Row(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (!subtitle.isNullOrBlank()) {
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                if (trailingContent != null) {
+                    trailingContent()
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun NothingAwareDivider(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.outlineVariant,

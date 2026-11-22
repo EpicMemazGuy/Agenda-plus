@@ -376,4 +376,113 @@ class ExampleUnitTest {
         )
         assertTrue(repeatAlerts.isEmpty())
     }
+
+    @Test
+    fun test_subject_customization_catalog_extraction_and_smart_defaults() {
+        assertEquals(
+            "wi",
+            com.example.model.SubjectCustomizationCatalog.extractNormalizedSubjectCode(
+                rawSubject = null,
+                rawTitle = "Wi - wfre - emkg2b"
+            )
+        )
+        assertEquals(
+            "en",
+            com.example.model.SubjectCustomizationCatalog.extractNormalizedSubjectCode(
+                rawSubject = "",
+                rawTitle = "En - deva - emkg2b"
+            )
+        )
+        assertEquals(
+            "los",
+            com.example.model.SubjectCustomizationCatalog.extractNormalizedSubjectCode(
+                rawSubject = null,
+                rawTitle = "Los - seng,lsom"
+            )
+        )
+        assertEquals("lo", com.example.model.SubjectCustomizationCatalog.normalizeCode("Los"))
+
+        // Smart defaults ON -> resolves Wiskunde + icon + color + original code badge
+        val smartResolved = com.example.model.SubjectCustomizationCatalog.resolveSubject(
+            rawSubject = "wi",
+            rawTitle = "Wi - wfre - emkg2b",
+            state = com.example.model.SubjectCustomizationState(smartDefaultNamesEnabled = true)
+        )
+        assertEquals("Wiskunde", smartResolved.displayName)
+        assertEquals("WI", smartResolved.originalCodeLabel)
+        assertEquals("calculate", smartResolved.iconName)
+        assertNotNull(smartResolved.accentColorHex)
+
+        // Smart defaults OFF -> keeps raw label
+        val rawResolved = com.example.model.SubjectCustomizationCatalog.resolveSubject(
+            rawSubject = "wi",
+            rawTitle = "Wi - wfre - emkg2b",
+            state = com.example.model.SubjectCustomizationState(smartDefaultNamesEnabled = false)
+        )
+        assertEquals("Wi", rawResolved.displayName)
+        assertNull(rawResolved.accentColorHex)
+
+        // Custom override with custom HEX and hidden original code
+        val customHex = com.example.model.SubjectCustomizationCatalog.parseHexColorOrNull("#FF5A5F")
+        assertNotNull(customHex)
+        val customMap = mapOf(
+            "wi" to com.example.model.SubjectCustomization(
+                code = "wi",
+                nickname = "Wiskunde B (Wouter)",
+                colorHex = customHex,
+                iconName = "functions",
+                showOriginalCode = false
+            )
+        )
+        val overridden = com.example.model.SubjectCustomizationCatalog.resolveSubject(
+            rawSubject = "wi",
+            rawTitle = "Wi - wfre - emkg2b",
+            state = com.example.model.SubjectCustomizationState(
+                customizations = customMap,
+                smartDefaultNamesEnabled = true,
+                useSubjectColorsForMetroTiles = true
+            )
+        )
+        assertEquals("Wiskunde B (Wouter)", overridden.displayName)
+        assertNull(overridden.originalCodeLabel)
+        assertEquals(customHex, overridden.accentColorHex)
+        assertEquals("functions", overridden.iconName)
+        assertTrue(overridden.isCustomized)
+    }
+
+    @Test
+    fun test_first_sync_schedule_changes_produces_zero_false_diffs() {
+        val today = "2026-11-22"
+        val normalLesson = com.example.model.Appointment(
+            id = 201L,
+            title = "Wi - wfre - emkg2b",
+            subjectCode = "wi",
+            subjectName = "Wiskunde",
+            teacherName = "wfre",
+            teacherInitials = "WFRE",
+            classroom = "G0411",
+            periodIndex = 1,
+            startTime = "08:30",
+            endTime = "09:20",
+            dayOfWeek = 1,
+            isCanceled = false,
+            dateIso = today
+        )
+
+        val (firstSyncAlerts, _) = com.example.notifications.UitvalNotificationHelper.findScheduleChanges(
+            previousAppointments = emptyList(),
+            newAppointments = listOf(normalLesson),
+            previouslyNotifiedChangeKeys = emptySet(),
+            todayIso = today
+        )
+        assertTrue("First sync must produce 0 schedule change diffs", firstSyncAlerts.isEmpty())
+
+        val (unchangedAlerts, _) = com.example.notifications.UitvalNotificationHelper.findScheduleChanges(
+            previousAppointments = listOf(normalLesson),
+            newAppointments = listOf(normalLesson),
+            previouslyNotifiedChangeKeys = emptySet(),
+            todayIso = today
+        )
+        assertTrue("Unchanged lessons must produce 0 schedule change diffs", unchangedAlerts.isEmpty())
+    }
 }

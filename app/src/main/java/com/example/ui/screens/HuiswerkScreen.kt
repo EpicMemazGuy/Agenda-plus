@@ -30,14 +30,24 @@ import com.example.model.isTestKeywordMatch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.ui.unit.sp
+import com.example.ui.components.AppThemedHeader
 import com.example.ui.components.LocalOneUiScreenInsets
+import com.example.ui.components.LocalSubjectCustomizationState
 import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
+import com.example.ui.components.appButtonShape
 import com.example.ui.components.appCardShape
+import com.example.ui.components.appLiquidGlassContainerColor
 import com.example.ui.components.appScreenHorizontalPadding
 import com.example.ui.components.appThumbnailShape
+import com.example.ui.components.isIosLiquidGlass
+import com.example.ui.components.isNothingOs
 import com.example.ui.components.isOneUi85
+import com.example.ui.components.isWindowsPhone
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.rememberSubjectDisplay
+import com.example.ui.theme.MetroCrimson
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,12 +67,15 @@ fun HuiswerkScreen(
     modifier: Modifier = Modifier
 ) {
     val oneUiMode = isOneUi85
+    val windowsPhoneMode = isWindowsPhone
+    val iosMode = isIosLiquidGlass
+    val usesFrostedInset = oneUiMode || iosMode
     val listState = rememberLazyListState()
     val isScrolled by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 70 }
     }
-    LaunchedEffect(isScrolled, oneUiMode) {
-        onHeaderCollapsedChange(oneUiMode && isScrolled)
+    LaunchedEffect(isScrolled, usesFrostedInset) {
+        onHeaderCollapsedChange(usesFrostedInset && isScrolled)
     }
 
     val todayIso = remember {
@@ -90,7 +103,7 @@ fun HuiswerkScreen(
     val oneUiInsets = LocalOneUiScreenInsets.current
 
     Scaffold(
-        containerColor = if (oneUiMode) Color.Transparent else MaterialTheme.colorScheme.background,
+        containerColor = if (usesFrostedInset) Color.Transparent else MaterialTheme.colorScheme.background,
         modifier = modifier.testTag("huiswerk_screen"),
         floatingActionButton = {
             ExtendedFloatingActionButton(
@@ -99,8 +112,8 @@ fun HuiswerkScreen(
                 text = { Text("Taak toevoegen") },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
-                shape = if (oneUiMode) appCardShape() else FloatingActionButtonDefaults.extendedFabShape,
-                elevation = if (oneUiMode) {
+                shape = if (oneUiMode || windowsPhoneMode || iosMode) appButtonShape() else FloatingActionButtonDefaults.extendedFabShape,
+                elevation = if (usesFrostedInset || windowsPhoneMode) {
                     FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp)
                 } else {
                     FloatingActionButtonDefaults.elevation()
@@ -123,9 +136,9 @@ fun HuiswerkScreen(
                 bottom = oneUiInsets.calculateBottomPadding() + 80.dp
             )
         ) {
-            if (oneUiMode) {
-                item(key = "oneui_huiswerk_header") {
-                    OneUiExpandingHeader(
+            if (oneUiMode || windowsPhoneMode || iosMode) {
+                item(key = "themed_huiswerk_header") {
+                    AppThemedHeader(
                         title = "Huiswerk",
                         subtitle = "$completedCount van $totalCount voltooid",
                         isScrolled = isScrolled
@@ -142,7 +155,7 @@ fun HuiswerkScreen(
                     shape = appCardShape(standard = 24.dp, nothing = 24.dp),
                     border = nothingCardBorder(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                        containerColor = appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainer)
                     )
                 ) {
                     Column(modifier = Modifier.padding(20.dp)) {
@@ -311,7 +324,25 @@ fun TaskCard(
     onOpenStudyMode: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val windowsPhoneMode = isWindowsPhone
+    val nothingMode = isNothingOs
+    val customState = LocalSubjectCustomizationState.current
+    val subjectDisplay = rememberSubjectDisplay(rawTitleOrName = task.subject)
+    val isUrgentMetro = windowsPhoneMode && !task.isCompleted && (isTest || task.priority == TaskPriority.HIGH)
+    val useMetroSubjectFill = windowsPhoneMode && !task.isCompleted && !isUrgentMetro &&
+        customState.useSubjectColorsForMetroTiles && subjectDisplay.customColor != null
+    val onWhiteMetroTile = isUrgentMetro || useMetroSubjectFill
+
     val cardShape = appCardShape(standard = 22.dp, nothing = 24.dp)
+    val cardBg = when {
+        isUrgentMetro -> MetroCrimson
+        useMetroSubjectFill -> subjectDisplay.customColor!!
+        task.isCompleted -> appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLowest)
+        else -> appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)
+    }
+    val primaryTextColor = if (onWhiteMetroTile) Color.White else MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = if (onWhiteMetroTile) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
+
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -324,7 +355,7 @@ fun TaskCard(
         shape = cardShape,
         border = nothingCardBorder(isAlert = task.priority == TaskPriority.HIGH && !task.isCompleted),
         colors = CardDefaults.cardColors(
-            containerColor = if (task.isCompleted) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerLow
+            containerColor = cardBg
         )
     ) {
         Row(
@@ -340,7 +371,11 @@ fun TaskCard(
                 Icon(
                     imageVector = if (task.isCompleted) Icons.Default.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
                     contentDescription = "Voltooi",
-                    tint = if (task.isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = when {
+                        onWhiteMetroTile -> Color.White
+                        task.isCompleted -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
             }
 
@@ -351,56 +386,64 @@ fun TaskCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    val displaySubject = task.subject.capitalizeSubjectName()
-                    if (isOneUi85) {
-                        OneUiPillBadge(text = displaySubject)
-                        OneUiPillBadge(
-                            text = task.category.labelDutch,
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        )
-                        if (task.priority == TaskPriority.HIGH) {
-                            OneUiPillBadge(text = "Urgent", isError = true)
-                        }
-                    } else {
-                        Surface(
-                            shape = RoundedCornerShape(percent = 50),
-                            color = MaterialTheme.colorScheme.primaryContainer
+                    val subjectBg = when {
+                        onWhiteMetroTile -> Color.Black.copy(alpha = 0.22f)
+                        !nothingMode && subjectDisplay.customColor != null -> subjectDisplay.customColor.copy(alpha = 0.16f)
+                        else -> MaterialTheme.colorScheme.primaryContainer
+                    }
+                    val subjectFg = when {
+                        onWhiteMetroTile -> Color.White
+                        !nothingMode && subjectDisplay.customColor != null -> subjectDisplay.customColor
+                        else -> MaterialTheme.colorScheme.onPrimaryContainer
+                    }
+                    Surface(
+                        shape = appButtonShape(),
+                        color = subjectBg
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
+                            Icon(
+                                imageVector = subjectDisplay.icon,
+                                contentDescription = null,
+                                tint = subjectFg,
+                                modifier = Modifier.size(12.dp)
+                            )
                             Text(
-                                text = displaySubject,
+                                text = subjectDisplay.displayName,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                color = subjectFg
                             )
                         }
+                    }
 
+                    Surface(
+                        shape = appButtonShape(),
+                        color = if (onWhiteMetroTile) Color.Black.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceContainerHigh
+                    ) {
+                        Text(
+                            text = task.category.labelDutch,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = primaryTextColor,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    if (task.priority == TaskPriority.HIGH) {
                         Surface(
-                            shape = RoundedCornerShape(percent = 50),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh
+                            shape = appButtonShape(),
+                            color = if (onWhiteMetroTile) Color.Black.copy(alpha = 0.28f) else MaterialTheme.colorScheme.errorContainer
                         ) {
                             Text(
-                                text = task.category.labelDutch,
+                                text = "Urgent",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold,
+                                color = if (onWhiteMetroTile) Color.White else MaterialTheme.colorScheme.onErrorContainer,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                             )
-                        }
-
-                        if (task.priority == TaskPriority.HIGH) {
-                            Surface(
-                                shape = RoundedCornerShape(percent = 50),
-                                color = MaterialTheme.colorScheme.errorContainer
-                            ) {
-                                Text(
-                                    text = "Urgent",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                )
-                            }
                         }
                     }
                 }
@@ -410,9 +453,9 @@ fun TaskCard(
                 Text(
                     text = task.title,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = if (windowsPhoneMode) FontWeight.SemiBold else FontWeight.Bold,
                     textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = primaryTextColor
                 )
 
                 if (task.description.isNotBlank()) {
@@ -420,7 +463,7 @@ fun TaskCard(
                     Text(
                         text = task.description,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = secondaryTextColor
                     )
                 }
 
@@ -435,13 +478,13 @@ fun TaskCard(
                             imageVector = Icons.Default.Event,
                             contentDescription = null,
                             modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = secondaryTextColor
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "Inleveren: ${task.dueDate}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = secondaryTextColor
                         )
                     }
                     if (isTest && onOpenStudyMode != null) {
@@ -460,7 +503,7 @@ fun TaskCard(
                 ) {
                     FilledTonalButton(
                         onClick = onStartFocus,
-                        shape = RoundedCornerShape(percent = 50),
+                        shape = appButtonShape(),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                         modifier = Modifier
                             .height(34.dp)
@@ -473,7 +516,7 @@ fun TaskCard(
                     if (hasResourceLink && onOpenResource != null) {
                         OutlinedButton(
                             onClick = onOpenResource,
-                            shape = RoundedCornerShape(percent = 50),
+                            shape = appButtonShape(),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                             modifier = Modifier
                                 .height(34.dp)

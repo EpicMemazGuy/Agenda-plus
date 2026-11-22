@@ -12,7 +12,8 @@ import com.example.MainActivity
 import com.example.R
 import com.example.data.AppPreferencesStore
 import com.example.model.AppThemeStyle
-import com.example.model.capitalizeSubjectName
+import com.example.model.SubjectCustomizationCatalog
+import com.example.model.SubjectCustomizationState
 import com.example.model.cleanSchoolText
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -56,11 +57,21 @@ class NextLessonWidgetProvider : AppWidgetProvider() {
         ) {
             val store = AppPreferencesStore(context)
             val themeStyle = store.getAppThemeStyle()
+            val metroAccent = store.getMetroAccent()
+            val customState = SubjectCustomizationState(
+                customizations = store.loadSubjectCustomizations(),
+                smartDefaultNamesEnabled = store.isSmartSubjectNamesEnabled(),
+                useSubjectColorsForMetroTiles = store.isUseSubjectColorsForMetroTiles()
+            )
             val isNothing = themeStyle == AppThemeStyle.NOTHING_OS
             val isOneUi = themeStyle == AppThemeStyle.ONE_UI
+            val isMetro = themeStyle == AppThemeStyle.WINDOWS_PHONE
+            val isIos = themeStyle == AppThemeStyle.IOS_LIQUID_GLASS
             val layoutId = when (themeStyle) {
                 AppThemeStyle.NOTHING_OS -> R.layout.widget_next_lesson_nothing
                 AppThemeStyle.ONE_UI -> R.layout.widget_next_lesson_oneui
+                AppThemeStyle.WINDOWS_PHONE -> R.layout.widget_next_lesson_metro
+                AppThemeStyle.IOS_LIQUID_GLASS -> R.layout.widget_next_lesson_ios
                 AppThemeStyle.STANDARD -> R.layout.widget_next_lesson
             }
             val views = RemoteViews(context.packageName, layoutId)
@@ -92,14 +103,15 @@ class NextLessonWidgetProvider : AppWidgetProvider() {
 
             if (!session.isAuthenticated) {
                 views.setTextViewText(R.id.widget_status_badge, "AGENDA+")
-                views.setTextViewText(R.id.widget_school, "Niet verbonden")
-                views.setTextViewText(R.id.widget_subject, "Log in bij Magister")
+                views.setTextViewText(R.id.widget_school, if (isMetro) "niet verbonden" else "Niet verbonden")
+                views.setTextViewText(R.id.widget_subject, if (isMetro) "log in bij magister" else "Log in bij Magister")
                 views.setTextViewText(R.id.widget_time, "Tik om je rooster te koppelen")
                 views.setViewVisibility(R.id.widget_room, View.GONE)
-                if (isNothing) {
-                    views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_nothing_pill_bg)
-                } else if (isOneUi) {
-                    views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_oneui_pill_bg)
+                when {
+                    isNothing -> views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_nothing_pill_bg)
+                    isOneUi -> views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_oneui_pill_bg)
+                    isIos -> views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_ios_pill_bg)
+                    isMetro -> views.setInt(R.id.widget_root, "setBackgroundColor", android.graphics.Color.parseColor("#1D1D1D"))
                 }
             } else {
                 val cal = Calendar.getInstance()
@@ -110,7 +122,14 @@ class NextLessonWidgetProvider : AppWidgetProvider() {
                 val nowHHmm = hhmmFormat.format(cal.time)
 
                 val schoolLabel = session.school?.name?.replace(" (Magister)", "") ?: "Agenda+"
-                views.setTextViewText(R.id.widget_school, if (isNothing) schoolLabel.uppercase() else schoolLabel)
+                views.setTextViewText(
+                    R.id.widget_school,
+                    when {
+                        isNothing -> schoolLabel.uppercase(Locale("nl", "NL"))
+                        isMetro -> schoolLabel.lowercase(Locale("nl", "NL"))
+                        else -> schoolLabel
+                    }
+                )
 
                 val activeAppts = appointments.filter { !it.isCanceled }
                 val todayRemaining = activeAppts
@@ -124,13 +143,14 @@ class NextLessonWidgetProvider : AppWidgetProvider() {
 
                 if (nextUpcoming == null) {
                     views.setTextViewText(R.id.widget_status_badge, "VRIJ")
-                    views.setTextViewText(R.id.widget_subject, "Geen komende lessen")
+                    views.setTextViewText(R.id.widget_subject, if (isMetro) "geen komende lessen" else "Geen komende lessen")
                     views.setTextViewText(R.id.widget_time, "Rooster is bijgewerkt")
                     views.setViewVisibility(R.id.widget_room, View.GONE)
-                    if (isNothing) {
-                        views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_nothing_pill_bg)
-                    } else if (isOneUi) {
-                        views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_oneui_pill_bg)
+                    when {
+                        isNothing -> views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_nothing_pill_bg)
+                        isOneUi -> views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_oneui_pill_bg)
+                        isIos -> views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_ios_pill_bg)
+                        isMetro -> views.setInt(R.id.widget_root, "setBackgroundColor", metroAccent.colorHex.toInt())
                     }
                 } else {
                     val isNow = nextUpcoming.dateIso == todayIso &&
@@ -150,28 +170,54 @@ class NextLessonWidgetProvider : AppWidgetProvider() {
                     val timeText = "${nextUpcoming.startTime} - ${nextUpcoming.endTime} (${nextUpcoming.periodIndex}e)$teacherSuffix"
                     val room = nextUpcoming.classroom.cleanSchoolText()
 
+                    val resolvedSubject = SubjectCustomizationCatalog.resolveSubject(
+                        rawSubject = nextUpcoming.subjectName.cleanSchoolText() ?: nextUpcoming.title,
+                        rawTitle = nextUpcoming.title,
+                        explicitCode = nextUpcoming.subjectCode,
+                        state = customState
+                    )
+                    val subjTitle = resolvedSubject.displayName
+
                     views.setTextViewText(R.id.widget_status_badge, badge)
-                    val subjTitle = nextUpcoming.subjectName.capitalizeSubjectName()
                     views.setTextViewText(
                         R.id.widget_subject,
-                        if (isNothing) subjTitle.uppercase() else subjTitle
+                        when {
+                            isNothing -> subjTitle.uppercase(Locale("nl", "NL"))
+                            isMetro -> subjTitle.lowercase(Locale("nl", "NL"))
+                            else -> subjTitle
+                        }
                     )
                     views.setTextViewText(R.id.widget_time, timeText)
-                    if (isNothing) {
-                        views.setInt(
-                            R.id.widget_status_badge,
-                            "setBackgroundResource",
-                            if (isNow || isToday) R.drawable.widget_nothing_red_pill_bg else R.drawable.widget_nothing_pill_bg
-                        )
-                    } else if (isOneUi) {
-                        views.setInt(
-                            R.id.widget_status_badge,
-                            "setBackgroundResource",
-                            R.drawable.widget_oneui_pill_bg
-                        )
+                    when {
+                        isNothing -> {
+                            views.setInt(
+                                R.id.widget_status_badge,
+                                "setBackgroundResource",
+                                if (isNow || isToday) R.drawable.widget_nothing_red_pill_bg else R.drawable.widget_nothing_pill_bg
+                            )
+                        }
+                        isOneUi -> {
+                            views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_oneui_pill_bg)
+                        }
+                        isIos -> {
+                            views.setInt(R.id.widget_status_badge, "setBackgroundResource", R.drawable.widget_ios_pill_bg)
+                        }
+                        isMetro -> {
+                            val tileBg = if (nextUpcoming.isTestOrExam) {
+                                android.graphics.Color.parseColor("#E51400")
+                            } else if (customState.useSubjectColorsForMetroTiles && resolvedSubject.accentColorHex != null) {
+                                resolvedSubject.accentColorHex.toInt()
+                            } else {
+                                metroAccent.colorHex.toInt()
+                            }
+                            views.setInt(R.id.widget_root, "setBackgroundColor", tileBg)
+                        }
                     }
                     if (room != null) {
-                        views.setTextViewText(R.id.widget_room, "Lok. $room")
+                        views.setTextViewText(
+                            R.id.widget_room,
+                            if (isMetro) room.uppercase(Locale("nl", "NL")) else "Lok. $room"
+                        )
                         views.setViewVisibility(R.id.widget_room, View.VISIBLE)
                     } else {
                         views.setViewVisibility(R.id.widget_room, View.GONE)

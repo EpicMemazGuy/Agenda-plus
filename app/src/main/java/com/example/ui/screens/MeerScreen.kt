@@ -34,19 +34,36 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.ui.unit.sp
 import com.example.model.*
 import com.example.ui.MeerSection
+import com.example.ui.components.AppThemedHeader
 import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
+import com.example.ui.components.appButtonShape
 import com.example.ui.components.appCardShape
 import com.example.ui.components.appInnerCardShape
+import com.example.ui.components.appLiquidGlassContainerColor
 import com.example.ui.components.appScreenHorizontalPadding
 import com.example.ui.components.appThumbnailShape
+import com.example.ui.components.isIosLiquidGlass
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.isOneUi85
+import com.example.ui.components.isWindowsPhone
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.theme.IosBlue
+import com.example.ui.theme.IosDarkCard
+import com.example.ui.theme.IosLightCard
+import com.example.ui.theme.MetroBlack
+import com.example.ui.theme.MetroTileDark
+import com.example.ui.theme.NothingBlack
+import com.example.ui.theme.NothingRed
+import com.example.ui.theme.OneUiBlueDark
+import com.example.ui.theme.OneUiBlueLight
 
 @Composable
 fun MeerScreen(
@@ -67,6 +84,11 @@ fun MeerScreen(
     uiScale: Float,
     appThemeStyle: AppThemeStyle,
     darkModePreference: DarkModePreference = DarkModePreference.SYSTEM,
+    metroAccent: MetroAccent = MetroAccent.COBALT,
+    subjectCustomizations: Map<String, SubjectCustomization> = emptyMap(),
+    detectedSubjects: List<DetectedSubject> = emptyList(),
+    smartDefaultNamesEnabled: Boolean = true,
+    useSubjectColorsForMetroTiles: Boolean = false,
     uitvalNotificationsEnabled: Boolean,
     gradeNotificationsEnabled: Boolean = true,
     testNotificationsEnabled: Boolean = true,
@@ -88,6 +110,11 @@ fun MeerScreen(
     onSetUiScale: (Float) -> Unit,
     onSetAppThemeStyle: (AppThemeStyle) -> Unit,
     onSetDarkModePreference: (DarkModePreference) -> Unit = {},
+    onSetMetroAccent: (MetroAccent) -> Unit = {},
+    onSetSmartDefaultNamesEnabled: (Boolean) -> Unit = {},
+    onSetUseSubjectColorsForMetroTiles: (Boolean) -> Unit = {},
+    onOpenSubjectEditor: (String, String) -> Unit = { _, _ -> },
+    onResetAllSubjectCustomizations: () -> Unit = {},
     onSetUitvalNotifications: (Boolean) -> Unit,
     onSetGradeNotifications: (Boolean) -> Unit = {},
     onSetTestNotifications: (Boolean) -> Unit = {},
@@ -133,13 +160,16 @@ fun MeerScreen(
     val context = LocalContext.current
     val nothingMode = isNothingOs
     val oneUiMode = isOneUi85
+    val windowsPhoneMode = isWindowsPhone
+    val iosMode = isIosLiquidGlass
+    val usesFrostedInset = oneUiMode || iosMode
     val homeListState = rememberLazyListState()
     val isHomeScrolled by remember {
         derivedStateOf { homeListState.firstVisibleItemIndex > 0 || homeListState.firstVisibleItemScrollOffset > 70 }
     }
-    LaunchedEffect(currentSection, isHomeScrolled, oneUiMode) {
+    LaunchedEffect(currentSection, isHomeScrolled, usesFrostedInset) {
         if (currentSection == MeerSection.HOME) {
-            onHeaderCollapsedChange(oneUiMode && isHomeScrolled)
+            onHeaderCollapsedChange(usesFrostedInset && isHomeScrolled)
         } else if (currentSection != MeerSection.INSTELLINGEN) {
             onHeaderCollapsedChange(false)
         }
@@ -152,7 +182,7 @@ fun MeerScreen(
         modifier = modifier
             .fillMaxSize()
             .then(
-                if (currentSection != MeerSection.HOME && oneUiMode) {
+                if (currentSection != MeerSection.HOME && usesFrostedInset) {
                     Modifier.padding(top = oneUiInsets.calculateTopPadding())
                 } else Modifier
             )
@@ -205,20 +235,11 @@ fun MeerScreen(
                     )
                 ) {
                     item(key = "meer_header") {
-                        if (oneUiMode) {
-                            OneUiExpandingHeader(
-                                title = "Meer",
-                                subtitle = "Berichten, bronnen & instellingen",
-                                isScrolled = isHomeScrolled
-                            )
-                        } else {
-                            Text(
-                                text = "Meer & Instellingen",
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
+                        AppThemedHeader(
+                            title = if (oneUiMode || windowsPhoneMode || iosMode) "Meer" else "Meer & Instellingen",
+                            subtitle = "Berichten, bronnen & instellingen",
+                            isScrolled = isHomeScrolled
+                        )
                     }
 
                     // Offline-modus toggle card
@@ -398,6 +419,17 @@ fun MeerScreen(
                         )
                     }
 
+                    item(key = "meer_vakken") {
+                        MeerMenuTile(
+                            title = "Vakken aanpassen",
+                            subtitle = "${subjectCustomizations.size} aangepast • Kleuren, bijnamen & symbolen",
+                            icon = Icons.Default.Palette,
+                            badgeText = if (subjectCustomizations.isNotEmpty()) subjectCustomizations.size.toString() else null,
+                            onClick = { onSelectSection(MeerSection.VAKKEN) },
+                            tag = "meer_tile_vakken"
+                        )
+                    }
+
                     item(key = "meer_vandaag_customize") {
                         MeerMenuTile(
                             title = "Vandaag, Bustijd & Schoolnavigatie",
@@ -531,6 +563,20 @@ fun MeerScreen(
                 AfwezigheidView(absences = absences)
             }
 
+            MeerSection.VAKKEN -> {
+                VakkenAanpassenScreen(
+                    detectedSubjects = detectedSubjects,
+                    customizations = subjectCustomizations,
+                    smartDefaultsEnabled = smartDefaultNamesEnabled,
+                    useSubjectColorsForMetroTiles = useSubjectColorsForMetroTiles,
+                    onToggleSmartDefaults = onSetSmartDefaultNamesEnabled,
+                    onToggleMetroSubjectColors = onSetUseSubjectColorsForMetroTiles,
+                    onOpenSubjectEditor = onOpenSubjectEditor,
+                    onResetAllCustomizations = onResetAllSubjectCustomizations,
+                    onBack = { onSelectSection(MeerSection.HOME) }
+                )
+            }
+
             MeerSection.INSTELLINGEN -> {
                 MeerSettingsView(
                     session = session,
@@ -538,6 +584,10 @@ fun MeerScreen(
                     uiScale = uiScale,
                     appThemeStyle = appThemeStyle,
                     darkModePreference = darkModePreference,
+                    metroAccent = metroAccent,
+                    smartDefaultNamesEnabled = smartDefaultNamesEnabled,
+                    useSubjectColorsForMetroTiles = useSubjectColorsForMetroTiles,
+                    subjectCustomizationsCount = subjectCustomizations.size,
                     uitvalNotificationsEnabled = uitvalNotificationsEnabled,
                     gradeNotificationsEnabled = gradeNotificationsEnabled,
                     testNotificationsEnabled = testNotificationsEnabled,
@@ -553,6 +603,10 @@ fun MeerScreen(
                     onSetUiScale = onSetUiScale,
                     onSetAppThemeStyle = onSetAppThemeStyle,
                     onSetDarkModePreference = onSetDarkModePreference,
+                    onSetMetroAccent = onSetMetroAccent,
+                    onSetSmartDefaultNamesEnabled = onSetSmartDefaultNamesEnabled,
+                    onSetUseSubjectColorsForMetroTiles = onSetUseSubjectColorsForMetroTiles,
+                    onOpenVakkenAanpassen = { onSelectSection(MeerSection.VAKKEN) },
                     onSetUitvalNotifications = onSetUitvalNotifications,
                     onSetGradeNotifications = onSetGradeNotifications,
                     onSetTestNotifications = onSetTestNotifications,
@@ -580,7 +634,7 @@ fun MeerScreen(
                     onPullLatest = onPullLatest,
                     onUnpair = onUnpair,
                     onHeaderCollapsedChange = { collapsed ->
-                        onHeaderCollapsedChange(oneUiMode && collapsed)
+                        onHeaderCollapsedChange(usesFrostedInset && collapsed)
                     }
                 )
             }
@@ -643,7 +697,7 @@ private fun MeerMenuTile(
         shape = tileShape,
         border = nothingCardBorder(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+            containerColor = appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)
         ),
         modifier = Modifier
             .fillMaxWidth()
@@ -721,6 +775,10 @@ private fun MeerSettingsView(
     uiScale: Float,
     appThemeStyle: AppThemeStyle,
     darkModePreference: DarkModePreference,
+    metroAccent: MetroAccent = MetroAccent.COBALT,
+    smartDefaultNamesEnabled: Boolean = true,
+    useSubjectColorsForMetroTiles: Boolean = false,
+    subjectCustomizationsCount: Int = 0,
     uitvalNotificationsEnabled: Boolean,
     gradeNotificationsEnabled: Boolean,
     testNotificationsEnabled: Boolean,
@@ -736,6 +794,10 @@ private fun MeerSettingsView(
     onSetUiScale: (Float) -> Unit,
     onSetAppThemeStyle: (AppThemeStyle) -> Unit,
     onSetDarkModePreference: (DarkModePreference) -> Unit,
+    onSetMetroAccent: (MetroAccent) -> Unit = {},
+    onSetSmartDefaultNamesEnabled: (Boolean) -> Unit = {},
+    onSetUseSubjectColorsForMetroTiles: (Boolean) -> Unit = {},
+    onOpenVakkenAanpassen: () -> Unit = {},
     onSetUitvalNotifications: (Boolean) -> Unit,
     onSetGradeNotifications: (Boolean) -> Unit,
     onSetTestNotifications: (Boolean) -> Unit,
@@ -765,12 +827,15 @@ private fun MeerSettingsView(
     onHeaderCollapsedChange: (Boolean) -> Unit = {}
 ) {
     val oneUiMode = isOneUi85
+    val windowsPhoneMode = isWindowsPhone
+    val iosMode = isIosLiquidGlass
+    val usesFrostedInset = oneUiMode || iosMode
     val settingsListState = rememberLazyListState()
     val isScrolled by remember {
         derivedStateOf { settingsListState.firstVisibleItemIndex > 0 || settingsListState.firstVisibleItemScrollOffset > 70 }
     }
-    LaunchedEffect(isScrolled, oneUiMode) {
-        onHeaderCollapsedChange(oneUiMode && isScrolled)
+    LaunchedEffect(isScrolled, usesFrostedInset) {
+        onHeaderCollapsedChange(usesFrostedInset && isScrolled)
     }
     val settingsCtx = LocalContext.current
     val currentPreset = UiScalePreset.entries.minByOrNull { kotlin.math.abs(it.scaleFactor - uiScale) }
@@ -824,9 +889,9 @@ private fun MeerSettingsView(
             bottom = oneUiInsets.calculateBottomPadding() + 28.dp
         )
     ) {
-        if (oneUiMode) {
-            item(key = "oneui_settings_header") {
-                OneUiExpandingHeader(
+        if (oneUiMode || iosMode || windowsPhoneMode) {
+            item(key = "themed_settings_header") {
+                AppThemedHeader(
                     title = "Instellingen",
                     subtitle = "${appThemeStyle.labelDutch} • ${darkModePreference.labelDutch}",
                     isScrolled = isScrolled
@@ -834,11 +899,11 @@ private fun MeerSettingsView(
             }
         }
 
-        // 1. Thema & Weergave
+        // 1. Thema & Weergave (Interactive Live Theme Picker for all 5 themes)
         item {
             Surface(
                 shape = appCardShape(standard = 18.dp, nothing = 22.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                color = appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
                 border = nothingCardBorder(),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -851,26 +916,77 @@ private fun MeerSettingsView(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
-                        text = "App, Widget & Icoon Thema",
+                        text = "Kies App, Widget & Icoon Thema",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        AppThemeStyle.entries.forEachIndexed { idx, style ->
-                            SegmentedButton(
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("settings_theme_picker_row")
+                    ) {
+                        items(AppThemeStyle.entries) { style ->
+                            ThemeLivePreviewCard(
+                                style = style,
                                 selected = appThemeStyle == style,
-                                onClick = { onSetAppThemeStyle(style) },
-                                shape = SegmentedButtonDefaults.itemShape(idx, AppThemeStyle.entries.size),
-                                modifier = Modifier.testTag("settings_theme_${style.name}")
-                            ) {
-                                Text(
-                                    text = style.labelDutch,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                currentMetroAccent = metroAccent,
+                                onClick = { onSetAppThemeStyle(style) }
+                            )
+                        }
+                    }
+
+                    if (appThemeStyle == AppThemeStyle.WINDOWS_PHONE) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "Windows Phone Accentkleur",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            MetroAccent.entries.forEach { accent ->
+                                val isChosen = metroAccent == accent
+                                Surface(
+                                    shape = androidx.compose.ui.graphics.RectangleShape,
+                                    color = Color(accent.argb),
+                                    border = if (isChosen) BorderStroke(2.dp, MaterialTheme.colorScheme.onBackground) else null,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(44.dp)
+                                        .clickable { onSetMetroAccent(accent) }
+                                        .testTag("settings_metro_accent_${accent.name}")
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.padding(horizontal = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = accent.labelDutch.uppercase(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        SettingsSwitchRow(
+                            title = "Gebruik vakkleuren voor Metro-tegels",
+                            subtitle = "Kleur standaard lestegels met hun eigen vakkleur",
+                            checked = useSubjectColorsForMetroTiles,
+                            onCheckedChange = onSetUseSubjectColorsForMetroTiles,
+                            tag = "settings_metro_subject_colors_switch"
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -903,6 +1019,33 @@ private fun MeerSettingsView(
                             text = "Nothing OS gebruikt altijd OLED zwart.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    SettingsSwitchRow(
+                        title = "Slimme Standaardnamen",
+                        subtitle = "Herken Magister-codes automatisch (bijv. wi -> Wiskunde)",
+                        checked = smartDefaultNamesEnabled,
+                        onCheckedChange = onSetSmartDefaultNamesEnabled,
+                        tag = "settings_smart_subject_names_switch"
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onOpenVakkenAanpassen,
+                        shape = appButtonShape(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("settings_open_vakken_aanpassen")
+                    ) {
+                        Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Vakken aanpassen ($subjectCustomizationsCount)",
+                            fontWeight = FontWeight.Bold
                         )
                     }
 
@@ -1539,3 +1682,192 @@ private fun AfwezigheidView(
         }
     }
 }
+
+@Composable
+private fun ThemeLivePreviewCard(
+    style: AppThemeStyle,
+    selected: Boolean,
+    currentMetroAccent: MetroAccent,
+    onClick: () -> Unit
+) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val cardShape = when (style) {
+        AppThemeStyle.WINDOWS_PHONE -> androidx.compose.ui.graphics.RectangleShape
+        AppThemeStyle.IOS_LIQUID_GLASS -> RoundedCornerShape(22.dp)
+        AppThemeStyle.NOTHING_OS -> RoundedCornerShape(22.dp)
+        AppThemeStyle.ONE_UI -> RoundedCornerShape(24.dp)
+        AppThemeStyle.STANDARD -> RoundedCornerShape(18.dp)
+    }
+    val innerTileShape = when (style) {
+        AppThemeStyle.WINDOWS_PHONE -> androidx.compose.ui.graphics.RectangleShape
+        AppThemeStyle.IOS_LIQUID_GLASS -> RoundedCornerShape(14.dp)
+        AppThemeStyle.NOTHING_OS -> RoundedCornerShape(14.dp)
+        AppThemeStyle.ONE_UI -> RoundedCornerShape(16.dp)
+        AppThemeStyle.STANDARD -> RoundedCornerShape(12.dp)
+    }
+    val canvasColor = when (style) {
+        AppThemeStyle.WINDOWS_PHONE -> if (isDark) MetroBlack else Color(0xFFFFFFFF)
+        AppThemeStyle.NOTHING_OS -> NothingBlack
+        AppThemeStyle.IOS_LIQUID_GLASS -> if (isDark) Color(0xFF000000) else Color(0xFFF2F2F7)
+        AppThemeStyle.ONE_UI -> if (isDark) Color(0xFF0B0E14) else Color(0xFFF7F8FA)
+        AppThemeStyle.STANDARD -> if (isDark) Color(0xFF111318) else Color(0xFFF4F6FB)
+    }
+    val tileColor = when (style) {
+        AppThemeStyle.WINDOWS_PHONE -> Color(currentMetroAccent.argb)
+        AppThemeStyle.IOS_LIQUID_GLASS -> if (isDark) IosDarkCard.copy(alpha = 0.80f) else IosLightCard.copy(alpha = 0.85f)
+        AppThemeStyle.NOTHING_OS -> Color(0xFF141414)
+        AppThemeStyle.ONE_UI -> if (isDark) Color(0xFF191D26) else Color.White
+        AppThemeStyle.STANDARD -> if (isDark) Color(0xFF1D222B) else Color.White
+    }
+    val accentColor = when (style) {
+        AppThemeStyle.WINDOWS_PHONE -> Color(currentMetroAccent.argb)
+        AppThemeStyle.IOS_LIQUID_GLASS -> IosBlue
+        AppThemeStyle.NOTHING_OS -> NothingRed
+        AppThemeStyle.ONE_UI -> if (isDark) OneUiBlueDark else OneUiBlueLight
+        AppThemeStyle.STANDARD -> Color(0xFF3B6FD8)
+    }
+    val titleColor = when (style) {
+        AppThemeStyle.WINDOWS_PHONE -> Color.White
+        AppThemeStyle.NOTHING_OS -> Color.White
+        AppThemeStyle.IOS_LIQUID_GLASS -> if (isDark) Color.White else Color(0xFF111114)
+        else -> if (isDark) Color(0xFFF1F3F6) else Color(0xFF141821)
+    }
+    val headerLabel = when (style) {
+        AppThemeStyle.WINDOWS_PHONE -> "vandaag"
+        AppThemeStyle.NOTHING_OS -> "VANDAAG"
+        else -> "Vandaag"
+    }
+
+    val outerBorder = when {
+        selected -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        style == AppThemeStyle.IOS_LIQUID_GLASS -> BorderStroke(1.dp, Color.White.copy(alpha = if (isDark) 0.18f else 0.7f))
+        style == AppThemeStyle.NOTHING_OS -> BorderStroke(1.dp, Color(0xFF2D2D2D))
+        style == AppThemeStyle.WINDOWS_PHONE -> BorderStroke(1.dp, Color(0xFF333333))
+        else -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    }
+
+    Surface(
+        shape = cardShape,
+        color = canvasColor,
+        border = outerBorder,
+        modifier = Modifier
+            .width(156.dp)
+            .clip(cardShape)
+            .clickable(onClick = onClick)
+            .testTag("settings_theme_${style.name}")
+    ) {
+        Column(
+            modifier = Modifier.padding(11.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = headerLabel,
+                    fontSize = 15.sp,
+                    fontWeight = if (style == AppThemeStyle.WINDOWS_PHONE) FontWeight.Light else FontWeight.Bold,
+                    color = if (style == AppThemeStyle.WINDOWS_PHONE && !isDark) Color.Black else if (style == AppThemeStyle.IOS_LIQUID_GLASS && !isDark) Color.Black else Color.White,
+                    maxLines = 1
+                )
+                if (selected) {
+                    Surface(
+                        shape = if (style == AppThemeStyle.WINDOWS_PHONE) androidx.compose.ui.graphics.RectangleShape else CircleShape,
+                        color = accentColor,
+                        modifier = Modifier.size(18.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Actief",
+                                tint = Color.White,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Mini live lesson preview card
+            Surface(
+                shape = innerTileShape,
+                color = tileColor,
+                border = if (style == AppThemeStyle.IOS_LIQUID_GLASS) {
+                    BorderStroke(0.75.dp, Color.White.copy(alpha = if (isDark) 0.18f else 0.72f))
+                } else null,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(9.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (style == AppThemeStyle.NOTHING_OS) "WISKUNDE" else "Wiskunde",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = titleColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (style != AppThemeStyle.WINDOWS_PHONE) {
+                            Surface(
+                                shape = RoundedCornerShape(percent = 50),
+                                color = accentColor.copy(alpha = 0.2f)
+                            ) {
+                                Text(
+                                    text = "1e",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = accentColor,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Text(
+                            text = "08:30",
+                            fontSize = 10.sp,
+                            color = if (style == AppThemeStyle.WINDOWS_PHONE) Color.White.copy(alpha = 0.85f) else Color.Gray
+                        )
+                        Text(
+                            text = "G0411",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (style == AppThemeStyle.WINDOWS_PHONE) Color.White else accentColor
+                        )
+                    }
+                }
+            }
+
+            Column {
+                Text(
+                    text = style.labelDutch,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (style == AppThemeStyle.WINDOWS_PHONE && !isDark) Color.Black else if (style == AppThemeStyle.IOS_LIQUID_GLASS && !isDark) Color.Black else Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = style.subtitleDutch,
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    color = Color(0xFF9CA3AF),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+

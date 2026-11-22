@@ -54,6 +54,7 @@ import com.example.model.AppThemeStyle
 import com.example.model.ResolvedSubjectInfo
 import com.example.model.SubjectCustomizationState
 import com.example.model.SubjectCustomizationCatalog
+import com.example.ui.theme.LocalAppThemeStyle
 
 val LocalSubjectCustomizationState = staticCompositionLocalOf { SubjectCustomizationState() }
 
@@ -140,6 +141,21 @@ data class ResolvedSubjectUi(
     val displayName: String get() = info.displayName
     val originalCodeLabel: String? get() = info.originalCodeLabel
     val normalizedCode: String get() = info.normalizedCode
+    val rawSubjectText: String get() = info.rawSubjectText
+    val showOriginalCode: Boolean get() = info.originalCodeLabel != null
+    val rawCode: String get() = info.originalCodeLabel ?: info.normalizedCode
+}
+
+@Composable
+fun rememberSubjectDisplay(
+    rawTitleOrName: String?,
+    rawCode: String? = null
+): ResolvedSubjectUi {
+    return rememberResolvedSubjectUi(
+        rawSubject = rawTitleOrName,
+        rawTitle = rawTitleOrName,
+        explicitCode = rawCode
+    )
 }
 
 @Composable

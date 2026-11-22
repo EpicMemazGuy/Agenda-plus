@@ -46,6 +46,11 @@ data class InAppBrowserTarget(
     val url: String
 )
 
+data class EditingSubjectTarget(
+    val code: String,
+    val detectedName: String
+)
+
 class AgendaViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = AgendaRepository(application.applicationContext)
@@ -230,6 +235,9 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _unboxingTargetGrade = MutableStateFlow<GradeItem?>(null)
     val unboxingTargetGrade: StateFlow<GradeItem?> = _unboxingTargetGrade.asStateFlow()
+
+    private val _editingSubjectTarget = MutableStateFlow<EditingSubjectTarget?>(null)
+    val editingSubjectTarget: StateFlow<EditingSubjectTarget?> = _editingSubjectTarget.asStateFlow()
 
     private val _isAuthenticating = MutableStateFlow(false)
     val isAuthenticating: StateFlow<Boolean> = _isAuthenticating.asStateFlow()
@@ -641,6 +649,18 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
 
     fun resetAllSubjectCustomizations() {
         repository.resetAllSubjectCustomizations()
+    }
+
+    fun openSubjectEditor(code: String, detectedName: String = "") {
+        val clean = SubjectCustomizationCatalog.normalizeCode(code)
+        _editingSubjectTarget.value = EditingSubjectTarget(
+            code = clean,
+            detectedName = detectedName.ifBlank { clean.uppercase() }
+        )
+    }
+
+    fun closeSubjectEditor() {
+        _editingSubjectTarget.value = null
     }
 
     fun openInAppBrowser(title: String, url: String) {

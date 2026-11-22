@@ -1625,5 +1625,100 @@ class ExampleRobolectricTest {
         assertTrue(reloaded.first { it.id == "t2" }.isCompleted)
         assertTrue(store.getLocalSyncUpdatedAt() > 0L)
     }
+
+    @Test
+    fun test_metro_and_ios_themes_subject_customizations_and_web_sync_round_trip() = runBlocking {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val store = com.example.data.AppPreferencesStore(context)
+
+        // 1. Theme preferences, MetroAccent & Widget rendering under new themes
+        store.setAppThemeStyle(com.example.model.AppThemeStyle.WINDOWS_PHONE)
+        store.setMetroAccent(com.example.model.MetroAccent.EMERALD)
+        store.setUseSubjectColorsForMetroTiles(true)
+        assertEquals(com.example.model.AppThemeStyle.WINDOWS_PHONE, store.getAppThemeStyle())
+        assertEquals(com.example.model.MetroAccent.EMERALD, store.getMetroAccent())
+        assertTrue(store.isUseSubjectColorsForMetroTiles())
+        com.example.widget.WidgetUpdater.updateAllWidgets(context)
+
+        store.setAppThemeStyle(com.example.model.AppThemeStyle.IOS_LIQUID_GLASS)
+        assertEquals(com.example.model.AppThemeStyle.IOS_LIQUID_GLASS, store.getAppThemeStyle())
+        com.example.widget.WidgetUpdater.updateAllWidgets(context)
+
+        // 2. Wire mapping & JSON serialization round-trip for subjectCustomizations
+        assertEquals("windows_phone", com.example.services.SyncManager.themeToWire(com.example.model.AppThemeStyle.WINDOWS_PHONE))
+        assertEquals("ios_liquid_glass", com.example.services.SyncManager.themeToWire(com.example.model.AppThemeStyle.IOS_LIQUID_GLASS))
+        assertEquals(com.example.model.AppThemeStyle.WINDOWS_PHONE, com.example.services.SyncManager.themeFromWire("windows_phone"))
+        assertEquals(com.example.model.AppThemeStyle.IOS_LIQUID_GLASS, com.example.services.SyncManager.themeFromWire("ios_liquid_glass"))
+        assertEquals(com.example.model.MetroAccent.CRIMSON, com.example.services.SyncManager.metroAccentFromWire("crimson"))
+
+        val customSubjects = mapOf(
+            "wi" to com.example.model.SubjectCustomization(
+                code = "wi",
+                nickname = "Wiskunde B",
+                colorHex = 0xFF1BA1E2L,
+                iconName = "functions",
+                showOriginalCode = false
+            )
+        )
+        val payload = com.example.services.SyncManager.buildSyncPayloadJsonFromData(
+            updatedAt = 1732000000000L,
+            themeStyle = com.example.model.AppThemeStyle.WINDOWS_PHONE,
+            darkMode = com.example.model.DarkModePreference.DARK,
+            agendaStyle = com.example.model.AgendaStyle.COMPACT,
+            uiScale = 1.0f,
+            unboxingMode = com.example.model.GradeUnboxingMode.CASE_OPENING,
+            busLine = "",
+            schoolAddress = "",
+            weatherCity = "",
+            customScheduleItems = emptyList(),
+            tasks = emptyList(),
+            testChecklists = emptyMap(),
+            studySites = emptyList(),
+            appointments = emptyList(),
+            grades = emptyList(),
+            messages = emptyList(),
+            metroAccent = com.example.model.MetroAccent.AMBER,
+            smartSubjectNames = false,
+            useSubjectColorsForMetroTiles = true,
+            subjectCustomizations = customSubjects
+        )
+        val settingsObj = payload.getJSONObject("settings")
+        assertEquals("windows_phone", settingsObj.getString("theme"))
+        assertEquals("amber", settingsObj.getString("metroAccent"))
+        assertFalse(settingsObj.getBoolean("smartSubjectNames"))
+        assertTrue(settingsObj.getBoolean("useSubjectColorsForMetroTiles"))
+
+        val parsedCustoms = com.example.model.SubjectCustomizationCatalog.fromJsonObject(
+            payload.getJSONObject("cachedData").getJSONObject("subjectCustomizations")
+        )
+        assertEquals(1, parsedCustoms.size)
+        assertEquals("Wiskunde B", parsedCustoms["wi"]?.nickname)
+        assertEquals(0xFF1BA1E2L, parsedCustoms["wi"]?.colorHex)
+        assertEquals("functions", parsedCustoms["wi"]?.iconName)
+        assertFalse(parsedCustoms["wi"]?.showOriginalCode ?: true)
+
+        // 3. Incoming Web payload merge updates repository theme, Metro accent, and subject customizations
+        val repo = AgendaRepository(context)
+        val incomingWeb = org.json.JSONObject().apply {
+            put("schemaVersion", 1)
+            put("source", "web")
+            put("updatedAt", 2100000000000L)
+            put("settings", org.json.JSONObject().apply {
+                put("theme", "ios_liquid_glass")
+                put("metroAccent", "crimson")
+                put("smartSubjectNames", true)
+                put("useSubjectColorsForMetroTiles", false)
+            })
+            put("cachedData", org.json.JSONObject().apply {
+                put("subjectCustomizations", com.example.model.SubjectCustomizationCatalog.toJsonObject(customSubjects))
+            })
+        }
+        assertTrue(repo.mergeWebSyncPayload(incomingWeb))
+        assertEquals(com.example.model.AppThemeStyle.IOS_LIQUID_GLASS, repo.appThemeStyle.value)
+        assertEquals(com.example.model.MetroAccent.CRIMSON, repo.metroAccent.value)
+        assertTrue(repo.smartDefaultNamesEnabled.value)
+        assertFalse(repo.useSubjectColorsForMetroTiles.value)
+        assertEquals("Wiskunde B", repo.subjectCustomizations.value["wi"]?.nickname)
+    }
 }
 

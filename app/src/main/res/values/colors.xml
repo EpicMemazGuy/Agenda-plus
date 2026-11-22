@@ -15,4 +15,13 @@
     <color name="oneui_widget_text_primary">#FF101318</color>
     <color name="oneui_widget_text_secondary">#FF5D6472</color>
     <color name="oneui_widget_accent">#FF0381FE</color>
+    <color name="ios_widget_bg">#E6FFFFFF</color>
+    <color name="ios_widget_border">#B3FFFFFF</color>
+    <color name="ios_widget_row_bg">#CCF2F2F7</color>
+    <color name="ios_widget_pill_bg">#24007AFF</color>
+    <color name="ios_widget_error_pill_bg">#24FF3B30</color>
+    <color name="ios_widget_text_primary">#FF000000</color>
+    <color name="ios_widget_text_secondary">#FF636366</color>
+    <color name="ios_widget_accent">#FF007AFF</color>
+    <color name="ios_widget_error">#FFD70015</color>
 </resources>

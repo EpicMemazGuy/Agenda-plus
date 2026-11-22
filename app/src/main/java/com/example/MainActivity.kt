@@ -46,6 +46,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.model.AppThemeStyle
 import com.example.model.HomeworkTask
+import com.example.model.SubjectCustomizationCatalog
+import com.example.model.SubjectCustomizationState
 import com.example.model.cleanSchoolText
 import com.example.notifications.UitvalNotificationHelper
 import com.example.ui.AgendaViewModel
@@ -55,6 +57,7 @@ import com.example.ui.components.AppBottomNavigationBar
 import com.example.ui.components.AppTopBar
 import com.example.ui.components.LocalOneUiBackdropState
 import com.example.ui.components.LocalOneUiScreenInsets
+import com.example.ui.components.LocalSubjectCustomizationState
 import com.example.ui.components.OneUiBackdropState
 import com.example.ui.components.oneUiSpring
 import com.example.ui.components.oneUiTween
@@ -71,8 +74,10 @@ import com.example.ui.dialogs.PomodoroTimerDialog
 import com.example.ui.dialogs.TestPrepChecklistSheet
 import com.example.ui.dialogs.TodayModifySheet
 import com.example.ui.dialogs.TutorialDialog
+import com.example.ui.dialogs.VakBewerkenBottomSheet
 import com.example.ui.screens.*
 import com.example.ui.theme.AgendaPlusTheme
+import com.example.ui.theme.LocalMetroAccent
 import com.example.widget.WidgetUpdater
 import kotlin.math.round
 
@@ -92,10 +97,12 @@ class MainActivity : ComponentActivity() {
             val viewModel: AgendaViewModel = viewModel()
             val appThemeStyle by viewModel.appThemeStyle.collectAsStateWithLifecycle()
             val darkModePreference by viewModel.darkModePreference.collectAsStateWithLifecycle()
+            val metroAccent by viewModel.metroAccent.collectAsStateWithLifecycle()
 
             AgendaPlusTheme(
                 appThemeStyle = appThemeStyle,
-                darkModePreference = darkModePreference
+                darkModePreference = darkModePreference,
+                metroAccent = metroAccent
             ) {
                 LaunchedEffect(pendingWidgetTab) {
                     pendingWidgetTab?.let { tab ->
@@ -170,6 +177,11 @@ fun AgendaPlusApp(
     val uiScale by viewModel.uiScale.collectAsStateWithLifecycle()
     val appThemeStyle by viewModel.appThemeStyle.collectAsStateWithLifecycle()
     val darkModePreference by viewModel.darkModePreference.collectAsStateWithLifecycle()
+    val metroAccent by viewModel.metroAccent.collectAsStateWithLifecycle()
+    val subjectCustomizations by viewModel.subjectCustomizations.collectAsStateWithLifecycle()
+    val smartDefaultNamesEnabled by viewModel.smartDefaultNamesEnabled.collectAsStateWithLifecycle()
+    val useSubjectColorsForMetroTiles by viewModel.useSubjectColorsForMetroTiles.collectAsStateWithLifecycle()
+    val editingSubjectTarget by viewModel.editingSubjectTarget.collectAsStateWithLifecycle()
     val eloUrl by viewModel.eloUrl.collectAsStateWithLifecycle()
     val studySites by viewModel.studySites.collectAsStateWithLifecycle()
     val weatherInfo by viewModel.weatherInfo.collectAsStateWithLifecycle()
@@ -279,7 +291,31 @@ fun AgendaPlusApp(
         )
     }
 
-    CompositionLocalProvider(LocalDensity provides scaledDensity) {
+    val detectedSubjects = remember(appointments, gradeSummaries, tasks) {
+        SubjectCustomizationCatalog.collectDetectedSubjects(
+            appointments = appointments,
+            gradeSummaries = gradeSummaries,
+            tasks = tasks
+        )
+    }
+
+    val subjectCustomizationUiState = remember(
+        subjectCustomizations,
+        smartDefaultNamesEnabled,
+        useSubjectColorsForMetroTiles
+    ) {
+        SubjectCustomizationState(
+            customizations = subjectCustomizations,
+            smartDefaultNamesEnabled = smartDefaultNamesEnabled,
+            useSubjectColorsForMetroTiles = useSubjectColorsForMetroTiles
+        )
+    }
+
+    CompositionLocalProvider(
+        LocalDensity provides scaledDensity,
+        LocalMetroAccent provides metroAccent,
+        LocalSubjectCustomizationState provides subjectCustomizationUiState
+    ) {
         // 1. First-download onboarding setup wizard (only on initial install or if reopened in settings)
         if (!hasCompletedOnboarding) {
             SetupWizardScreen(
@@ -343,9 +379,10 @@ fun AgendaPlusApp(
                 }
             }
 
-            val collapsedTitle = if (appThemeStyle == AppThemeStyle.ONE_UI && isHeaderCollapsed) {
+            val collapsedTitle = if ((appThemeStyle == AppThemeStyle.ONE_UI || appThemeStyle == AppThemeStyle.IOS_LIQUID_GLASS) && isHeaderCollapsed) {
                 when {
                     currentTab == AppTab.MEER && currentMeerSection == MeerSection.INSTELLINGEN -> "Instellingen"
+                    currentTab == AppTab.MEER && currentMeerSection == MeerSection.VAKKEN -> "Vakken"
                     currentTab == AppTab.ROOSTER && roosterViewMode == 3 -> "Toetsen"
                     else -> currentTab.title
                 }
@@ -497,6 +534,9 @@ fun AgendaPlusApp(
                                 activeChecklistTargetDateIso = targetDateIso
                                 viewModel.openTestPrepChecklist(key, subj, title, stof)
                             },
+                            onEditSubject = { code, detectedName ->
+                                viewModel.openSubjectEditor(code, detectedName)
+                            },
                             onHeaderCollapsedChange = { isHeaderCollapsed = it },
                             modifier = contentModifier
                         )
@@ -530,6 +570,9 @@ fun AgendaPlusApp(
                             onOpenExportSheet = { viewModel.openGradeExportSheet() },
                             onOpenOvergangsSimulator = { showOvergangsnormSheet = true },
                             onPlayGradeUnboxing = { grade -> viewModel.openGradeUnboxing(grade) },
+                            onEditSubject = { code, detectedName ->
+                                viewModel.openSubjectEditor(code, detectedName)
+                            },
                             onHeaderCollapsedChange = { isHeaderCollapsed = it },
                             modifier = contentModifier
                         )
@@ -553,6 +596,11 @@ fun AgendaPlusApp(
                             uiScale = uiScale,
                             appThemeStyle = appThemeStyle,
                             darkModePreference = darkModePreference,
+                            metroAccent = metroAccent,
+                            subjectCustomizations = subjectCustomizations,
+                            detectedSubjects = detectedSubjects,
+                            smartDefaultNamesEnabled = smartDefaultNamesEnabled,
+                            useSubjectColorsForMetroTiles = useSubjectColorsForMetroTiles,
                             uitvalNotificationsEnabled = uitvalNotificationsEnabled,
                             gradeNotificationsEnabled = gradeNotificationsEnabled,
                             testNotificationsEnabled = testNotificationsEnabled,
@@ -574,6 +622,11 @@ fun AgendaPlusApp(
                             onSetUiScale = { viewModel.setUiScale(it) },
                             onSetAppThemeStyle = { viewModel.setAppThemeStyle(it) },
                             onSetDarkModePreference = { viewModel.setDarkModePreference(it) },
+                            onSetMetroAccent = { viewModel.setMetroAccent(it) },
+                            onSetSmartDefaultNamesEnabled = { viewModel.setSmartDefaultNamesEnabled(it) },
+                            onSetUseSubjectColorsForMetroTiles = { viewModel.setUseSubjectColorsForMetroTiles(it) },
+                            onOpenSubjectEditor = { code, name -> viewModel.openSubjectEditor(code, name) },
+                            onResetAllSubjectCustomizations = { viewModel.resetAllSubjectCustomizations() },
                             onSetUitvalNotifications = { enabled ->
                                 viewModel.setUitvalNotificationsEnabled(enabled)
                                 if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -644,7 +697,7 @@ fun AgendaPlusApp(
                 }
             }
 
-            if (appThemeStyle == AppThemeStyle.ONE_UI) {
+            if (appThemeStyle == AppThemeStyle.ONE_UI || appThemeStyle == AppThemeStyle.IOS_LIQUID_GLASS) {
                 val densityNow = LocalDensity.current
                 val backdropLayer = rememberGraphicsLayer()
                 var contentOriginInRoot by remember { mutableStateOf(Offset.Zero) }
@@ -906,6 +959,26 @@ fun AgendaPlusApp(
                 updateInfo = info,
                 appThemeStyle = appThemeStyle,
                 onDismiss = { viewModel.dismissUpdateDialog() }
+            )
+        }
+
+        editingSubjectTarget?.let { target ->
+            val normCode = SubjectCustomizationCatalog.normalizeCode(target.code)
+            val existing = subjectCustomizations[normCode]
+            VakBewerkenBottomSheet(
+                subjectCode = normCode,
+                detectedLabel = target.detectedName,
+                existingCustomization = existing,
+                smartDefaultNamesEnabled = smartDefaultNamesEnabled,
+                onSave = { saved ->
+                    viewModel.saveSubjectCustomization(saved)
+                    viewModel.closeSubjectEditor()
+                },
+                onReset = { codeToReset ->
+                    viewModel.resetSubjectCustomization(codeToReset)
+                    viewModel.closeSubjectEditor()
+                },
+                onDismiss = { viewModel.closeSubjectEditor() }
             )
         }
     }

@@ -50,13 +50,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.model.Appointment
-import com.example.model.HomeworkTask
+import com.example.model.DetectedSubject
 import com.example.model.SubjectCustomization
 import com.example.model.SubjectCustomizationCatalog
 import com.example.model.SubjectCustomizationState
-import com.example.model.SubjectGradeSummary
-import com.example.model.cleanSchoolText
 import com.example.ui.components.IosLargeTitleHeader
 import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.MetroPanoramaHeader
@@ -81,14 +78,12 @@ data class DetectedSubjectRow(
 
 @Composable
 fun VakkenAanpassenScreen(
-    appointments: List<Appointment>,
-    gradeSummaries: List<SubjectGradeSummary>,
-    tasks: List<HomeworkTask>,
+    detectedSubjects: List<DetectedSubject>,
     customizations: Map<String, SubjectCustomization>,
-    smartDefaultNamesEnabled: Boolean,
+    smartDefaultsEnabled: Boolean,
     useSubjectColorsForMetroTiles: Boolean,
     onToggleSmartDefaults: (Boolean) -> Unit,
-    onToggleMetroTileColors: (Boolean) -> Unit,
+    onToggleMetroSubjectColors: (Boolean) -> Unit,
     onOpenSubjectEditor: (code: String, detectedLabel: String) -> Unit,
     onResetAllCustomizations: () -> Unit,
     onBack: () -> Unit,
@@ -100,39 +95,21 @@ fun VakkenAanpassenScreen(
     var newCodeInput by remember { mutableStateOf("") }
     var showResetAllDialog by remember { mutableStateOf(false) }
 
-    val detectedSubjects = remember(appointments, gradeSummaries, tasks, customizations) {
+    val smartDefaultNamesEnabled = smartDefaultsEnabled
+    val onToggleMetroTileColors = onToggleMetroSubjectColors
+
+    val allDetectedSubjects = remember(detectedSubjects, customizations) {
         val map = linkedMapOf<String, String>()
-        appointments.forEach { a ->
-            val code = SubjectCustomizationCatalog.extractNormalizedSubjectCode(
-                rawSubject = a.subjectCode.ifBlank { a.subjectName },
-                rawTitle = a.title
-            )
+        detectedSubjects.forEach { d ->
+            val code = SubjectCustomizationCatalog.normalizeCode(d.code)
             if (code != "les" && code !in map) {
-                map[code] = a.subjectName.cleanSchoolText() ?: code.uppercase(Locale.ROOT)
-            }
-        }
-        gradeSummaries.forEach { g ->
-            val code = SubjectCustomizationCatalog.extractNormalizedSubjectCode(
-                rawSubject = g.subjectCode.ifBlank { g.subjectName },
-                rawTitle = g.subjectName
-            )
-            if (code != "les" && code !in map) {
-                map[code] = g.subjectName.cleanSchoolText() ?: code.uppercase(Locale.ROOT)
-            }
-        }
-        tasks.forEach { t ->
-            val code = SubjectCustomizationCatalog.extractNormalizedSubjectCode(
-                rawSubject = t.subject,
-                rawTitle = t.title
-            )
-            if (code != "les" && code !in map) {
-                map[code] = t.subject.cleanSchoolText() ?: code.uppercase(Locale.ROOT)
+                map[code] = d.detectedName.ifBlank { code.uppercase(Locale.ROOT) }
             }
         }
         customizations.keys.forEach { code ->
-            val clean = code.trim().lowercase(Locale.ROOT)
-            if (clean.isNotBlank() && clean !in map) {
-                map[clean] = customizations[clean]?.nickname?.takeIf { it.isNotBlank() }
+            val clean = SubjectCustomizationCatalog.normalizeCode(code)
+            if (clean.isNotBlank() && clean != "les" && clean !in map) {
+                map[clean] = customizations[code]?.nickname?.takeIf { it.isNotBlank() }
                     ?: clean.uppercase(Locale.ROOT)
             }
         }
@@ -187,15 +164,15 @@ fun VakkenAanpassenScreen(
                     when {
                         windowsPhone -> MetroPanoramaHeader(
                             title = "vakken aanpassen",
-                            subtitle = "${detectedSubjects.size} gedetecteerde vakcodes"
+                            subtitle = "${allDetectedSubjects.size} gedetecteerde vakcodes"
                         )
                         iosMode -> IosLargeTitleHeader(
                             title = "Vakken Aanpassen",
-                            subtitle = "${detectedSubjects.size} vakken"
+                            subtitle = "${allDetectedSubjects.size} vakken"
                         )
                         oneUiMode -> OneUiExpandingHeader(
                             title = "Vakken",
-                            subtitle = "${detectedSubjects.size} gedetecteerde vakken"
+                            subtitle = "${allDetectedSubjects.size} gedetecteerde vakken"
                         )
                         else -> Column {
                             Text(
@@ -204,7 +181,7 @@ fun VakkenAanpassenScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "${detectedSubjects.size} vakken gevonden in rooster & cijfers",
+                                text = "${allDetectedSubjects.size} vakken gevonden in rooster & cijfers",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -317,7 +294,7 @@ fun VakkenAanpassenScreen(
             }
         }
 
-        if (detectedSubjects.isEmpty()) {
+        if (allDetectedSubjects.isEmpty()) {
             item {
                 Card(
                     shape = cardShape,
@@ -343,7 +320,7 @@ fun VakkenAanpassenScreen(
                 }
             }
         } else {
-            items(detectedSubjects, key = { it.normalizedCode }) { row ->
+            items(allDetectedSubjects, key = { it.normalizedCode }) { row ->
                 val resolved = remember(row, stateSnapshot) {
                     SubjectCustomizationCatalog.resolveSubject(
                         rawSubject = row.detectedLabel,

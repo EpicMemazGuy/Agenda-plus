@@ -13,8 +13,9 @@ import com.example.MainActivity
 import com.example.R
 import com.example.data.AppPreferencesStore
 import com.example.model.AppThemeStyle
+import com.example.model.SubjectCustomizationCatalog
+import com.example.model.SubjectCustomizationState
 import com.example.model.TaskCategory
-import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
 
 class HomeworkWidgetProvider : AppWidgetProvider() {
@@ -71,11 +72,21 @@ class HomeworkWidgetProvider : AppWidgetProvider() {
         ) {
             val store = AppPreferencesStore(context)
             val themeStyle = store.getAppThemeStyle()
+            val metroAccent = store.getMetroAccent()
+            val customState = SubjectCustomizationState(
+                customizations = store.loadSubjectCustomizations(),
+                smartDefaultNamesEnabled = store.isSmartSubjectNamesEnabled(),
+                useSubjectColorsForMetroTiles = store.isUseSubjectColorsForMetroTiles()
+            )
             val isNothing = themeStyle == AppThemeStyle.NOTHING_OS
             val isOneUi = themeStyle == AppThemeStyle.ONE_UI
+            val isMetro = themeStyle == AppThemeStyle.WINDOWS_PHONE
+            val isIos = themeStyle == AppThemeStyle.IOS_LIQUID_GLASS
             val layoutId = when (themeStyle) {
                 AppThemeStyle.NOTHING_OS -> R.layout.widget_homework_nothing
                 AppThemeStyle.ONE_UI -> R.layout.widget_homework_oneui
+                AppThemeStyle.WINDOWS_PHONE -> R.layout.widget_homework_metro
+                AppThemeStyle.IOS_LIQUID_GLASS -> R.layout.widget_homework_ios
                 AppThemeStyle.STANDARD -> R.layout.widget_homework
             }
             val views = RemoteViews(context.packageName, layoutId)
@@ -105,6 +116,10 @@ class HomeworkWidgetProvider : AppWidgetProvider() {
             )
             views.setOnClickPendingIntent(R.id.widget_hw_refresh_btn, refreshPendingIntent)
 
+            if (isMetro) {
+                views.setInt(R.id.widget_hw_badge, "setBackgroundColor", metroAccent.colorHex.toInt())
+            }
+
             val rowIds = listOf(
                 Triple(R.id.widget_hw_row_1, R.id.widget_hw_title_1, R.id.widget_hw_meta_1),
                 Triple(R.id.widget_hw_row_2, R.id.widget_hw_title_2, R.id.widget_hw_meta_2),
@@ -129,21 +144,30 @@ class HomeworkWidgetProvider : AppWidgetProvider() {
                 )
 
             val openCount = openTasks.size
-            if (isNothing) {
-                views.setTextViewText(
-                    R.id.widget_hw_count,
-                    if (openCount > 0) "$openCount OPEN" else "KLAAR"
-                )
-                views.setInt(
-                    R.id.widget_hw_badge,
-                    "setBackgroundResource",
-                    if (openCount > 0) R.drawable.widget_nothing_red_pill_bg else R.drawable.widget_nothing_pill_bg
-                )
-            } else {
-                views.setTextViewText(
-                    R.id.widget_hw_count,
-                    if (openCount == 1) "1 open taak" else "$openCount open taken"
-                )
+            when {
+                isNothing -> {
+                    views.setTextViewText(
+                        R.id.widget_hw_count,
+                        if (openCount > 0) "$openCount OPEN" else "KLAAR"
+                    )
+                    views.setInt(
+                        R.id.widget_hw_badge,
+                        "setBackgroundResource",
+                        if (openCount > 0) R.drawable.widget_nothing_red_pill_bg else R.drawable.widget_nothing_pill_bg
+                    )
+                }
+                isMetro -> {
+                    views.setTextViewText(
+                        R.id.widget_hw_count,
+                        if (openCount > 0) "$openCount open" else "klaar"
+                    )
+                }
+                else -> {
+                    views.setTextViewText(
+                        R.id.widget_hw_count,
+                        if (openCount == 1) "1 open taak" else "$openCount open taken"
+                    )
+                }
             }
 
             if (openTasks.isEmpty()) {
@@ -159,7 +183,11 @@ class HomeworkWidgetProvider : AppWidgetProvider() {
                     } else {
                         views.setViewVisibility(rowId, View.VISIBLE)
                         val title = task.title.cleanSchoolText() ?: "Huiswerk"
-                        val subj = (task.subject.cleanSchoolText() ?: "Vak").capitalizeSubjectName()
+                        val resolved = SubjectCustomizationCatalog.resolveSubject(
+                            rawSubject = task.subject.cleanSchoolText() ?: "Vak",
+                            state = customState
+                        )
+                        val subj = resolved.displayName
                         val isExam = task.category == TaskCategory.EXAM || task.category == TaskCategory.MAJOR_TEST
                         views.setTextViewText(titleId, title)
                         views.setTextViewText(metaId, if (isExam) "TOETS • $subj" else subj.take(12))
@@ -195,6 +223,31 @@ class HomeworkWidgetProvider : AppWidgetProvider() {
                                     metaId,
                                     if (isExam) Color.parseColor("#E53935") else context.getColor(R.color.oneui_widget_accent)
                                 )
+                            }
+                            isIos -> {
+                                views.setInt(
+                                    metaId,
+                                    "setBackgroundResource",
+                                    if (isExam) R.drawable.widget_ios_error_pill_bg else R.drawable.widget_ios_pill_bg
+                                )
+                                views.setTextColor(
+                                    metaId,
+                                    if (isExam) context.getColor(R.color.ios_widget_error) else context.getColor(R.color.ios_widget_accent)
+                                )
+                            }
+                            isMetro -> {
+                                val rowBg = when {
+                                    isExam -> Color.parseColor("#E51400")
+                                    customState.useSubjectColorsForMetroTiles && resolved.accentColorHex != null -> resolved.accentColorHex.toInt()
+                                    else -> Color.parseColor("#1D1D1D")
+                                }
+                                views.setInt(rowId, "setBackgroundColor", rowBg)
+                                views.setInt(
+                                    metaId,
+                                    "setBackgroundColor",
+                                    if (isExam) Color.parseColor("#B00F00") else metroAccent.colorHex.toInt()
+                                )
+                                views.setTextColor(metaId, Color.WHITE)
                             }
                             else -> {
                                 views.setTextColor(

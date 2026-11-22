@@ -14,7 +14,8 @@ import com.example.R
 import com.example.data.AppPreferencesStore
 import com.example.model.AppThemeStyle
 import com.example.model.GradeItem
-import com.example.model.capitalizeSubjectName
+import com.example.model.SubjectCustomizationCatalog
+import com.example.model.SubjectCustomizationState
 import com.example.model.cleanSchoolText
 import java.util.Locale
 
@@ -56,11 +57,21 @@ class GradesWidgetProvider : AppWidgetProvider() {
         ) {
             val store = AppPreferencesStore(context)
             val themeStyle = store.getAppThemeStyle()
+            val metroAccent = store.getMetroAccent()
+            val customState = SubjectCustomizationState(
+                customizations = store.loadSubjectCustomizations(),
+                smartDefaultNamesEnabled = store.isSmartSubjectNamesEnabled(),
+                useSubjectColorsForMetroTiles = store.isUseSubjectColorsForMetroTiles()
+            )
             val isNothing = themeStyle == AppThemeStyle.NOTHING_OS
             val isOneUi = themeStyle == AppThemeStyle.ONE_UI
+            val isMetro = themeStyle == AppThemeStyle.WINDOWS_PHONE
+            val isIos = themeStyle == AppThemeStyle.IOS_LIQUID_GLASS
             val layoutId = when (themeStyle) {
                 AppThemeStyle.NOTHING_OS -> R.layout.widget_grades_nothing
                 AppThemeStyle.ONE_UI -> R.layout.widget_grades_oneui
+                AppThemeStyle.WINDOWS_PHONE -> R.layout.widget_grades_metro
+                AppThemeStyle.IOS_LIQUID_GLASS -> R.layout.widget_grades_ios
                 AppThemeStyle.STANDARD -> R.layout.widget_grades
             }
             val views = RemoteViews(context.packageName, layoutId)
@@ -89,6 +100,10 @@ class GradesWidgetProvider : AppWidgetProvider() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             views.setOnClickPendingIntent(R.id.widget_grades_refresh_btn, refreshPendingIntent)
+
+            if (isMetro) {
+                views.setInt(R.id.widget_grades_badge, "setBackgroundColor", metroAccent.colorHex.toInt())
+            }
 
             val rowIds = listOf(
                 Triple(R.id.widget_grade_row_1, R.id.widget_grade_subject_1, R.id.widget_grade_score_1),
@@ -119,7 +134,11 @@ class GradesWidgetProvider : AppWidgetProvider() {
 
             views.setTextViewText(
                 R.id.widget_grades_avg,
-                if (isNothing) "GEM $avgFormatted" else "Gem: $avgFormatted"
+                when {
+                    isNothing -> "GEM $avgFormatted"
+                    isMetro -> "gem: $avgFormatted"
+                    else -> "Gem: $avgFormatted"
+                }
             )
 
             if (allGrades.isEmpty() && summaries.isEmpty()) {
@@ -129,15 +148,25 @@ class GradesWidgetProvider : AppWidgetProvider() {
             } else {
                 views.setViewVisibility(R.id.widget_grades_empty, View.GONE)
 
-                val displayRows: List<Pair<String, Double>> = if (allGrades.isNotEmpty()) {
+                data class GradeRowData(val subject: String, val score: Double, val customColorHex: Long?)
+
+                val displayRows: List<GradeRowData> = if (allGrades.isNotEmpty()) {
                     allGrades.take(3).map { g ->
-                        val subj = (g.subjectName.cleanSchoolText() ?: g.subjectCode.ifBlank { "Vak" }).capitalizeSubjectName()
-                        subj to g.score
+                        val resolved = SubjectCustomizationCatalog.resolveSubject(
+                            rawSubject = g.subjectName.cleanSchoolText() ?: g.subjectCode.ifBlank { "Vak" },
+                            explicitCode = g.subjectCode,
+                            state = customState
+                        )
+                        GradeRowData(resolved.displayName, g.score, resolved.accentColorHex)
                     }
                 } else {
                     summaries.take(3).map { s ->
-                        val subj = (s.subjectName.cleanSchoolText() ?: s.subjectCode.ifBlank { "Vak" }).capitalizeSubjectName()
-                        subj to s.weightedAverage
+                        val resolved = SubjectCustomizationCatalog.resolveSubject(
+                            rawSubject = s.subjectName.cleanSchoolText() ?: s.subjectCode.ifBlank { "Vak" },
+                            explicitCode = s.subjectCode,
+                            state = customState
+                        )
+                        GradeRowData(resolved.displayName, s.weightedAverage, resolved.accentColorHex)
                     }
                 }
 
@@ -147,11 +176,11 @@ class GradesWidgetProvider : AppWidgetProvider() {
                         views.setViewVisibility(rowId, View.GONE)
                     } else {
                         views.setViewVisibility(rowId, View.VISIBLE)
-                        views.setTextViewText(subjectId, entry.first)
-                        val scoreStr = String.format(Locale("nl", "NL"), "%.1f", entry.second)
+                        views.setTextViewText(subjectId, entry.subject)
+                        val scoreStr = String.format(Locale("nl", "NL"), "%.1f", entry.score)
                         views.setTextViewText(scoreId, scoreStr)
 
-                        val isLow = entry.second < 5.5
+                        val isLow = entry.score < 5.5
                         when {
                             isNothing -> {
                                 views.setInt(
@@ -171,6 +200,31 @@ class GradesWidgetProvider : AppWidgetProvider() {
                                     scoreId,
                                     if (isLow) Color.parseColor("#E53935") else context.getColor(R.color.oneui_widget_accent)
                                 )
+                            }
+                            isIos -> {
+                                views.setInt(
+                                    scoreId,
+                                    "setBackgroundResource",
+                                    if (isLow) R.drawable.widget_ios_error_pill_bg else R.drawable.widget_ios_pill_bg
+                                )
+                                views.setTextColor(
+                                    scoreId,
+                                    if (isLow) context.getColor(R.color.ios_widget_error) else context.getColor(R.color.ios_widget_accent)
+                                )
+                            }
+                            isMetro -> {
+                                val rowBg = when {
+                                    isLow -> Color.parseColor("#E51400")
+                                    customState.useSubjectColorsForMetroTiles && entry.customColorHex != null -> entry.customColorHex.toInt()
+                                    else -> Color.parseColor("#1D1D1D")
+                                }
+                                views.setInt(rowId, "setBackgroundColor", rowBg)
+                                views.setInt(
+                                    scoreId,
+                                    "setBackgroundColor",
+                                    if (isLow) Color.parseColor("#B00F00") else metroAccent.colorHex.toInt()
+                                )
+                                views.setTextColor(scoreId, Color.WHITE)
                             }
                             else -> {
                                 views.setTextColor(

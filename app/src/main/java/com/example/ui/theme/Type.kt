@@ -499,3 +499,26 @@ val IosLiquidGlassTypography = Typography(
     )
 )
 
+val TerminalMonoTypography = Typography(
+    displayLarge = Typography.displayLarge.copy(fontFamily = IndustrialMonoFontFamily),
+    displayMedium = Typography.displayMedium.copy(fontFamily = IndustrialMonoFontFamily),
+    headlineLarge = Typography.headlineLarge.copy(fontFamily = IndustrialMonoFontFamily),
+    headlineMedium = Typography.headlineMedium.copy(fontFamily = IndustrialMonoFontFamily),
+    headlineSmall = Typography.headlineSmall.copy(fontFamily = IndustrialMonoFontFamily),
+    titleLarge = Typography.titleLarge.copy(fontFamily = IndustrialMonoFontFamily),
+    titleMedium = Typography.titleMedium.copy(fontFamily = IndustrialMonoFontFamily),
+    titleSmall = Typography.titleSmall.copy(fontFamily = IndustrialMonoFontFamily),
+    bodyLarge = Typography.bodyLarge.copy(fontFamily = IndustrialMonoFontFamily),
+    bodyMedium = Typography.bodyMedium.copy(fontFamily = IndustrialMonoFontFamily),
+    bodySmall = Typography.bodySmall.copy(fontFamily = IndustrialMonoFontFamily),
+    labelLarge = Typography.labelLarge.copy(fontFamily = IndustrialMonoFontFamily),
+    labelMedium = Typography.labelMedium.copy(fontFamily = IndustrialMonoFontFamily),
+    labelSmall = Typography.labelSmall.copy(fontFamily = IndustrialMonoFontFamily)
+)
+
+fun axolaTypography(style: com.example.model.AxolaTypographyStyle): Typography = when (style) {
+    com.example.model.AxolaTypographyStyle.MODERN_SANS -> Typography
+    com.example.model.AxolaTypographyStyle.NOTHING_DOT_MATRIX -> NothingOsTypography
+    com.example.model.AxolaTypographyStyle.WINDOWS_LIGHT_LOWERCASE -> MetroTypography
+    com.example.model.AxolaTypographyStyle.TERMINAL_MONO -> TerminalMonoTypography
+}

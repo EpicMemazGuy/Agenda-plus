@@ -366,7 +366,8 @@ object SyncManager {
             metroAccent = store.getMetroAccent(),
             smartSubjectNames = store.isSmartSubjectNamesEnabled(),
             useSubjectColorsForMetroTiles = store.isUseSubjectColorsForMetroTiles(),
-            subjectCustomizations = store.loadSubjectCustomizations()
+            subjectCustomizations = store.loadSubjectCustomizations(),
+            axolaCustomTheme = store.getAxolaCustomTheme()
         )
     }
 
@@ -392,7 +393,8 @@ object SyncManager {
         metroAccent: MetroAccent = MetroAccent.COBALT,
         smartSubjectNames: Boolean = true,
         useSubjectColorsForMetroTiles: Boolean = false,
-        subjectCustomizations: Map<String, SubjectCustomization> = emptyMap()
+        subjectCustomizations: Map<String, SubjectCustomization> = emptyMap(),
+        axolaCustomTheme: com.example.model.AxolaCustomTheme = com.example.model.AxolaCustomTheme()
     ): JSONObject {
         val settingsObj = JSONObject().apply {
             put("theme", themeToWire(themeStyle))
@@ -400,6 +402,7 @@ object SyncManager {
             put("metroAccent", metroAccentToWire(metroAccent))
             put("smartSubjectNames", smartSubjectNames)
             put("useSubjectColorsForMetroTiles", useSubjectColorsForMetroTiles)
+            put("axolaCustomTheme", axolaCustomTheme.toJsonObject())
             put("agendaDensity", agendaStyleToWire(agendaStyle))
             put("uiScale", kotlin.math.round(uiScale.coerceIn(0.85f, 1.20f) * 100f).toInt())
             put("unboxingMode", unboxingToWire(unboxingMode))
@@ -933,6 +936,7 @@ object SyncManager {
         AppThemeStyle.ONE_UI -> "one_ui"
         AppThemeStyle.WINDOWS_PHONE -> "windows_phone"
         AppThemeStyle.IOS_LIQUID_GLASS -> "ios_liquid_glass"
+        AppThemeStyle.AXOLA_CUSTOM -> "axola_custom"
     }
 
     fun themeFromWire(raw: String?): AppThemeStyle? = when (raw?.trim()?.lowercase(Locale.US)) {
@@ -941,6 +945,7 @@ object SyncManager {
         "one_ui", "oneui", "one_ui_8_5" -> AppThemeStyle.ONE_UI
         "windows_phone", "windowsphone", "metro", "metro_ui" -> AppThemeStyle.WINDOWS_PHONE
         "ios_liquid_glass", "ios", "liquid_glass" -> AppThemeStyle.IOS_LIQUID_GLASS
+        "axola_custom", "axola", "axola_studio" -> AppThemeStyle.AXOLA_CUSTOM
         else -> null
     }
 

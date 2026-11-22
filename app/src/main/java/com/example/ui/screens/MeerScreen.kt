@@ -22,10 +22,20 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import com.example.automation.CalendarBridgeManager
+import com.example.automation.IcsScope
+import com.example.automation.LessonDndScheduler
 import com.example.services.WebSyncStatus
 import com.example.ui.components.WebSyncCard
 import androidx.compose.ui.platform.LocalContext
@@ -38,6 +48,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.ui.unit.sp
 import com.example.model.*
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.roundToInt
 import com.example.ui.MeerSection
 import com.example.ui.components.AppThemedHeader
 import com.example.ui.components.LocalOneUiScreenInsets
@@ -148,6 +162,18 @@ fun MeerScreen(
     onSyncNow: () -> Unit = {},
     onPullLatest: () -> Unit = {},
     onUnpair: () -> Unit = {},
+    appointments: List<Appointment> = emptyList(),
+    axolaCustomTheme: AxolaCustomTheme = AxolaCustomTheme(),
+    calendarBridgeConfig: CalendarBridgeConfig = CalendarBridgeConfig(),
+    lessonDndConfig: LessonDndConfig = LessonDndConfig(),
+    calendarSyncStatusMessage: String? = null,
+    onApplyAxolaCustomTheme: (AxolaCustomTheme) -> Unit = {},
+    onImportAxolaThemeCode: (String) -> Result<AxolaCustomTheme> = { Result.failure(UnsupportedOperationException()) },
+    onSetCalendarBridgeEnabled: (Boolean) -> Unit = {},
+    onSetCalendarHideCanceled: (Boolean) -> Unit = {},
+    onSyncCalendarNow: () -> Unit = {},
+    onExportIcsFile: (IcsScope) -> java.io.File? = { null },
+    onSetLessonDndConfig: (LessonDndConfig) -> Unit = {},
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -430,6 +456,47 @@ fun MeerScreen(
                         )
                     }
 
+                    item(key = "meer_axola_studio") {
+                        MeerMenuTile(
+                            title = "AXOLA Studio",
+                            subtitle = "Eigen thema bouwen: kleuren, hoeken, randen & lettertype",
+                            icon = Icons.Default.AutoAwesome,
+                            badgeText = if (appThemeStyle == AppThemeStyle.AXOLA_CUSTOM) "ACTIEF" else null,
+                            onClick = { onSelectSection(MeerSection.AXOLA_STUDIO) },
+                            tag = "meer_tile_axola_studio"
+                        )
+                    }
+
+                    item(key = "meer_calendar_bridge") {
+                        MeerMenuTile(
+                            title = "Agenda & Smartwatch Sync",
+                            subtitle = if (calendarBridgeConfig.enabled) {
+                                "Actief • ${calendarBridgeConfig.lastSyncedEventCount} lessen gespiegeld • .ics"
+                            } else {
+                                "Wear OS / Galaxy Watch lokaal rooster & .ics export"
+                            },
+                            icon = Icons.Default.Watch,
+                            badgeText = if (calendarBridgeConfig.enabled) "AAN" else null,
+                            onClick = { onSelectSection(MeerSection.CALENDAR_BRIDGE) },
+                            tag = "meer_tile_calendar_bridge"
+                        )
+                    }
+
+                    item(key = "meer_silent_mode") {
+                        MeerMenuTile(
+                            title = "Niet Storen tijdens les",
+                            subtitle = if (lessonDndConfig.enabled) {
+                                "Actief • ${lessonDndConfig.mode.labelDutch}"
+                            } else {
+                                "Automatisch stil of trillen tijdens lessen & toetsen"
+                            },
+                            icon = Icons.Default.DoNotDisturbOn,
+                            badgeText = if (lessonDndConfig.enabled) "AAN" else null,
+                            onClick = { onSelectSection(MeerSection.SILENT_MODE) },
+                            tag = "meer_tile_silent_mode"
+                        )
+                    }
+
                     item(key = "meer_vandaag_customize") {
                         MeerMenuTile(
                             title = "Vandaag, Bustijd & Schoolnavigatie",
@@ -577,6 +644,40 @@ fun MeerScreen(
                 )
             }
 
+            MeerSection.AXOLA_STUDIO -> {
+                AxolaStudioScreen(
+                    currentTheme = axolaCustomTheme,
+                    isActiveTheme = appThemeStyle == AppThemeStyle.AXOLA_CUSTOM,
+                    onApplyTheme = { custom ->
+                        onApplyAxolaCustomTheme(custom)
+                        onSetAppThemeStyle(AppThemeStyle.AXOLA_CUSTOM)
+                    },
+                    onImportThemeCode = onImportAxolaThemeCode,
+                    onBack = { onSelectSection(MeerSection.HOME) }
+                )
+            }
+
+            MeerSection.CALENDAR_BRIDGE -> {
+                CalendarBridgeSection(
+                    config = calendarBridgeConfig,
+                    statusMessage = calendarSyncStatusMessage,
+                    onSetEnabled = onSetCalendarBridgeEnabled,
+                    onSetHideCanceled = onSetCalendarHideCanceled,
+                    onSyncNow = onSyncCalendarNow,
+                    onExportIcs = onExportIcsFile,
+                    onBack = { onSelectSection(MeerSection.HOME) }
+                )
+            }
+
+            MeerSection.SILENT_MODE -> {
+                LessonDndSection(
+                    config = lessonDndConfig,
+                    appointments = appointments,
+                    onUpdateConfig = onSetLessonDndConfig,
+                    onBack = { onSelectSection(MeerSection.HOME) }
+                )
+            }
+
             MeerSection.INSTELLINGEN -> {
                 MeerSettingsView(
                     session = session,
@@ -585,6 +686,7 @@ fun MeerScreen(
                     appThemeStyle = appThemeStyle,
                     darkModePreference = darkModePreference,
                     metroAccent = metroAccent,
+                    axolaCustomTheme = axolaCustomTheme,
                     smartDefaultNamesEnabled = smartDefaultNamesEnabled,
                     useSubjectColorsForMetroTiles = useSubjectColorsForMetroTiles,
                     subjectCustomizationsCount = subjectCustomizations.size,
@@ -604,6 +706,7 @@ fun MeerScreen(
                     onSetAppThemeStyle = onSetAppThemeStyle,
                     onSetDarkModePreference = onSetDarkModePreference,
                     onSetMetroAccent = onSetMetroAccent,
+                    onOpenAxolaStudio = { onSelectSection(MeerSection.AXOLA_STUDIO) },
                     onSetSmartDefaultNamesEnabled = onSetSmartDefaultNamesEnabled,
                     onSetUseSubjectColorsForMetroTiles = onSetUseSubjectColorsForMetroTiles,
                     onOpenVakkenAanpassen = { onSelectSection(MeerSection.VAKKEN) },
@@ -776,6 +879,7 @@ private fun MeerSettingsView(
     appThemeStyle: AppThemeStyle,
     darkModePreference: DarkModePreference,
     metroAccent: MetroAccent = MetroAccent.COBALT,
+    axolaCustomTheme: AxolaCustomTheme = AxolaCustomTheme(),
     smartDefaultNamesEnabled: Boolean = true,
     useSubjectColorsForMetroTiles: Boolean = false,
     subjectCustomizationsCount: Int = 0,
@@ -795,6 +899,7 @@ private fun MeerSettingsView(
     onSetAppThemeStyle: (AppThemeStyle) -> Unit,
     onSetDarkModePreference: (DarkModePreference) -> Unit,
     onSetMetroAccent: (MetroAccent) -> Unit = {},
+    onOpenAxolaStudio: () -> Unit = {},
     onSetSmartDefaultNamesEnabled: (Boolean) -> Unit = {},
     onSetUseSubjectColorsForMetroTiles: (Boolean) -> Unit = {},
     onOpenVakkenAanpassen: () -> Unit = {},
@@ -933,9 +1038,27 @@ private fun MeerSettingsView(
                                 style = style,
                                 selected = appThemeStyle == style,
                                 currentMetroAccent = metroAccent,
+                                axolaCustomTheme = axolaCustomTheme,
                                 onClick = { onSetAppThemeStyle(style) }
                             )
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onOpenAxolaStudio,
+                        shape = appButtonShape(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("settings_open_axola_studio")
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "AXOLA Studio (Eigen Thema Bouwen)",
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
                     if (appThemeStyle == AppThemeStyle.WINDOWS_PHONE) {
@@ -1688,6 +1811,7 @@ private fun ThemeLivePreviewCard(
     style: AppThemeStyle,
     selected: Boolean,
     currentMetroAccent: MetroAccent,
+    axolaCustomTheme: AxolaCustomTheme = AxolaCustomTheme(),
     onClick: () -> Unit
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -1697,6 +1821,7 @@ private fun ThemeLivePreviewCard(
         AppThemeStyle.NOTHING_OS -> RoundedCornerShape(22.dp)
         AppThemeStyle.ONE_UI -> RoundedCornerShape(24.dp)
         AppThemeStyle.STANDARD -> RoundedCornerShape(18.dp)
+        AppThemeStyle.AXOLA_CUSTOM -> if (axolaCustomTheme.cornerRadiusDp <= 0) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape(axolaCustomTheme.cornerRadiusDp.dp)
     }
     val innerTileShape = when (style) {
         AppThemeStyle.WINDOWS_PHONE -> androidx.compose.ui.graphics.RectangleShape
@@ -1704,6 +1829,7 @@ private fun ThemeLivePreviewCard(
         AppThemeStyle.NOTHING_OS -> RoundedCornerShape(14.dp)
         AppThemeStyle.ONE_UI -> RoundedCornerShape(16.dp)
         AppThemeStyle.STANDARD -> RoundedCornerShape(12.dp)
+        AppThemeStyle.AXOLA_CUSTOM -> if (axolaCustomTheme.cornerRadiusDp <= 0) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape((axolaCustomTheme.cornerRadiusDp * 0.65f).roundToInt().coerceAtLeast(4).dp)
     }
     val canvasColor = when (style) {
         AppThemeStyle.WINDOWS_PHONE -> if (isDark) MetroBlack else Color(0xFFFFFFFF)
@@ -1711,6 +1837,7 @@ private fun ThemeLivePreviewCard(
         AppThemeStyle.IOS_LIQUID_GLASS -> if (isDark) Color(0xFF000000) else Color(0xFFF2F2F7)
         AppThemeStyle.ONE_UI -> if (isDark) Color(0xFF0B0E14) else Color(0xFFF7F8FA)
         AppThemeStyle.STANDARD -> if (isDark) Color(0xFF111318) else Color(0xFFF4F6FB)
+        AppThemeStyle.AXOLA_CUSTOM -> Color(axolaCustomTheme.backgroundStyle.canvasArgb)
     }
     val tileColor = when (style) {
         AppThemeStyle.WINDOWS_PHONE -> Color(currentMetroAccent.argb)
@@ -1718,6 +1845,7 @@ private fun ThemeLivePreviewCard(
         AppThemeStyle.NOTHING_OS -> Color(0xFF141414)
         AppThemeStyle.ONE_UI -> if (isDark) Color(0xFF191D26) else Color.White
         AppThemeStyle.STANDARD -> if (isDark) Color(0xFF1D222B) else Color.White
+        AppThemeStyle.AXOLA_CUSTOM -> Color(axolaCustomTheme.backgroundStyle.cardArgb)
     }
     val accentColor = when (style) {
         AppThemeStyle.WINDOWS_PHONE -> Color(currentMetroAccent.argb)
@@ -1725,17 +1853,30 @@ private fun ThemeLivePreviewCard(
         AppThemeStyle.NOTHING_OS -> NothingRed
         AppThemeStyle.ONE_UI -> if (isDark) OneUiBlueDark else OneUiBlueLight
         AppThemeStyle.STANDARD -> Color(0xFF3B6FD8)
+        AppThemeStyle.AXOLA_CUSTOM -> Color(axolaCustomTheme.primaryColorArgb)
     }
     val titleColor = when (style) {
         AppThemeStyle.WINDOWS_PHONE -> Color.White
         AppThemeStyle.NOTHING_OS -> Color.White
         AppThemeStyle.IOS_LIQUID_GLASS -> if (isDark) Color.White else Color(0xFF111114)
+        AppThemeStyle.AXOLA_CUSTOM -> if (axolaCustomTheme.backgroundStyle.isDark) Color.White else Color(0xFF101318)
         else -> if (isDark) Color(0xFFF1F3F6) else Color(0xFF141821)
     }
     val headerLabel = when (style) {
         AppThemeStyle.WINDOWS_PHONE -> "vandaag"
         AppThemeStyle.NOTHING_OS -> "VANDAAG"
+        AppThemeStyle.AXOLA_CUSTOM -> when (axolaCustomTheme.typographyStyle) {
+            AxolaTypographyStyle.WINDOWS_LIGHT_LOWERCASE -> "vandaag"
+            AxolaTypographyStyle.NOTHING_DOT_MATRIX -> "VANDAAG"
+            else -> "Vandaag"
+        }
         else -> "Vandaag"
+    }
+    val isCardLight = when (style) {
+        AppThemeStyle.WINDOWS_PHONE -> !isDark
+        AppThemeStyle.IOS_LIQUID_GLASS -> !isDark
+        AppThemeStyle.AXOLA_CUSTOM -> !axolaCustomTheme.backgroundStyle.isDark
+        else -> false
     }
 
     val outerBorder = when {
@@ -1743,6 +1884,7 @@ private fun ThemeLivePreviewCard(
         style == AppThemeStyle.IOS_LIQUID_GLASS -> BorderStroke(1.dp, Color.White.copy(alpha = if (isDark) 0.18f else 0.7f))
         style == AppThemeStyle.NOTHING_OS -> BorderStroke(1.dp, Color(0xFF2D2D2D))
         style == AppThemeStyle.WINDOWS_PHONE -> BorderStroke(1.dp, Color(0xFF333333))
+        style == AppThemeStyle.AXOLA_CUSTOM && axolaCustomTheme.borderStyle == AxolaBorderStyle.NEON_GLOW -> BorderStroke(1.5.dp, accentColor)
         else -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     }
 
@@ -1769,7 +1911,7 @@ private fun ThemeLivePreviewCard(
                     text = headerLabel,
                     fontSize = 15.sp,
                     fontWeight = if (style == AppThemeStyle.WINDOWS_PHONE) FontWeight.Light else FontWeight.Bold,
-                    color = if (style == AppThemeStyle.WINDOWS_PHONE && !isDark) Color.Black else if (style == AppThemeStyle.IOS_LIQUID_GLASS && !isDark) Color.Black else Color.White,
+                    color = if (isCardLight) Color.Black else Color.White,
                     maxLines = 1
                 )
                 if (selected) {
@@ -1794,9 +1936,11 @@ private fun ThemeLivePreviewCard(
             Surface(
                 shape = innerTileShape,
                 color = tileColor,
-                border = if (style == AppThemeStyle.IOS_LIQUID_GLASS) {
-                    BorderStroke(0.75.dp, Color.White.copy(alpha = if (isDark) 0.18f else 0.72f))
-                } else null,
+                border = when {
+                    style == AppThemeStyle.IOS_LIQUID_GLASS -> BorderStroke(0.75.dp, Color.White.copy(alpha = if (isDark) 0.18f else 0.72f))
+                    style == AppThemeStyle.AXOLA_CUSTOM && axolaCustomTheme.borderStyle == AxolaBorderStyle.NEON_GLOW -> BorderStroke(1.dp, accentColor)
+                    else -> null
+                },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(9.dp)) {
@@ -1854,7 +1998,7 @@ private fun ThemeLivePreviewCard(
                     text = style.labelDutch,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (style == AppThemeStyle.WINDOWS_PHONE && !isDark) Color.Black else if (style == AppThemeStyle.IOS_LIQUID_GLASS && !isDark) Color.Black else Color.White,
+                    color = if (isCardLight) Color.Black else Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1870,4 +2014,566 @@ private fun ThemeLivePreviewCard(
         }
     }
 }
+
+@Composable
+private fun CalendarBridgeSection(
+    config: CalendarBridgeConfig,
+    statusMessage: String?,
+    onSetEnabled: (Boolean) -> Unit,
+    onSetHideCanceled: (Boolean) -> Unit,
+    onSyncNow: () -> Unit,
+    onExportIcs: (IcsScope) -> java.io.File?,
+    onBack: () -> Unit
+) {
+    BackHandler { onBack() }
+
+    val context = LocalContext.current
+    var hasCalendarPerm by remember { mutableStateOf(CalendarBridgeManager.hasCalendarPermissions(context)) }
+    var icsStatus by remember { mutableStateOf<String?>(null) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val granted = grants[Manifest.permission.READ_CALENDAR] == true &&
+            grants[Manifest.permission.WRITE_CALENDAR] == true
+        hasCalendarPerm = granted || CalendarBridgeManager.hasCalendarPermissions(context)
+        if (hasCalendarPerm) {
+            onSetEnabled(true)
+        }
+    }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        hasCalendarPerm = CalendarBridgeManager.hasCalendarPermissions(context)
+    }
+
+    val oneUiInsets = LocalOneUiScreenInsets.current
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = appScreenHorizontalPadding())
+            .testTag("calendar_bridge_screen"),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(
+            top = 12.dp,
+            bottom = oneUiInsets.calculateBottomPadding() + 28.dp
+        )
+    ) {
+        item(key = "cal_bridge_intro") {
+            Surface(
+                shape = appCardShape(standard = 20.dp, nothing = 24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = nothingCardBorder(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = appThumbnailShape(standard = 12.dp, nothing = 12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(42.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Watch,
+                                    contentDescription = "Smartwatch Agenda Sync",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Telefoon- & Smartwatch-agenda",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Spiegelt de komende 14 dagen automatisch naar het lokale agenda-account 'Agenda+ Rooster' voor Wear OS, Galaxy Watch & Google/Samsung Agenda.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    SettingsSwitchRow(
+                        title = "Synchroniseer met Telefoon- & Smartwatch-agenda",
+                        subtitle = if (hasCalendarPerm) {
+                            "Agendatoegang verleend • Automatisch bijgewerkt bij sync"
+                        } else {
+                            "Vraagt agenda-toestemming om lokaal 'Agenda+ Rooster' aan te maken"
+                        },
+                        checked = config.enabled && hasCalendarPerm,
+                        onCheckedChange = { wantEnabled ->
+                            if (wantEnabled && !hasCalendarPerm) {
+                                permissionLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.READ_CALENDAR,
+                                        Manifest.permission.WRITE_CALENDAR
+                                    )
+                                )
+                            } else {
+                                onSetEnabled(wantEnabled)
+                            }
+                        },
+                        tag = "calendar_bridge_enable_switch"
+                    )
+
+                    NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+                    SettingsSwitchRow(
+                        title = "Verberg uitgevallen lessen (Uitval) in agenda",
+                        subtitle = "Indien uitgeschakeld krijgen uitgevallen lessen het voorvoegsel [UITVAL]",
+                        checked = config.hideCanceledLessons,
+                        onCheckedChange = onSetHideCanceled,
+                        tag = "calendar_bridge_hide_uitval_switch"
+                    )
+                }
+            }
+        }
+
+        item(key = "cal_bridge_status") {
+            val lastSyncText = remember(config.lastSyncedAtMs) {
+                if (config.lastSyncedAtMs <= 0L) "Nog niet gesynchroniseerd"
+                else SimpleDateFormat("d MMM HH:mm", Locale("nl", "NL")).format(Date(config.lastSyncedAtMs))
+            }
+            Surface(
+                shape = appCardShape(standard = 18.dp, nothing = 22.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = nothingCardBorder(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Synchronisatiestatus",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Laatste sync: $lastSyncText • ${config.lastSyncedEventCount} lessen in agenda",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    statusMessage?.let { msg ->
+                        Text(
+                            text = msg,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.testTag("calendar_bridge_status_text")
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            if (!hasCalendarPerm) {
+                                permissionLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.READ_CALENDAR,
+                                        Manifest.permission.WRITE_CALENDAR
+                                    )
+                                )
+                            } else {
+                                onSyncNow()
+                            }
+                        },
+                        shape = appButtonShape(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("calendar_bridge_sync_now_button")
+                    ) {
+                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (hasCalendarPerm) "Nu synchroniseren" else "Toestemming geven & synchroniseren",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        item(key = "cal_bridge_ics_export") {
+            Surface(
+                shape = appCardShape(standard = 18.dp, nothing = 22.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = nothingCardBorder(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Exporteer .ics bestand",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Deel je rooster als universeel iCalendar (.ics) bestand voor Apple Agenda, Outlook of Google Calendar.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                val file = onExportIcs(IcsScope.ACTIVE_WEEK)
+                                icsStatus = if (file != null) "Week-agenda (.ics) geëxporteerd." else "Kon .ics niet maken."
+                            },
+                            shape = appButtonShape(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("calendar_export_ics_week")
+                        ) {
+                            Icon(Icons.Default.CalendarViewWeek, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Week (.ics)")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                val file = onExportIcs(IcsScope.FULL_MONTH)
+                                icsStatus = if (file != null) "Maand-agenda (.ics) geëxporteerd." else "Kon .ics niet maken."
+                            },
+                            shape = appButtonShape(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("calendar_export_ics_month")
+                        ) {
+                            Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Maand (.ics)")
+                        }
+                    }
+                    icsStatus?.let { msg ->
+                        Text(
+                            text = msg,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LessonDndSection(
+    config: LessonDndConfig,
+    appointments: List<Appointment>,
+    onUpdateConfig: (LessonDndConfig) -> Unit,
+    onBack: () -> Unit
+) {
+    BackHandler { onBack() }
+
+    val context = LocalContext.current
+    var hasPolicyAccess by remember { mutableStateOf(LessonDndScheduler.hasPolicyAccess(context)) }
+    var hasExactAlarmPerm by remember { mutableStateOf(LessonDndScheduler.canScheduleExactAlarms(context)) }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        hasPolicyAccess = LessonDndScheduler.hasPolicyAccess(context)
+        hasExactAlarmPerm = LessonDndScheduler.canScheduleExactAlarms(context)
+    }
+
+    val nextWindows = remember(appointments, config) {
+        LessonDndScheduler.computeSilentWindows(appointments, config).take(3)
+    }
+    val oneUiInsets = LocalOneUiScreenInsets.current
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = appScreenHorizontalPadding())
+            .testTag("lesson_dnd_screen"),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(
+            top = 12.dp,
+            bottom = oneUiInsets.calculateBottomPadding() + 28.dp
+        )
+    ) {
+        item(key = "dnd_enable_card") {
+            Surface(
+                shape = appCardShape(standard = 20.dp, nothing = 24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = nothingCardBorder(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    SettingsSwitchRow(
+                        title = "Automatische Stille Modus tijdens lessen",
+                        subtitle = "Zet je telefoon automatisch stil bij aanvang van elke les (slaat Uitval en tussenuren over) en herstel na afloop.",
+                        checked = config.enabled,
+                        onCheckedChange = { onUpdateConfig(config.copy(enabled = it)) },
+                        tag = "dnd_enable_switch"
+                    )
+
+                    NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Niet Storen-toegang",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = if (hasPolicyAccess) {
+                                    "Toegang verleend (Volledige Niet Storen werkt)"
+                                } else {
+                                    "Nodig voor 'Volledig stil' modus op Android"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (hasPolicyAccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                        }
+                        OneUiPillBadge(
+                            text = if (hasPolicyAccess) "Verleend" else "Vereist",
+                            isError = !hasPolicyAccess
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            runCatching { context.startActivity(intent) }
+                        },
+                        shape = appButtonShape(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("dnd_policy_access_button")
+                    ) {
+                        Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (hasPolicyAccess) "Niet Storen-instellingen beheren" else "Geef Niet Storen-toegang",
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Exacte alarmtiming",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = if (hasExactAlarmPerm) {
+                                        "Op de minuut nauwkeurig"
+                                    } else {
+                                        "Niet exact — kan enkele minuten afwijken"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (!hasExactAlarmPerm) {
+                                TextButton(
+                                    onClick = {
+                                        val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                            data = Uri.parse("package:${context.packageName}")
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        runCatching { context.startActivity(intent) }
+                                    },
+                                    modifier = Modifier.testTag("dnd_exact_alarm_button")
+                                ) {
+                                    Text("Toestaan")
+                                }
+                            } else {
+                                OneUiPillBadge(text = "Actief")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "dnd_mode_and_buffers") {
+            Surface(
+                shape = appCardShape(standard = 20.dp, nothing = 24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = nothingCardBorder(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Gedrag tijdens de les",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        LessonDndMode.entries.forEachIndexed { idx, mode ->
+                            SegmentedButton(
+                                selected = config.mode == mode,
+                                onClick = { onUpdateConfig(config.copy(mode = mode)) },
+                                shape = SegmentedButtonDefaults.itemShape(idx, LessonDndMode.entries.size),
+                                modifier = Modifier.testTag("dnd_mode_${mode.name}")
+                            ) {
+                                Text(
+                                    text = if (mode == LessonDndMode.VIBRATE) "Alleen trillen" else "Volledig stil",
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+
+                    NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Voor aanvang les stil",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "${config.startBufferMinutes} min",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Slider(
+                        value = config.startBufferMinutes.toFloat(),
+                        onValueChange = { value ->
+                            onUpdateConfig(config.copy(startBufferMinutes = value.roundToInt().coerceIn(0, 10)))
+                        },
+                        valueRange = 0f..10f,
+                        steps = 9,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("dnd_start_buffer_slider")
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Na afloop les herstellen",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "${config.endBufferMinutes} min",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Slider(
+                        value = config.endBufferMinutes.toFloat(),
+                        onValueChange = { value ->
+                            onUpdateConfig(config.copy(endBufferMinutes = value.roundToInt().coerceIn(0, 10)))
+                        },
+                        valueRange = 0f..10f,
+                        steps = 9,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("dnd_end_buffer_slider")
+                    )
+
+                    NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+                    SettingsSwitchRow(
+                        title = "Houd stil tijdens toetsen",
+                        subtitle = "Gebruik altijd volledige Niet Storen tijdens proefwerken & SO's",
+                        checked = config.forceDndDuringExams,
+                        onCheckedChange = { onUpdateConfig(config.copy(forceDndDuringExams = it)) },
+                        tag = "dnd_force_exams_switch"
+                    )
+                }
+            }
+        }
+
+        item(key = "dnd_upcoming_windows") {
+            val timeFmt = remember { SimpleDateFormat("EEE d MMM HH:mm", Locale("nl", "NL")) }
+            val endFmt = remember { SimpleDateFormat("HH:mm", Locale("nl", "NL")) }
+            Surface(
+                shape = appCardShape(standard = 18.dp, nothing = 22.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = nothingCardBorder(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Eerstvolgende stille lesblokken",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (nextWindows.isEmpty()) {
+                        Text(
+                            text = "Geen aankomende lessen gevonden om in te plannen.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        nextWindows.forEach { win ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "${timeFmt.format(Date(win.startMs))} - ${endFmt.format(Date(win.endMs))}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = win.labels.joinToString(", "),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                if (win.hasExam && config.forceDndDuringExams) {
+                                    OneUiPillBadge(text = "Toets • DND", isError = true)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 

@@ -6,7 +6,10 @@ import android.app.job.JobScheduler
 import android.app.job.JobService
 import android.content.ComponentName
 import android.content.Context
+import com.example.automation.CalendarBridgeManager
+import com.example.automation.LessonDndScheduler
 import com.example.data.AppPreferencesStore
+import com.example.model.SubjectCustomizationState
 import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
 import com.example.network.MagisterClient
@@ -81,6 +84,33 @@ class ScheduleMonitorJobService : JobService() {
                     newAppointments = cleaned,
                     newGrades = bundle.grades,
                     newTasks = bundle.tasks
+                )
+                val calConfig = store.getCalendarBridgeConfig()
+                if (calConfig.enabled && CalendarBridgeManager.hasCalendarPermissions(appContext)) {
+                    val customState = SubjectCustomizationState(
+                        customizations = store.loadSubjectCustomizations(),
+                        smartDefaultNamesEnabled = store.isSmartSubjectNamesEnabled(),
+                        useSubjectColorsForMetroTiles = store.isUseSubjectColorsForMetroTiles()
+                    )
+                    val res = CalendarBridgeManager.syncUpcomingSchedule(
+                        context = appContext,
+                        appointments = cleaned,
+                        config = calConfig,
+                        customState = customState
+                    )
+                    if (res.success) {
+                        store.saveCalendarBridgeConfig(
+                            calConfig.copy(
+                                lastSyncedAtMs = System.currentTimeMillis(),
+                                lastSyncedEventCount = res.syncedCount
+                            )
+                        )
+                    }
+                }
+                LessonDndScheduler.rescheduleAlarms(
+                    context = appContext,
+                    appointments = cleaned,
+                    config = store.getLessonDndConfig()
                 )
                 WidgetUpdater.updateAllWidgets(appContext)
                 com.example.services.SyncManager.pushIfChanged(appContext)

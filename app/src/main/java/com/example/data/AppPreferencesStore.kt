@@ -125,6 +125,81 @@ class AppPreferencesStore(context: Context) {
         prefs.edit().putBoolean(KEY_USE_SUBJECT_COLORS_METRO, enabled).apply()
     }
 
+    fun getAxolaCustomTheme(): AxolaCustomTheme {
+        val raw = prefs.getString(KEY_AXOLA_CUSTOM_THEME_JSON, null) ?: return AxolaCustomTheme()
+        return runCatching {
+            AxolaCustomTheme.fromJsonObject(JSONObject(raw))
+        }.getOrDefault(AxolaCustomTheme())
+    }
+
+    fun saveAxolaCustomTheme(theme: AxolaCustomTheme) {
+        prefs.edit().putString(KEY_AXOLA_CUSTOM_THEME_JSON, theme.toJsonObject().toString()).apply()
+    }
+
+    fun getCalendarBridgeConfig(): CalendarBridgeConfig {
+        return CalendarBridgeConfig(
+            enabled = prefs.getBoolean(KEY_CALENDAR_BRIDGE_ENABLED, false),
+            hideCanceledLessons = prefs.getBoolean(KEY_CALENDAR_HIDE_CANCELED, true),
+            lastSyncedAtMs = prefs.getLong(KEY_CALENDAR_LAST_SYNC_MS, 0L),
+            lastSyncedEventCount = prefs.getInt(KEY_CALENDAR_LAST_COUNT, 0)
+        )
+    }
+
+    fun saveCalendarBridgeConfig(config: CalendarBridgeConfig) {
+        prefs.edit()
+            .putBoolean(KEY_CALENDAR_BRIDGE_ENABLED, config.enabled)
+            .putBoolean(KEY_CALENDAR_HIDE_CANCELED, config.hideCanceledLessons)
+            .putLong(KEY_CALENDAR_LAST_SYNC_MS, config.lastSyncedAtMs)
+            .putInt(KEY_CALENDAR_LAST_COUNT, config.lastSyncedEventCount)
+            .apply()
+    }
+
+    fun getLessonDndConfig(): LessonDndConfig {
+        val rawMode = prefs.getString(KEY_LESSON_DND_MODE, LessonDndMode.VIBRATE.name)
+        val mode = runCatching { LessonDndMode.valueOf(rawMode ?: LessonDndMode.VIBRATE.name) }
+            .getOrDefault(LessonDndMode.VIBRATE)
+        return LessonDndConfig(
+            enabled = prefs.getBoolean(KEY_LESSON_DND_ENABLED, false),
+            mode = mode,
+            startBufferMinutes = prefs.getInt(KEY_LESSON_DND_START_BUFFER, 1).coerceIn(0, 15),
+            endBufferMinutes = prefs.getInt(KEY_LESSON_DND_END_BUFFER, 0).coerceIn(0, 15),
+            forceDndDuringExams = prefs.getBoolean(KEY_LESSON_DND_FORCE_EXAMS, true)
+        )
+    }
+
+    fun saveLessonDndConfig(config: LessonDndConfig) {
+        prefs.edit()
+            .putBoolean(KEY_LESSON_DND_ENABLED, config.enabled)
+            .putString(KEY_LESSON_DND_MODE, config.mode.name)
+            .putInt(KEY_LESSON_DND_START_BUFFER, config.startBufferMinutes.coerceIn(0, 15))
+            .putInt(KEY_LESSON_DND_END_BUFFER, config.endBufferMinutes.coerceIn(0, 15))
+            .putBoolean(KEY_LESSON_DND_FORCE_EXAMS, config.forceDndDuringExams)
+            .apply()
+    }
+
+    fun isLessonDndCurrentlyApplied(): Boolean =
+        prefs.getBoolean(KEY_LESSON_DND_APPLIED, false)
+
+    fun saveLessonDndSavedAudioState(applied: Boolean, prevRingerMode: Int, prevInterruptionFilter: Int) {
+        prefs.edit()
+            .putBoolean(KEY_LESSON_DND_APPLIED, applied)
+            .putInt(KEY_LESSON_DND_PREV_RINGER, prevRingerMode)
+            .putInt(KEY_LESSON_DND_PREV_FILTER, prevInterruptionFilter)
+            .apply()
+    }
+
+    fun getLessonDndPrevRingerMode(): Int = prefs.getInt(KEY_LESSON_DND_PREV_RINGER, -1)
+
+    fun getLessonDndPrevInterruptionFilter(): Int = prefs.getInt(KEY_LESSON_DND_PREV_FILTER, -1)
+
+    fun clearLessonDndAppliedState() {
+        prefs.edit()
+            .putBoolean(KEY_LESSON_DND_APPLIED, false)
+            .remove(KEY_LESSON_DND_PREV_RINGER)
+            .remove(KEY_LESSON_DND_PREV_FILTER)
+            .apply()
+    }
+
     fun loadSubjectCustomizations(): Map<String, SubjectCustomization> {
         val raw = prefs.getString(KEY_SUBJECT_CUSTOMIZATIONS_JSON, null) ?: return emptyMap()
         return runCatching {
@@ -1269,6 +1344,17 @@ class AppPreferencesStore(context: Context) {
             put("metroAccent", getMetroAccent().name)
             put("smartSubjectNamesEnabled", isSmartSubjectNamesEnabled())
             put("useSubjectColorsForMetroTiles", isUseSubjectColorsForMetroTiles())
+            put("axolaCustomTheme", getAxolaCustomTheme().toJsonObject())
+            put("calendarBridgeEnabled", getCalendarBridgeConfig().enabled)
+            put("calendarHideCanceled", getCalendarBridgeConfig().hideCanceledLessons)
+            put("lessonDndConfig", JSONObject().apply {
+                val dnd = getLessonDndConfig()
+                put("enabled", dnd.enabled)
+                put("mode", dnd.mode.name)
+                put("startBufferMinutes", dnd.startBufferMinutes)
+                put("endBufferMinutes", dnd.endBufferMinutes)
+                put("forceDndDuringExams", dnd.forceDndDuringExams)
+            })
             put("subjectCustomizations", SubjectCustomizationCatalog.toJsonObject(loadSubjectCustomizations()))
             put("agendaStyle", getAgendaStyle().name)
             put("uiScale", getUiScale().toDouble())
@@ -1377,6 +1463,35 @@ class AppPreferencesStore(context: Context) {
         root.optJSONObject("subjectCustomizations")?.let { subjObj ->
             val parsed = SubjectCustomizationCatalog.fromJsonObject(subjObj)
             saveSubjectCustomizations(parsed)
+            restoredCount++
+        }
+        root.optJSONObject("axolaCustomTheme")?.let { axolaObj ->
+            saveAxolaCustomTheme(AxolaCustomTheme.fromJsonObject(axolaObj))
+            restoredCount++
+        }
+        if (root.has("calendarBridgeEnabled") || root.has("calendarHideCanceled")) {
+            val cur = getCalendarBridgeConfig()
+            saveCalendarBridgeConfig(
+                cur.copy(
+                    enabled = root.optBoolean("calendarBridgeEnabled", cur.enabled),
+                    hideCanceledLessons = root.optBoolean("calendarHideCanceled", cur.hideCanceledLessons)
+                )
+            )
+            restoredCount++
+        }
+        root.optJSONObject("lessonDndConfig")?.let { dndObj ->
+            val mode = runCatching {
+                LessonDndMode.valueOf(dndObj.optString("mode", LessonDndMode.VIBRATE.name))
+            }.getOrDefault(LessonDndMode.VIBRATE)
+            saveLessonDndConfig(
+                LessonDndConfig(
+                    enabled = dndObj.optBoolean("enabled", false),
+                    mode = mode,
+                    startBufferMinutes = dndObj.optInt("startBufferMinutes", 1).coerceIn(0, 15),
+                    endBufferMinutes = dndObj.optInt("endBufferMinutes", 0).coerceIn(0, 15),
+                    forceDndDuringExams = dndObj.optBoolean("forceDndDuringExams", true)
+                )
+            )
             restoredCount++
         }
         root.optString("agendaStyle").takeIf { it.isNotBlank() }?.let { raw ->
@@ -1627,6 +1742,19 @@ class AppPreferencesStore(context: Context) {
         private const val KEY_SMART_SUBJECT_NAMES = "smart_subject_names_enabled"
         private const val KEY_USE_SUBJECT_COLORS_METRO = "use_subject_colors_metro"
         private const val KEY_SUBJECT_CUSTOMIZATIONS_JSON = "subject_customizations_json"
+        private const val KEY_AXOLA_CUSTOM_THEME_JSON = "axola_custom_theme_json"
+        private const val KEY_CALENDAR_BRIDGE_ENABLED = "calendar_bridge_enabled"
+        private const val KEY_CALENDAR_HIDE_CANCELED = "calendar_hide_canceled"
+        private const val KEY_CALENDAR_LAST_SYNC_MS = "calendar_last_sync_ms"
+        private const val KEY_CALENDAR_LAST_COUNT = "calendar_last_count"
+        private const val KEY_LESSON_DND_ENABLED = "lesson_dnd_enabled"
+        private const val KEY_LESSON_DND_MODE = "lesson_dnd_mode"
+        private const val KEY_LESSON_DND_START_BUFFER = "lesson_dnd_start_buffer"
+        private const val KEY_LESSON_DND_END_BUFFER = "lesson_dnd_end_buffer"
+        private const val KEY_LESSON_DND_FORCE_EXAMS = "lesson_dnd_force_exams"
+        private const val KEY_LESSON_DND_APPLIED = "lesson_dnd_applied"
+        private const val KEY_LESSON_DND_PREV_RINGER = "lesson_dnd_prev_ringer"
+        private const val KEY_LESSON_DND_PREV_FILTER = "lesson_dnd_prev_filter"
         const val DEFAULT_ELO_URL = "https://www.itslearning.com"
 
         fun splitToetsstofIntoTopics(rawText: String, subject: String = "", fallbackTitle: String = ""): List<TestPrepSubtopic> {

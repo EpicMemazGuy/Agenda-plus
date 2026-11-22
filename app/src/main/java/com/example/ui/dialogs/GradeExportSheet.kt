@@ -32,7 +32,10 @@ import com.example.ui.components.appSheetShape
 import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 import com.example.ui.theme.LocalDarkThemeActive
+import com.example.ui.components.LocalSubjectCustomizationState
 import com.example.util.GradeExporter
+import com.example.util.StoryAndScheduleExporter
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -44,10 +47,13 @@ fun GradeExportSheet(
     overallAverage: Double,
     studentName: String,
     appThemeStyle: AppThemeStyle,
+    axolaCustomTheme: com.example.model.AxolaCustomTheme = com.example.model.AxolaCustomTheme(),
+    metroAccent: com.example.model.MetroAccent = com.example.model.MetroAccent.COBALT,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val customizationState = LocalSubjectCustomizationState.current
     val allGrades = remember(summaries) {
         summaries.flatMap { it.grades }.sortedByDescending { it.date }
     }
@@ -55,6 +61,10 @@ fun GradeExportSheet(
         mutableStateOf(allGrades.take(3).map { it.id }.toSet())
     }
     var isWorking by remember { mutableStateOf(false) }
+    var showStoryPreview by remember { mutableStateOf(false) }
+    var storyTargetGrade by remember { mutableStateOf<GradeItem?>(null) }
+    var storyPngFile by remember { mutableStateOf<File?>(null) }
+    var isStoryGenerating by remember { mutableStateOf(false) }
 
     val saveCsvLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv")
@@ -311,47 +321,107 @@ fun GradeExportSheet(
             val isDarkModeActive = LocalDarkThemeActive.current
             val primaryColorArgb = MaterialTheme.colorScheme.primary.toArgb()
 
-            Button(
-                onClick = {
-                    val chosen = allGrades.filter { it.id in selectedIds }
-                    if (chosen.isEmpty()) return@Button
-                    scope.launch {
-                        isWorking = true
-                        val pngFile = withContext(Dispatchers.IO) {
-                            GradeExporter.renderGradeShareCardPng(
-                                context = context,
-                                selectedGrades = chosen,
-                                overallAverage = overallAverage,
-                                studentName = studentName,
-                                appThemeStyle = appThemeStyle,
-                                isDarkMode = isDarkModeActive,
-                                dynamicPrimaryArgb = primaryColorArgb
-                            )
-                        }
-                        isWorking = false
-                        GradeExporter.shareFileViaProvider(
+            LaunchedEffect(showStoryPreview, storyTargetGrade) {
+                val target = storyTargetGrade
+                if (showStoryPreview && target != null) {
+                    isStoryGenerating = true
+                    val subjAvg = summaries.firstOrNull { it.subjectName.equals(target.subjectName, ignoreCase = true) }?.weightedAverage
+                    val file = withContext(Dispatchers.IO) {
+                        StoryAndScheduleExporter.renderGradeStoryPng(
                             context = context,
-                            file = pngFile,
-                            mimeType = "image/png",
-                            chooserTitle = "Deel Agenda+ Cijferkaart"
+                            grade = target,
+                            subjectAverage = subjAvg,
+                            overallAverage = overallAverage,
+                            studentName = studentName,
+                            customizationState = customizationState,
+                            themeStyle = appThemeStyle,
+                            axolaTheme = axolaCustomTheme,
+                            metroAccent = metroAccent,
+                            isDarkMode = isDarkModeActive,
+                            dynamicPrimaryArgb = primaryColorArgb
                         )
                     }
-                },
-                enabled = selectedIds.isNotEmpty() && !isWorking,
-                shape = RoundedCornerShape(percent = 50),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-                    .testTag("export_png_share_button")
+                    storyPngFile = file
+                    isStoryGenerating = false
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (isWorking) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Deel PNG Cijferkaart", fontWeight = FontWeight.Bold)
+                OutlinedButton(
+                    onClick = {
+                        val target = allGrades.firstOrNull { it.id in selectedIds } ?: allGrades.firstOrNull()
+                        if (target != null) {
+                            storyTargetGrade = target
+                            showStoryPreview = true
+                        }
+                    },
+                    enabled = allGrades.isNotEmpty() && !isWorking,
+                    shape = RoundedCornerShape(percent = 50),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                        .testTag("export_grade_story_button")
+                ) {
+                    Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("9:16 Story", fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = {
+                        val chosen = allGrades.filter { it.id in selectedIds }
+                        if (chosen.isEmpty()) return@Button
+                        scope.launch {
+                            isWorking = true
+                            val pngFile = withContext(Dispatchers.IO) {
+                                GradeExporter.renderGradeShareCardPng(
+                                    context = context,
+                                    selectedGrades = chosen,
+                                    overallAverage = overallAverage,
+                                    studentName = studentName,
+                                    appThemeStyle = appThemeStyle,
+                                    isDarkMode = isDarkModeActive,
+                                    dynamicPrimaryArgb = primaryColorArgb
+                                )
+                            }
+                            isWorking = false
+                            GradeExporter.shareFileViaProvider(
+                                context = context,
+                                file = pngFile,
+                                mimeType = "image/png",
+                                chooserTitle = "Deel Agenda+ Cijferkaart"
+                            )
+                        }
+                    },
+                    enabled = selectedIds.isNotEmpty() && !isWorking,
+                    shape = RoundedCornerShape(percent = 50),
+                    modifier = Modifier
+                        .weight(1.3f)
+                        .height(50.dp)
+                        .testTag("export_png_share_button")
+                ) {
+                    if (isWorking) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("PNG Cijferkaart", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
+    }
+
+    if (showStoryPreview) {
+        ImageExportPreviewDialog(
+            title = "9:16 Cijfer Story",
+            pngFile = storyPngFile,
+            isGenerating = isStoryGenerating,
+            shareChooserTitle = "Deel 9:16 Story Kaart",
+            onDismiss = { showStoryPreview = false }
+        )
     }
 }

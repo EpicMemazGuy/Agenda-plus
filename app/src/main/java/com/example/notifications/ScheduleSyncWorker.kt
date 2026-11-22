@@ -8,10 +8,14 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.example.automation.CalendarBridgeManager
+import com.example.automation.LessonDndScheduler
 import com.example.data.AppPreferencesStore
 import com.example.hardware.NothingGlyphBridge
 import com.example.hardware.WearSyncBridge
 import com.example.model.BusWidgetSnapshot
+import com.example.model.SubjectCustomizationCatalog
+import com.example.model.SubjectCustomizationState
 import com.example.model.CommuteModeType
 import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
@@ -165,6 +169,33 @@ class ScheduleSyncWorker(
                 appointments = cleaned,
                 busTracking = busTracking,
                 smartBusAdvice = advice
+            )
+            val calConfig = store.getCalendarBridgeConfig()
+            if (calConfig.enabled && CalendarBridgeManager.hasCalendarPermissions(applicationContext)) {
+                val customState = SubjectCustomizationState(
+                    customizations = store.loadSubjectCustomizations(),
+                    smartDefaultNamesEnabled = store.isSmartSubjectNamesEnabled(),
+                    useSubjectColorsForMetroTiles = store.isUseSubjectColorsForMetroTiles()
+                )
+                val res = CalendarBridgeManager.syncUpcomingSchedule(
+                    context = applicationContext,
+                    appointments = cleaned,
+                    config = calConfig,
+                    customState = customState
+                )
+                if (res.success) {
+                    store.saveCalendarBridgeConfig(
+                        calConfig.copy(
+                            lastSyncedAtMs = System.currentTimeMillis(),
+                            lastSyncedEventCount = res.syncedCount
+                        )
+                    )
+                }
+            }
+            LessonDndScheduler.rescheduleAlarms(
+                context = applicationContext,
+                appointments = cleaned,
+                config = store.getLessonDndConfig()
             )
             WidgetUpdater.updateAllWidgets(applicationContext)
             com.example.services.SyncManager.pushIfChanged(applicationContext)

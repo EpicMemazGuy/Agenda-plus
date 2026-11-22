@@ -13,6 +13,7 @@ import com.example.MainActivity
 import com.example.R
 import com.example.data.AppPreferencesStore
 import com.example.model.AppThemeStyle
+import com.example.model.AxolaTypographyStyle
 import com.example.model.SubjectCustomizationCatalog
 import com.example.model.SubjectCustomizationState
 import com.example.model.cleanSchoolText
@@ -64,15 +65,24 @@ class RoosterBusWidgetProvider : AppWidgetProvider() {
                 smartDefaultNamesEnabled = store.isSmartSubjectNamesEnabled(),
                 useSubjectColorsForMetroTiles = store.isUseSubjectColorsForMetroTiles()
             )
-            val isNothing = themeStyle == AppThemeStyle.NOTHING_OS
+            val axolaTheme = store.getAxolaCustomTheme()
+            val isAxola = themeStyle == AppThemeStyle.AXOLA_CUSTOM
+            val isNothing = themeStyle == AppThemeStyle.NOTHING_OS ||
+                (isAxola && axolaTheme.typographyStyle == AxolaTypographyStyle.NOTHING_DOT_MATRIX && axolaTheme.backgroundStyle.isDark)
             val isOneUi = themeStyle == AppThemeStyle.ONE_UI
-            val isMetro = themeStyle == AppThemeStyle.WINDOWS_PHONE
+            val isMetro = themeStyle == AppThemeStyle.WINDOWS_PHONE ||
+                (isAxola && axolaTheme.cornerRadiusDp <= 4)
             val isIos = themeStyle == AppThemeStyle.IOS_LIQUID_GLASS
             val layoutId = when (themeStyle) {
                 AppThemeStyle.NOTHING_OS -> R.layout.widget_rooster_bus_nothing
                 AppThemeStyle.ONE_UI -> R.layout.widget_rooster_bus_oneui
                 AppThemeStyle.WINDOWS_PHONE -> R.layout.widget_rooster_bus_metro
                 AppThemeStyle.IOS_LIQUID_GLASS -> R.layout.widget_rooster_bus_ios
+                AppThemeStyle.AXOLA_CUSTOM -> when {
+                    isMetro -> R.layout.widget_rooster_bus_metro
+                    isNothing -> R.layout.widget_rooster_bus_nothing
+                    else -> R.layout.widget_rooster_bus
+                }
                 AppThemeStyle.STANDARD -> R.layout.widget_rooster_bus
             }
             val views = RemoteViews(context.packageName, layoutId)

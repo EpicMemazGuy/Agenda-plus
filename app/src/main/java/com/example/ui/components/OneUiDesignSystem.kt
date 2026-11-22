@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.example.model.AppThemeStyle
 import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.LocalAxolaCustomTheme
 import com.example.ui.theme.LocalDarkThemeActive
 import kotlin.math.cos
 import kotlin.math.min
@@ -220,6 +221,10 @@ fun appInnerCardShape(
         AppThemeStyle.IOS_LIQUID_GLASS -> SquircleShape(14.dp)
         AppThemeStyle.WINDOWS_PHONE -> RectangleShape
         AppThemeStyle.NOTHING_OS -> RoundedCornerShape(nothing)
+        AppThemeStyle.AXOLA_CUSTOM -> {
+            val r = (LocalAxolaCustomTheme.current.cornerRadiusDp * 0.72f).toInt()
+            if (r <= 0) RectangleShape else RoundedCornerShape(r.dp)
+        }
         AppThemeStyle.STANDARD -> RoundedCornerShape(standard)
     }
 }
@@ -238,6 +243,10 @@ fun appThumbnailShape(
         AppThemeStyle.IOS_LIQUID_GLASS -> SquircleShape(10.dp)
         AppThemeStyle.WINDOWS_PHONE -> RectangleShape
         AppThemeStyle.NOTHING_OS -> RoundedCornerShape(nothing)
+        AppThemeStyle.AXOLA_CUSTOM -> {
+            val r = (LocalAxolaCustomTheme.current.cornerRadiusDp * 0.5f).toInt()
+            if (r <= 0) RectangleShape else RoundedCornerShape(r.dp)
+        }
         AppThemeStyle.STANDARD -> RoundedCornerShape(standard)
     }
 }
@@ -252,6 +261,10 @@ fun appSheetShape(): Shape {
         AppThemeStyle.IOS_LIQUID_GLASS -> SquircleShape(24.dp, topOnly = true)
         AppThemeStyle.WINDOWS_PHONE -> RectangleShape
         AppThemeStyle.NOTHING_OS -> RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)
+        AppThemeStyle.AXOLA_CUSTOM -> {
+            val r = LocalAxolaCustomTheme.current.cornerRadiusDp
+            if (r <= 0) RectangleShape else RoundedCornerShape(topStart = r.dp, topEnd = r.dp)
+        }
         AppThemeStyle.STANDARD -> RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)
     }
 }

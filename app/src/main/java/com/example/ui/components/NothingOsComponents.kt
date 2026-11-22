@@ -39,8 +39,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.model.AppThemeStyle
+import com.example.model.AxolaBorderStyle
+import com.example.model.AxolaTypographyStyle
 import com.example.ui.theme.DotMatrixFontFamily
 import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.LocalAxolaCustomTheme
 import com.example.ui.theme.LocalDarkThemeActive
 import com.example.ui.theme.NothingAsh
 import com.example.ui.theme.NothingOutline
@@ -69,6 +72,9 @@ val isWindowsPhone: Boolean
 val isIosLiquidGlass: Boolean
     @Composable get() = LocalAppThemeStyle.current == AppThemeStyle.IOS_LIQUID_GLASS
 
+val isAxolaCustom: Boolean
+    @Composable get() = LocalAppThemeStyle.current == AppThemeStyle.AXOLA_CUSTOM
+
 val isFloatingOverlayTheme: Boolean
     @Composable get() = LocalAppThemeStyle.current == AppThemeStyle.ONE_UI ||
         LocalAppThemeStyle.current == AppThemeStyle.IOS_LIQUID_GLASS
@@ -83,6 +89,7 @@ fun appCardCornerRadius(
         AppThemeStyle.IOS_LIQUID_GLASS -> 22.dp
         AppThemeStyle.WINDOWS_PHONE -> 0.dp
         AppThemeStyle.NOTHING_OS -> nothing
+        AppThemeStyle.AXOLA_CUSTOM -> LocalAxolaCustomTheme.current.cornerRadiusDp.dp
         AppThemeStyle.STANDARD -> standard
     }
 }
@@ -97,6 +104,10 @@ fun appCardShape(
         AppThemeStyle.IOS_LIQUID_GLASS -> SquircleShape(22.dp)
         AppThemeStyle.WINDOWS_PHONE -> RectangleShape
         AppThemeStyle.NOTHING_OS -> RoundedCornerShape(nothing)
+        AppThemeStyle.AXOLA_CUSTOM -> {
+            val radius = LocalAxolaCustomTheme.current.cornerRadiusDp
+            if (radius <= 0) RectangleShape else RoundedCornerShape(radius.dp)
+        }
         AppThemeStyle.STANDARD -> RoundedCornerShape(standard)
     }
 }
@@ -107,6 +118,10 @@ fun appButtonShape(standard: Dp = 14.dp): Shape {
         AppThemeStyle.WINDOWS_PHONE -> RectangleShape
         AppThemeStyle.IOS_LIQUID_GLASS, AppThemeStyle.ONE_UI -> CircleShape
         AppThemeStyle.NOTHING_OS -> RoundedCornerShape(standard)
+        AppThemeStyle.AXOLA_CUSTOM -> {
+            val radius = LocalAxolaCustomTheme.current.cornerRadiusDp
+            if (radius <= 0) RectangleShape else RoundedCornerShape(minOf(radius, 24).dp)
+        }
         AppThemeStyle.STANDARD -> RoundedCornerShape(standard)
     }
 }
@@ -154,6 +169,26 @@ fun nothingCardBorder(
                 color = MaterialTheme.colorScheme.error.copy(alpha = 0.45f)
             )
         } else null
+        AppThemeStyle.AXOLA_CUSTOM -> {
+            val custom = LocalAxolaCustomTheme.current
+            when (custom.borderStyle) {
+                AxolaBorderStyle.NONE -> if (isAlert) {
+                    BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.55f))
+                } else null
+                AxolaBorderStyle.SUBTLE_1DP -> BorderStroke(
+                    width = 1.dp,
+                    color = if (isAlert) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
+                )
+                AxolaBorderStyle.NEON_GLOW -> BorderStroke(
+                    width = 1.5.dp,
+                    color = if (isAlert) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.78f)
+                    }
+                )
+            }
+        }
         AppThemeStyle.STANDARD -> null
     }
 }
@@ -397,6 +432,54 @@ fun AppThemedHeader(
             modifier = modifier,
             trailingContent = trailingContent
         )
+        AppThemeStyle.AXOLA_CUSTOM -> {
+            val custom = LocalAxolaCustomTheme.current
+            when (custom.typographyStyle) {
+                AxolaTypographyStyle.WINDOWS_LIGHT_LOWERCASE -> MetroPanoramaHeader(
+                    title = title,
+                    subtitle = subtitle,
+                    modifier = modifier,
+                    trailingContent = trailingContent
+                )
+                else -> {
+                    val displayTitle = if (custom.typographyStyle == AxolaTypographyStyle.NOTHING_DOT_MATRIX) {
+                        title.uppercase(Locale("nl", "NL"))
+                    } else {
+                        title
+                    }
+                    Row(
+                        modifier = modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = displayTitle,
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (!subtitle.isNullOrBlank()) {
+                                Text(
+                                    text = subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        if (trailingContent != null) {
+                            trailingContent()
+                        }
+                    }
+                }
+            }
+        }
         AppThemeStyle.NOTHING_OS, AppThemeStyle.STANDARD -> {
             Row(
                 modifier = modifier
@@ -462,6 +545,13 @@ fun NothingAwareDivider(
                 thickness = 1.dp,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.16f)
             )
+        }
+        AppThemeStyle.AXOLA_CUSTOM -> {
+            if (LocalAxolaCustomTheme.current.typographyStyle == AxolaTypographyStyle.NOTHING_DOT_MATRIX) {
+                NothingDottedDivider(modifier = modifier, color = MaterialTheme.colorScheme.outline)
+            } else {
+                HorizontalDivider(modifier = modifier, color = color)
+            }
         }
         AppThemeStyle.STANDARD -> HorizontalDivider(modifier = modifier, color = color)
     }

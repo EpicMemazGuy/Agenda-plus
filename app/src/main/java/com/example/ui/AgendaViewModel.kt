@@ -32,6 +32,9 @@ enum class MeerSection(val titleDutch: String) {
     STUDIEWIJZERS("Studiewijzers & Bronnen"),
     KWT("Keuzelessen (KWT)"),
     VAKKEN("Vakken Aanpassen"),
+    AXOLA_STUDIO("AXOLA Studio"),
+    CALENDAR_BRIDGE("Agenda & Smartwatch Sync"),
+    SILENT_MODE("Niet Storen tijdens les"),
     INSTELLINGEN("Instellingen")
 }
 
@@ -101,6 +104,10 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
     val subjectCustomizations: StateFlow<Map<String, SubjectCustomization>> = repository.subjectCustomizations
     val smartDefaultNamesEnabled: StateFlow<Boolean> = repository.smartDefaultNamesEnabled
     val useSubjectColorsForMetroTiles: StateFlow<Boolean> = repository.useSubjectColorsForMetroTiles
+    val axolaCustomTheme: StateFlow<AxolaCustomTheme> = repository.axolaCustomTheme
+    val calendarBridgeConfig: StateFlow<CalendarBridgeConfig> = repository.calendarBridgeConfig
+    val lessonDndConfig: StateFlow<LessonDndConfig> = repository.lessonDndConfig
+    val calendarSyncStatusMessage: StateFlow<String?> = repository.calendarSyncStatusMessage
     val eloUrl: StateFlow<String> = repository.eloUrl
     val studySites: StateFlow<List<StudySite>> = repository.studySites
     val weatherInfo: StateFlow<WeatherInfo?> = repository.weatherInfo
@@ -649,6 +656,54 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
 
     fun resetAllSubjectCustomizations() {
         repository.resetAllSubjectCustomizations()
+    }
+
+    fun setAxolaCustomTheme(theme: AxolaCustomTheme) {
+        repository.setAxolaCustomTheme(theme)
+    }
+
+    fun importAxolaThemeCode(rawCode: String): Result<AxolaCustomTheme> {
+        return repository.importAxolaThemeCode(rawCode)
+    }
+
+    fun setCalendarBridgeEnabled(enabled: Boolean) {
+        repository.setCalendarBridgeEnabled(enabled)
+    }
+
+    fun setCalendarHideCanceled(hide: Boolean) {
+        repository.setCalendarHideCanceled(hide)
+    }
+
+    fun syncCalendarNow() {
+        repository.syncCalendarNow()
+    }
+
+    fun clearCalendarSyncStatus() {
+        repository.clearCalendarSyncStatus()
+    }
+
+    fun exportIcsFile(
+        scope: com.example.automation.IcsScope,
+        referenceDateIso: String? = null
+    ): java.io.File {
+        val ctx = getApplication<Application>().applicationContext
+        val customState = SubjectCustomizationState(
+            customizations = subjectCustomizations.value,
+            smartDefaultNamesEnabled = smartDefaultNamesEnabled.value
+        )
+        return com.example.automation.CalendarBridgeManager.exportIcsFile(
+            context = ctx,
+            appointments = appointments.value,
+            customItems = customScheduleItems.value,
+            scope = scope,
+            customState = customState,
+            hideCanceled = calendarBridgeConfig.value.hideCanceledLessons,
+            referenceDateIso = referenceDateIso
+        )
+    }
+
+    fun setLessonDndConfig(config: LessonDndConfig) {
+        repository.setLessonDndConfig(config)
     }
 
     fun openSubjectEditor(code: String, detectedName: String = "") {

@@ -40,6 +40,20 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.toArgb
+import com.example.automation.IcsScope
+import com.example.ui.dialogs.ImageExportPreviewDialog
+import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.LocalAxolaCustomTheme
+import com.example.ui.theme.LocalDarkThemeActive
+import com.example.ui.theme.LocalMetroAccent
+import com.example.util.DayStoryMode
+import com.example.util.RoosterExportAspect
+import com.example.util.RoosterExportScope
+import com.example.util.StoryAndScheduleExporter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import com.example.data.db.CustomScheduleItem
 import com.example.model.AgendaStyle
 import com.example.model.Appointment
@@ -130,6 +144,8 @@ fun RoosterScreen(
     onOpenTestPrep: (key: String, subject: String, title: String, toetsstof: String, targetDateIso: String?) -> Unit = { _, _, _, _, _ -> },
     onEditSubject: (code: String, detectedName: String) -> Unit = { _, _ -> },
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
+    studentName: String = "",
+    onExportIcs: (IcsScope, String?) -> File? = { _, _ -> null },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -145,6 +161,22 @@ fun RoosterScreen(
         onHeaderCollapsedChange(usesFrostedInset && isScrolled)
     }
     var weekOffset by remember { mutableIntStateOf(0) }
+    var showShareOptionsSheet by remember { mutableStateOf(false) }
+    var showRoosterPngDialog by remember { mutableStateOf(false) }
+    var showStoryDialog by remember { mutableStateOf(false) }
+
+    // Rooster PNG state
+    var roosterScope by remember { mutableStateOf(RoosterExportScope.DAY) }
+    var roosterAspect by remember { mutableStateOf(RoosterExportAspect.LOCKSCREEN_9_195) }
+    var useSubjectCustomizations by remember { mutableStateOf(true) }
+    var roosterPngFile by remember { mutableStateOf<File?>(null) }
+    var isRoosterGenerating by remember { mutableStateOf(false) }
+
+    // Story state
+    var storyMode by remember { mutableStateOf(DayStoryMode.TODAY_SCHEDULE) }
+    var hideTeacherAndRoom by remember { mutableStateOf(false) }
+    var storyPngFile by remember { mutableStateOf<File?>(null) }
+    var isStoryGenerating by remember { mutableStateOf(false) }
 
     val (weekNumber, days) = remember(weekOffset, appointments, tasks) {
         val cal = Calendar.getInstance()
@@ -475,57 +507,7 @@ fun RoosterScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedButton(
-                        onClick = {
-                            val cal = Calendar.getInstance()
-                            cal.add(Calendar.DAY_OF_YEAR, 1)
-                            val isoFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                            val tomorrowIso = isoFmt.format(cal.time)
-                            val tomorrowLessons = appointments
-                                .filter { it.dateIso == tomorrowIso }
-                                .sortedWith(compareBy({ it.periodIndex }, { it.startTime }))
-                            val targetLessons = if (tomorrowLessons.isNotEmpty()) {
-                                tomorrowLessons
-                            } else {
-                                appointments
-                                    .filter {
-                                        if (hasIsoDates) it.dateIso == selectedDayItem.dateIso
-                                        else it.dayOfWeek == selectedDayItem.dayNumber
-                                    }
-                                    .sortedWith(compareBy({ it.periodIndex }, { it.startTime }))
-                            }
-                            val headerLabel = if (tomorrowLessons.isNotEmpty()) {
-                                "Rooster morgen ($tomorrowIso)"
-                            } else {
-                                "Rooster ${selectedDayItem.nameDutch} ${selectedDayItem.dateString}"
-                            }
-                            val summary = buildString {
-                                appendLine(headerLabel)
-                                if (targetLessons.isEmpty()) {
-                                    appendLine("Geen lessen gepland.")
-                                } else {
-                                    targetLessons.forEach { appt ->
-                                        val subj = (appt.subjectName.cleanSchoolText() ?: appt.title).capitalizeSubjectName()
-                                        val room = appt.classroom.cleanSchoolText()?.let { " • Lok. $it" } ?: ""
-                                        val status = when {
-                                            appt.isCanceled -> " [UITVAL]"
-                                            appt.isRelocated -> " [GEWIJZIGD]"
-                                            else -> ""
-                                        }
-                                        appendLine("${appt.periodIndex}e (${appt.startTime}): $subj$room$status")
-                                    }
-                                }
-                            }.trim()
-                            val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                            cb?.setPrimaryClip(ClipData.newPlainText("Rooster", summary))
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, headerLabel)
-                                putExtra(Intent.EXTRA_TEXT, summary)
-                            }
-                            runCatching {
-                                context.startActivity(Intent.createChooser(shareIntent, "Deel Rooster"))
-                            }
-                        },
+                        onClick = { showShareOptionsSheet = true },
                         shape = appButtonShape(),
                         modifier = Modifier
                             .height(40.dp)
@@ -769,6 +751,394 @@ fun RoosterScreen(
                 RoosterStatusLegendRow()
             }
         }
+    }
+
+    if (showShareOptionsSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showShareOptionsSheet = false },
+            shape = appCardShape(standard = 24.dp, nothing = 24.dp),
+            modifier = Modifier.testTag("rooster_share_options_sheet")
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                    .padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "Deel Rooster",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Kies hoe je het rooster wilt delen of exporteren",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // 1. Rooster als PNG
+                Surface(
+                    shape = appInnerCardShape(standard = 16.dp, nothing = 16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    border = nothingCardBorder(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(appInnerCardShape(standard = 16.dp, nothing = 16.dp))
+                        .clickable {
+                            showShareOptionsSheet = false
+                            showRoosterPngDialog = true
+                        }
+                        .testTag("rooster_share_opt_png")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Exporteer Rooster als PNG",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Dag, 3-Dagen of Week • Lockscreen, Compact 4:5 of Breed 16:9",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // 2. 9:16 Story
+                Surface(
+                    shape = appInnerCardShape(standard = 16.dp, nothing = 16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = nothingCardBorder(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(appInnerCardShape(standard = 16.dp, nothing = 16.dp))
+                        .clickable {
+                            showShareOptionsSheet = false
+                            showStoryDialog = true
+                        }
+                        .testTag("rooster_share_opt_story")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Deel Dag / Proefwerkweek 9:16 Story",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Volledige 1080x1920 poster voor TikTok, Insta of WhatsApp Status",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // 3. Deel als tekst
+                Surface(
+                    shape = appInnerCardShape(standard = 16.dp, nothing = 16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = nothingCardBorder(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(appInnerCardShape(standard = 16.dp, nothing = 16.dp))
+                        .clickable {
+                            showShareOptionsSheet = false
+                            val cal = Calendar.getInstance()
+                            cal.add(Calendar.DAY_OF_YEAR, 1)
+                            val isoFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                            val tomorrowIso = isoFmt.format(cal.time)
+                            val tomorrowLessons = appointments
+                                .filter { it.dateIso == tomorrowIso }
+                                .sortedWith(compareBy({ it.periodIndex }, { it.startTime }))
+                            val targetLessons = if (tomorrowLessons.isNotEmpty()) {
+                                tomorrowLessons
+                            } else {
+                                appointments
+                                    .filter {
+                                        if (hasIsoDates) it.dateIso == selectedDayItem.dateIso
+                                        else it.dayOfWeek == selectedDayItem.dayNumber
+                                    }
+                                    .sortedWith(compareBy({ it.periodIndex }, { it.startTime }))
+                            }
+                            val headerLabel = if (tomorrowLessons.isNotEmpty()) {
+                                "Rooster morgen ($tomorrowIso)"
+                            } else {
+                                "Rooster ${selectedDayItem.nameDutch} ${selectedDayItem.dateString}"
+                            }
+                            val summary = buildString {
+                                appendLine(headerLabel)
+                                if (targetLessons.isEmpty()) {
+                                    appendLine("Geen lessen gepland.")
+                                } else {
+                                    targetLessons.forEach { appt ->
+                                        val subj = (appt.subjectName.cleanSchoolText() ?: appt.title).capitalizeSubjectName()
+                                        val room = appt.classroom.cleanSchoolText()?.let { " • Lok. $it" } ?: ""
+                                        val status = when {
+                                            appt.isCanceled -> " [UITVAL]"
+                                            appt.isRelocated -> " [GEWIJZIGD]"
+                                            else -> ""
+                                        }
+                                        appendLine("${appt.periodIndex}e (${appt.startTime}): $subj$room$status")
+                                    }
+                                }
+                            }.trim()
+                            val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                            cb?.setPrimaryClip(ClipData.newPlainText("Rooster", summary))
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, headerLabel)
+                                putExtra(Intent.EXTRA_TEXT, summary)
+                            }
+                            runCatching {
+                                context.startActivity(Intent.createChooser(shareIntent, "Deel Rooster"))
+                            }
+                        }
+                        .testTag("rooster_share_opt_text")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Deel als tekst (Kopieer naar klembord)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Eenvoudig tekstbericht voor WhatsApp of chats",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // 4. iCalendar (.ics) exports
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            showShareOptionsSheet = false
+                            onExportIcs(IcsScope.ACTIVE_WEEK, selectedDayItem.dateIso)
+                        },
+                        shape = appButtonShape(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("rooster_share_opt_ics_week")
+                    ) {
+                        Icon(Icons.Default.CalendarViewWeek, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Week (.ics)")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            showShareOptionsSheet = false
+                            onExportIcs(IcsScope.FULL_MONTH, selectedDayItem.dateIso)
+                        },
+                        shape = appButtonShape(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("rooster_share_opt_ics_month")
+                    ) {
+                        Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Maand (.ics)")
+                    }
+                }
+            }
+        }
+    }
+
+    if (showRoosterPngDialog) {
+        val currentThemeStyle = LocalAppThemeStyle.current
+        val currentAxolaTheme = LocalAxolaCustomTheme.current
+        val currentMetroAccent = LocalMetroAccent.current
+        val isDark = LocalDarkThemeActive.current
+        val customState = LocalSubjectCustomizationState.current
+        val dynamicPrimaryArgb = MaterialTheme.colorScheme.primary.toArgb()
+
+        LaunchedEffect(
+            showRoosterPngDialog,
+            roosterScope,
+            roosterAspect,
+            useSubjectCustomizations,
+            selectedDayItem.dateIso,
+            appointments
+        ) {
+            isRoosterGenerating = true
+            val file = withContext(Dispatchers.IO) {
+                StoryAndScheduleExporter.renderRoosterPng(
+                    context = context,
+                    appointments = appointments,
+                    referenceDateIso = selectedDayItem.dateIso,
+                    scope = roosterScope,
+                    aspect = roosterAspect,
+                    useSubjectCustomizations = useSubjectCustomizations,
+                    studentName = studentName,
+                    customizationState = customState,
+                    themeStyle = currentThemeStyle,
+                    axolaTheme = currentAxolaTheme,
+                    metroAccent = currentMetroAccent,
+                    isDarkMode = isDark,
+                    dynamicPrimaryArgb = dynamicPrimaryArgb
+                )
+            }
+            roosterPngFile = file
+            isRoosterGenerating = false
+        }
+
+        ImageExportPreviewDialog(
+            title = "Rooster PNG Export",
+            pngFile = roosterPngFile,
+            isGenerating = isRoosterGenerating,
+            shareChooserTitle = "Deel Rooster PNG",
+            onDismiss = { showRoosterPngDialog = false },
+            controlsContent = {
+                Text(
+                    text = "Bereik",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    RoosterExportScope.entries.forEachIndexed { idx, sc ->
+                        SegmentedButton(
+                            selected = roosterScope == sc,
+                            onClick = { roosterScope = sc },
+                            shape = SegmentedButtonDefaults.itemShape(idx, RoosterExportScope.entries.size)
+                        ) {
+                            Text(sc.labelDutch, maxLines = 1)
+                        }
+                    }
+                }
+
+                Text(
+                    text = "Formaat & Aspect Ratio",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    RoosterExportAspect.entries.forEachIndexed { idx, asp ->
+                        SegmentedButton(
+                            selected = roosterAspect == asp,
+                            onClick = { roosterAspect = asp },
+                            shape = SegmentedButtonDefaults.itemShape(idx, RoosterExportAspect.entries.size)
+                        ) {
+                            Text(
+                                text = when (asp) {
+                                    RoosterExportAspect.LOCKSCREEN_9_195 -> "Lockscreen"
+                                    RoosterExportAspect.COMPACT_4_5 -> "4:5 Kaart"
+                                    RoosterExportAspect.WIDE_16_9 -> "16:9 Breed"
+                                },
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Toon vakkleuren & eigen bijnamen",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Switch(
+                        checked = useSubjectCustomizations,
+                        onCheckedChange = { useSubjectCustomizations = it }
+                    )
+                }
+            }
+        )
+    }
+
+    if (showStoryDialog) {
+        val currentThemeStyle = LocalAppThemeStyle.current
+        val currentAxolaTheme = LocalAxolaCustomTheme.current
+        val currentMetroAccent = LocalMetroAccent.current
+        val isDark = LocalDarkThemeActive.current
+        val customState = LocalSubjectCustomizationState.current
+        val dynamicPrimaryArgb = MaterialTheme.colorScheme.primary.toArgb()
+
+        LaunchedEffect(showStoryDialog, storyMode, hideTeacherAndRoom, selectedDayItem.dateIso, appointments, tasks) {
+            isStoryGenerating = true
+            val file = withContext(Dispatchers.IO) {
+                StoryAndScheduleExporter.renderDayOrExamStoryPng(
+                    context = context,
+                    appointments = appointments,
+                    tasks = tasks,
+                    targetDateIso = selectedDayItem.dateIso,
+                    mode = storyMode,
+                    hideTeacherAndRoom = hideTeacherAndRoom,
+                    studentName = studentName,
+                    customizationState = customState,
+                    themeStyle = currentThemeStyle,
+                    axolaTheme = currentAxolaTheme,
+                    metroAccent = currentMetroAccent,
+                    isDarkMode = isDark,
+                    dynamicPrimaryArgb = dynamicPrimaryArgb
+                )
+            }
+            storyPngFile = file
+            isStoryGenerating = false
+        }
+
+        ImageExportPreviewDialog(
+            title = if (storyMode == DayStoryMode.TODAY_SCHEDULE) "Mijn Dag 9:16 Story" else "Proefwerkweek 9:16 Story",
+            pngFile = storyPngFile,
+            isGenerating = isStoryGenerating,
+            shareChooserTitle = "Deel Story",
+            onDismiss = { showStoryDialog = false },
+            controlsContent = {
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    DayStoryMode.entries.forEachIndexed { idx, m ->
+                        SegmentedButton(
+                            selected = storyMode == m,
+                            onClick = { storyMode = m },
+                            shape = SegmentedButtonDefaults.itemShape(idx, DayStoryMode.entries.size)
+                        ) {
+                            Text(m.labelDutch)
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Verberg docent & lokaalnamen",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Switch(
+                        checked = hideTeacherAndRoom,
+                        onCheckedChange = { hideTeacherAndRoom = it }
+                    )
+                }
+            }
+        )
     }
 }
 

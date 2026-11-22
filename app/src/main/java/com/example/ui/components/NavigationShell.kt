@@ -37,7 +37,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.AxolaTypographyStyle
 import com.example.ui.AppTab
+import com.example.ui.theme.LocalAxolaCustomTheme
 import com.example.ui.theme.LocalDarkThemeActive
 import com.example.ui.theme.NothingAsh
 import com.example.ui.theme.NothingBlack
@@ -67,6 +69,8 @@ fun AppBottomNavigationBar(
     val oneUiMode = isOneUi85
     val windowsPhoneMode = isWindowsPhone
     val iosMode = isIosLiquidGlass
+    val axolaMode = isAxolaCustom
+    val axolaTheme = LocalAxolaCustomTheme.current
     val isDark = LocalDarkThemeActive.current
 
     val navItems = remember {
@@ -292,11 +296,23 @@ fun AppBottomNavigationBar(
             NavigationBar(
                 modifier = Modifier.testTag("main_navigation_bar"),
                 windowInsets = WindowInsets.navigationBars,
-                containerColor = if (nothingMode) NothingBlack else MaterialTheme.colorScheme.surfaceContainer,
-                tonalElevation = if (nothingMode) 0.dp else NavigationBarDefaults.Elevation
+                containerColor = when {
+                    nothingMode -> NothingBlack
+                    axolaMode -> MaterialTheme.colorScheme.surfaceContainer
+                    else -> MaterialTheme.colorScheme.surfaceContainer
+                },
+                tonalElevation = if (nothingMode || axolaMode) 0.dp else NavigationBarDefaults.Elevation
             ) {
                 navItems.forEach { item ->
                     val isSelected = currentTab == item.tab
+                    val labelText = when {
+                        nothingMode -> item.tab.title.uppercase()
+                        axolaMode && axolaTheme.typographyStyle == AxolaTypographyStyle.NOTHING_DOT_MATRIX ->
+                            item.tab.title.uppercase()
+                        axolaMode && axolaTheme.typographyStyle == AxolaTypographyStyle.WINDOWS_LIGHT_LOWERCASE ->
+                            item.tab.title.lowercase()
+                        else -> item.tab.title
+                    }
                     NavigationBarItem(
                         selected = isSelected,
                         onClick = { onTabSelected(item.tab) },
@@ -308,8 +324,10 @@ fun AppBottomNavigationBar(
                         },
                         label = {
                             Text(
-                                text = if (nothingMode) item.tab.title.uppercase() else item.tab.title,
-                                style = MaterialTheme.typography.labelSmall
+                                text = labelText,
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         },
                         colors = if (nothingMode) {

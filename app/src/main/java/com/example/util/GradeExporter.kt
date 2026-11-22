@@ -13,7 +13,11 @@ import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import androidx.core.content.FileProvider
 import com.example.model.AppThemeStyle
+import com.example.model.AxolaCustomTheme
 import com.example.model.GradeItem
+import com.example.model.MetroAccent
+import com.example.model.SubjectCustomizationCatalog
+import com.example.model.SubjectCustomizationState
 import com.example.model.SubjectGradeSummary
 import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
@@ -39,7 +43,10 @@ object GradeExporter {
         studentName: String,
         appThemeStyle: AppThemeStyle,
         isDarkMode: Boolean = true,
-        dynamicPrimaryArgb: Int? = null
+        dynamicPrimaryArgb: Int? = null,
+        axolaCustomTheme: AxolaCustomTheme = AxolaCustomTheme(),
+        metroAccent: MetroAccent = MetroAccent.COBALT,
+        customizationState: SubjectCustomizationState = SubjectCustomizationState()
     ): File {
         val items = selectedGrades.take(8)
         val width = 1080
@@ -50,104 +57,86 @@ object GradeExporter {
 
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
+        val palette = StoryAndScheduleExporter.resolvePalette(
+            themeStyle = appThemeStyle,
+            axolaTheme = axolaCustomTheme,
+            metroAccent = metroAccent,
+            isDarkMode = isDarkMode,
+            dynamicPrimaryArgb = dynamicPrimaryArgb
+        )
         val isNothing = appThemeStyle == AppThemeStyle.NOTHING_OS
         val isOneUi = appThemeStyle == AppThemeStyle.ONE_UI
-        val oneUiLight = isOneUi && !isDarkMode
-        val resolvedDynamicPrimary = dynamicPrimaryArgb ?: if (oneUiLight) Color.rgb(3, 129, 254) else Color.rgb(62, 145, 255)
+        val oneUiLight = !palette.isDark
 
         // Background
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-        when {
-            isNothing -> {
-                bgPaint.color = Color.BLACK
-                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+        if (palette.backgroundTop == palette.backgroundBottom) {
+            bgPaint.color = palette.backgroundTop
+        } else {
+            bgPaint.shader = LinearGradient(
+                0f, 0f, width.toFloat(), height.toFloat(),
+                intArrayOf(palette.backgroundTop, palette.backgroundBottom),
+                null,
+                Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
 
-                // Subtle dot-matrix grid in background
-                val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = Color.argb(32, 255, 255, 255)
-                }
-                var gx = 36f
-                while (gx < width) {
-                    var gy = 36f
-                    while (gy < height) {
-                        canvas.drawCircle(gx, gy, 2.2f, dotPaint)
-                        gy += 36f
-                    }
-                    gx += 36f
-                }
+        if (palette.drawDotMatrixGrid) {
+            val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = if (palette.isDark) Color.argb(32, 255, 255, 255) else Color.argb(24, 0, 0, 0)
             }
-            isOneUi -> {
-                bgPaint.color = if (oneUiLight) Color.rgb(246, 246, 248) else Color.BLACK
-                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
-            }
-            else -> {
-                bgPaint.shader = LinearGradient(
-                    0f, 0f, width.toFloat(), height.toFloat(),
-                    intArrayOf(
-                        Color.rgb(18, 25, 48),
-                        Color.rgb(28, 39, 72),
-                        Color.rgb(19, 26, 46)
-                    ),
-                    null,
-                    Shader.TileMode.CLAMP
-                )
-                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+            var gx = 36f
+            while (gx < width) {
+                var gy = 36f
+                while (gy < height) {
+                    canvas.drawCircle(gx, gy, 2.2f, dotPaint)
+                    gy += 36f
+                }
+                gx += 36f
             }
         }
 
         val cardBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = when {
-                isNothing -> Color.rgb(22, 22, 24)
-                oneUiLight -> Color.WHITE
-                isOneUi -> Color.rgb(23, 23, 27)
-                else -> Color.argb(225, 29, 40, 74)
-            }
+            color = palette.cardColor
         }
         val cardBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = if (isNothing) 3f else 2f
-            color = when {
-                isNothing -> Color.rgb(62, 62, 68)
-                oneUiLight -> Color.argb(18, 0, 0, 0)
-                isOneUi -> Color.argb(24, 255, 255, 255)
-                else -> Color.argb(90, 147, 197, 253)
-            }
+            strokeWidth = palette.borderWidthPx.coerceAtLeast(1f)
+            color = palette.borderColor ?: Color.TRANSPARENT
         }
-        val accentColor = when {
-            isNothing -> Color.rgb(215, 25, 32)
-            isOneUi -> resolvedDynamicPrimary
-            else -> Color.rgb(96, 165, 250)
-        }
-        val primaryTextColor = if (oneUiLight) Color.rgb(16, 19, 24) else Color.WHITE
-        val secondaryTextColor = if (oneUiLight) Color.rgb(93, 100, 114) else Color.rgb(180, 188, 205)
+        val accentColor = palette.primaryAccent
+        val primaryTextColor = palette.primaryText
+        val secondaryTextColor = palette.secondaryText
         val passingColor = when {
             isNothing -> Color.rgb(245, 245, 247)
-            oneUiLight -> resolvedDynamicPrimary
-            isOneUi -> resolvedDynamicPrimary
+            isOneUi || appThemeStyle == AppThemeStyle.WINDOWS_PHONE || appThemeStyle == AppThemeStyle.IOS_LIQUID_GLASS || appThemeStyle == AppThemeStyle.AXOLA_CUSTOM -> accentColor
             else -> Color.rgb(110, 231, 183)
         }
         val failingColor = when {
             isNothing -> Color.rgb(215, 25, 32)
-            oneUiLight -> Color.rgb(211, 47, 47)
-            isOneUi -> Color.rgb(255, 107, 107)
+            !palette.isDark -> Color.rgb(211, 47, 47)
             else -> Color.rgb(248, 113, 113)
         }
 
         // Outer card frame
-        val outerRadius = if (isOneUi) 54f else 48f
+        val outerRadius = palette.cornerRadiusPx
         val outerRect = RectF(48f, 48f, width - 48f, height - 48f)
         canvas.drawRoundRect(outerRect, outerRadius, outerRadius, cardBgPaint)
-        canvas.drawRoundRect(outerRect, outerRadius, outerRadius, cardBorderPaint)
+        if (palette.borderColor != null) {
+            canvas.drawRoundRect(outerRect, outerRadius, outerRadius, cardBorderPaint)
+        }
 
         // Accent pill
         val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = accentColor }
         val pillRect = RectF(96f, 96f, 340f, 154f)
-        canvas.drawRoundRect(pillRect, 29f, 29f, pillPaint)
+        val pillRad = if (outerRadius == 0f) 0f else 29f
+        canvas.drawRoundRect(pillRect, pillRad, pillRad, pillPaint)
 
         val pillTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = if (isOneUi && !oneUiLight) Color.BLACK else Color.WHITE
             textSize = 28f
-            typeface = Typeface.create(if (isNothing) Typeface.MONOSPACE else Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(palette.typefaceFamily, Typeface.BOLD)
         }
         canvas.drawText("AGENDA+", 126f, 135f, pillTextPaint)
 
@@ -162,10 +151,15 @@ object GradeExporter {
         val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = primaryTextColor
             textSize = 54f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(palette.typefaceFamily, Typeface.BOLD)
+        }
+        val heading = when {
+            isNothing -> "CIJFERKAART"
+            palette.lowercaseHeaders -> "mijn cijfers"
+            else -> "Mijn Cijfers"
         }
         canvas.drawText(
-            if (isNothing) "CIJFERKAART" else "Mijn Cijfers",
+            heading,
             96f,
             232f,
             titlePaint
@@ -181,17 +175,12 @@ object GradeExporter {
         // Grade rows
         var curY = headerHeight.toFloat()
         val rowBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = when {
-                isNothing -> Color.rgb(34, 34, 38)
-                oneUiLight -> Color.rgb(241, 243, 247)
-                isOneUi -> Color.rgb(32, 32, 38)
-                else -> Color.argb(170, 17, 24, 48)
-            }
+            color = palette.elevatedCardColor
         }
         val rowSubjectPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = primaryTextColor
             textSize = 34f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(palette.typefaceFamily, Typeface.BOLD)
         }
         val rowDescPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = secondaryTextColor
@@ -200,18 +189,23 @@ object GradeExporter {
         val scorePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = 48f
             textAlign = Paint.Align.CENTER
-            typeface = Typeface.create(if (isNothing) Typeface.MONOSPACE else Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(palette.typefaceFamily, Typeface.BOLD)
         }
 
-        val rowRadius = if (isOneUi) 42f else 28f
+        val rowRadius = if (outerRadius == 0f) 0f else (outerRadius * 0.72f)
         items.forEach { grade ->
             val rowRect = RectF(88f, curY, width - 88f, curY + rowHeight - 20f)
             canvas.drawRoundRect(rowRect, rowRadius, rowRadius, rowBgPaint)
-            if (isNothing || isOneUi) {
+            if (palette.borderColor != null) {
                 canvas.drawRoundRect(rowRect, rowRadius, rowRadius, cardBorderPaint)
             }
 
-            val subjText = ellipsizeText(grade.subjectName.capitalizeSubjectName(), 22)
+            val resolved = SubjectCustomizationCatalog.resolveSubject(
+                rawSubject = grade.subjectName.cleanSchoolText() ?: grade.subjectCode,
+                explicitCode = grade.subjectCode,
+                state = customizationState
+            )
+            val subjText = ellipsizeText(resolved.displayName, 22)
             val descText = ellipsizeText("${grade.description} • Weging ${grade.weight}x", 40)
             canvas.drawText(subjText, 120f, curY + 54f, rowSubjectPaint)
             canvas.drawText(descText, 120f, curY + 96f, rowDescPaint)
@@ -220,20 +214,23 @@ object GradeExporter {
             val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = when {
                     isNothing -> if (grade.isPassing) Color.rgb(48, 48, 54) else Color.rgb(120, 18, 24)
-                    isOneUi && grade.isPassing -> Color.argb(
+                    outerRadius == 0f -> if (grade.isPassing) accentColor else Color.rgb(229, 20, 0)
+                    else -> if (grade.isPassing) Color.argb(
                         38,
-                        Color.red(resolvedDynamicPrimary),
-                        Color.green(resolvedDynamicPrimary),
-                        Color.blue(resolvedDynamicPrimary)
-                    )
-                    isOneUi -> Color.argb(38, 229, 57, 53)
-                    else -> if (grade.isPassing) Color.argb(40, 16, 185, 129) else Color.argb(65, 220, 38, 38)
+                        Color.red(accentColor),
+                        Color.green(accentColor),
+                        Color.blue(accentColor)
+                    ) else Color.argb(48, 220, 38, 38)
                 }
             }
-            val badgeRadius = if (isOneUi) 999f else 22f
+            val badgeRadius = when {
+                outerRadius == 0f -> 0f
+                isOneUi -> 999f
+                else -> 22f
+            }
             canvas.drawRoundRect(badgeRect, badgeRadius, badgeRadius, badgePaint)
 
-            scorePaint.color = if (grade.isPassing) passingColor else failingColor
+            scorePaint.color = if (outerRadius == 0f) Color.WHITE else if (grade.isPassing) passingColor else failingColor
             val scoreStr = String.format(Locale.US, "%.1f", grade.score)
             canvas.drawText(scoreStr, badgeRect.centerX(), badgeRect.centerY() + 17f, scorePaint)
 
@@ -283,52 +280,57 @@ object GradeExporter {
         studentName: String,
         appThemeStyle: AppThemeStyle,
         isDarkMode: Boolean = true,
-        dynamicPrimaryArgb: Int? = null
+        dynamicPrimaryArgb: Int? = null,
+        axolaCustomTheme: AxolaCustomTheme = AxolaCustomTheme(),
+        metroAccent: MetroAccent = MetroAccent.COBALT,
+        customizationState: SubjectCustomizationState = SubjectCustomizationState()
     ): File {
         val width = 1080
         val height = 1350
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
+        val palette = StoryAndScheduleExporter.resolvePalette(
+            themeStyle = appThemeStyle,
+            axolaTheme = axolaCustomTheme,
+            metroAccent = metroAccent,
+            isDarkMode = isDarkMode,
+            dynamicPrimaryArgb = dynamicPrimaryArgb
+        )
         val isNothing = appThemeStyle == AppThemeStyle.NOTHING_OS
-        val isOneUi = appThemeStyle == AppThemeStyle.ONE_UI
-        val oneUiLight = isOneUi && !isDarkMode
-        val resolvedDynamicPrimary = dynamicPrimaryArgb ?: if (oneUiLight) Color.rgb(3, 129, 254) else Color.rgb(62, 145, 255)
+        val oneUiLight = !palette.isDark
 
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-        when {
-            isNothing -> {
-                bgPaint.color = Color.BLACK
-                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
-                val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(36, 255, 255, 255) }
-                var gx = 36f
-                while (gx < width) {
-                    var gy = 36f
-                    while (gy < height) {
-                        canvas.drawCircle(gx, gy, 2.2f, dotPaint)
-                        gy += 36f
-                    }
-                    gx += 36f
+        if (palette.backgroundTop == palette.backgroundBottom) {
+            bgPaint.color = palette.backgroundTop
+        } else {
+            bgPaint.shader = LinearGradient(
+                0f, 0f, width.toFloat(), height.toFloat(),
+                intArrayOf(palette.backgroundTop, palette.backgroundBottom),
+                null,
+                Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+
+        if (palette.drawDotMatrixGrid) {
+            val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = if (palette.isDark) Color.argb(36, 255, 255, 255) else Color.argb(24, 0, 0, 0)
+            }
+            var gx = 36f
+            while (gx < width) {
+                var gy = 36f
+                while (gy < height) {
+                    canvas.drawCircle(gx, gy, 2.2f, dotPaint)
+                    gy += 36f
                 }
-            }
-            isOneUi -> {
-                bgPaint.color = if (oneUiLight) Color.rgb(246, 246, 248) else Color.BLACK
-                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
-            }
-            else -> {
-                bgPaint.shader = LinearGradient(
-                    0f, 0f, width.toFloat(), height.toFloat(),
-                    intArrayOf(Color.rgb(16, 23, 46), Color.rgb(30, 42, 78), Color.rgb(18, 25, 48)),
-                    null,
-                    Shader.TileMode.CLAMP
-                )
-                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+                gx += 36f
             }
         }
 
         val rarityColor = when {
             grade.score >= 8.0 -> Color.rgb(245, 158, 11)
-            grade.score >= 5.5 -> if (isOneUi) resolvedDynamicPrimary else Color.rgb(124, 58, 237)
+            grade.score >= 5.5 -> palette.primaryAccent
             else -> Color.rgb(215, 25, 32)
         }
         val rarityLabel = when {
@@ -340,29 +342,25 @@ object GradeExporter {
         }
 
         val cardBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = when {
-                isNothing -> Color.rgb(20, 20, 22)
-                oneUiLight -> Color.WHITE
-                isOneUi -> Color.rgb(23, 23, 27)
-                else -> Color.argb(235, 27, 37, 68)
-            }
+            color = palette.cardColor
         }
         val cardBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = 4f
             color = rarityColor
         }
-        val outerRadius = if (isOneUi) 64f else 52f
+        val outerRadius = palette.cornerRadiusPx
         val outerRect = RectF(64f, 64f, width - 64f, height - 64f)
         canvas.drawRoundRect(outerRect, outerRadius, outerRadius, cardBgPaint)
         canvas.drawRoundRect(outerRect, outerRadius, outerRadius, cardBorderPaint)
 
-        val primaryText = if (oneUiLight) Color.rgb(16, 19, 24) else Color.WHITE
-        val secondaryText = if (oneUiLight) Color.rgb(93, 100, 114) else Color.rgb(185, 193, 210)
+        val primaryText = palette.primaryText
+        val secondaryText = palette.secondaryText
 
         // Rarity badge
         val badgeRect = RectF(112f, 128f, 460f, 196f)
-        canvas.drawRoundRect(badgeRect, 34f, 34f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = rarityColor })
+        val badgeRad = if (outerRadius == 0f) 0f else 34f
+        canvas.drawRoundRect(badgeRect, badgeRad, badgeRad, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = rarityColor })
         canvas.drawText(
             rarityLabel,
             badgeRect.centerX(),
@@ -371,7 +369,7 @@ object GradeExporter {
                 color = Color.WHITE
                 textSize = 30f
                 textAlign = Paint.Align.CENTER
-                typeface = Typeface.create(if (isNothing) Typeface.MONOSPACE else Typeface.DEFAULT, Typeface.BOLD)
+                typeface = Typeface.create(palette.typefaceFamily, Typeface.BOLD)
             }
         )
 
@@ -421,7 +419,12 @@ object GradeExporter {
         )
 
         // Subject + Description + Metadata
-        val subjectTitle = ellipsizeText(grade.subjectName.capitalizeSubjectName(), 24)
+        val resolvedSubj = SubjectCustomizationCatalog.resolveSubject(
+            rawSubject = grade.subjectName.cleanSchoolText() ?: grade.subjectCode,
+            explicitCode = grade.subjectCode,
+            state = customizationState
+        )
+        val subjectTitle = ellipsizeText(resolvedSubj.displayName, 24)
         canvas.drawText(
             subjectTitle,
             centerX,
@@ -430,7 +433,7 @@ object GradeExporter {
                 color = primaryText
                 textSize = 58f
                 textAlign = Paint.Align.CENTER
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                typeface = Typeface.create(palette.typefaceFamily, Typeface.BOLD)
             }
         )
         canvas.drawText(

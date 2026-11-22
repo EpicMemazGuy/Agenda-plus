@@ -57,8 +57,19 @@ import com.example.ui.components.oneUiPillContainerColor
 import com.example.ui.components.oneUiPillContentColor
 import com.example.ui.components.rememberSubjectDisplay
 import com.example.ui.theme.MetroCrimson
+import androidx.compose.ui.graphics.toArgb
+import com.example.ui.dialogs.ImageExportPreviewDialog
+import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.LocalAxolaCustomTheme
+import com.example.ui.theme.LocalDarkThemeActive
+import com.example.ui.theme.LocalMetroAccent
+import com.example.util.DayStoryMode
+import com.example.util.StoryAndScheduleExporter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import kotlin.math.roundToInt
 
 private sealed class TodayTimelineEntry(val sortTime: String, val key: String) {
@@ -106,6 +117,7 @@ fun TodayFeedScreen(
     onDeleteCustomScheduleItem: (Long) -> Unit = {},
     onOpenKwtSlot: (Appointment) -> Unit = {},
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
+    studentName: String = "",
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -121,6 +133,11 @@ fun TodayFeedScreen(
         onHeaderCollapsedChange(usesFrostedInset && isScrolled)
     }
     var showCityPickerDialog by remember { mutableStateOf(false) }
+    var showStoryExportDialog by remember { mutableStateOf(false) }
+    var storyMode by remember { mutableStateOf(DayStoryMode.TODAY_SCHEDULE) }
+    var hideTeacherAndRoom by remember { mutableStateOf(false) }
+    var storyPngFile by remember { mutableStateOf<File?>(null) }
+    var isStoryGenerating by remember { mutableStateOf(false) }
 
     val todayContext = remember(appointments) {
         val cal = java.util.Calendar.getInstance()
@@ -722,7 +739,21 @@ fun TodayFeedScreen(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { showStoryExportDialog = true },
+                        shape = appButtonShape(),
+                        modifier = Modifier
+                            .height(36.dp)
+                            .testTag("today_story_export_button")
+                    ) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("9:16 Story")
+                    }
                     TextButton(
                         onClick = onAddCustomScheduleItem,
                         modifier = Modifier.testTag("today_add_custom_block_button")
@@ -854,6 +885,76 @@ fun TodayFeedScreen(
             onSelectCity = { city ->
                 onSelectWeatherCity(city.name, city.latitude, city.longitude)
                 showCityPickerDialog = false
+            }
+        )
+    }
+
+    if (showStoryExportDialog) {
+        val currentThemeStyle = LocalAppThemeStyle.current
+        val currentAxolaTheme = LocalAxolaCustomTheme.current
+        val currentMetroAccent = LocalMetroAccent.current
+        val isDark = LocalDarkThemeActive.current
+        val customState = LocalSubjectCustomizationState.current
+        val dynamicPrimaryArgb = MaterialTheme.colorScheme.primary.toArgb()
+        val cal = java.util.Calendar.getInstance()
+        val todayIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(cal.time)
+
+        LaunchedEffect(showStoryExportDialog, storyMode, hideTeacherAndRoom, appointments, tasks) {
+            isStoryGenerating = true
+            val file = withContext(Dispatchers.IO) {
+                StoryAndScheduleExporter.renderDayOrExamStoryPng(
+                    context = context,
+                    appointments = appointments,
+                    tasks = tasks,
+                    targetDateIso = todayIso,
+                    mode = storyMode,
+                    hideTeacherAndRoom = hideTeacherAndRoom,
+                    studentName = studentName,
+                    customizationState = customState,
+                    themeStyle = currentThemeStyle,
+                    axolaTheme = currentAxolaTheme,
+                    metroAccent = currentMetroAccent,
+                    isDarkMode = isDark,
+                    dynamicPrimaryArgb = dynamicPrimaryArgb
+                )
+            }
+            storyPngFile = file
+            isStoryGenerating = false
+        }
+
+        ImageExportPreviewDialog(
+            title = if (storyMode == DayStoryMode.TODAY_SCHEDULE) "Mijn Dag 9:16 Story" else "Proefwerkweek 9:16 Story",
+            pngFile = storyPngFile,
+            isGenerating = isStoryGenerating,
+            shareChooserTitle = "Deel Story",
+            onDismiss = { showStoryExportDialog = false },
+            controlsContent = {
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    DayStoryMode.entries.forEachIndexed { idx, m ->
+                        SegmentedButton(
+                            selected = storyMode == m,
+                            onClick = { storyMode = m },
+                            shape = SegmentedButtonDefaults.itemShape(idx, DayStoryMode.entries.size)
+                        ) {
+                            Text(m.labelDutch)
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Verberg docent & lokaalnamen",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Switch(
+                        checked = hideTeacherAndRoom,
+                        onCheckedChange = { hideTeacherAndRoom = it }
+                    )
+                }
             }
         )
     }

@@ -98,11 +98,13 @@ class MainActivity : ComponentActivity() {
             val appThemeStyle by viewModel.appThemeStyle.collectAsStateWithLifecycle()
             val darkModePreference by viewModel.darkModePreference.collectAsStateWithLifecycle()
             val metroAccent by viewModel.metroAccent.collectAsStateWithLifecycle()
+            val axolaCustomTheme by viewModel.axolaCustomTheme.collectAsStateWithLifecycle()
 
             AgendaPlusTheme(
                 appThemeStyle = appThemeStyle,
                 darkModePreference = darkModePreference,
-                metroAccent = metroAccent
+                metroAccent = metroAccent,
+                axolaCustomTheme = axolaCustomTheme
             ) {
                 LaunchedEffect(pendingWidgetTab) {
                     pendingWidgetTab?.let { tab ->
@@ -178,6 +180,10 @@ fun AgendaPlusApp(
     val appThemeStyle by viewModel.appThemeStyle.collectAsStateWithLifecycle()
     val darkModePreference by viewModel.darkModePreference.collectAsStateWithLifecycle()
     val metroAccent by viewModel.metroAccent.collectAsStateWithLifecycle()
+    val axolaCustomTheme by viewModel.axolaCustomTheme.collectAsStateWithLifecycle()
+    val calendarBridgeConfig by viewModel.calendarBridgeConfig.collectAsStateWithLifecycle()
+    val lessonDndConfig by viewModel.lessonDndConfig.collectAsStateWithLifecycle()
+    val calendarSyncStatusMessage by viewModel.calendarSyncStatusMessage.collectAsStateWithLifecycle()
     val subjectCustomizations by viewModel.subjectCustomizations.collectAsStateWithLifecycle()
     val smartDefaultNamesEnabled by viewModel.smartDefaultNamesEnabled.collectAsStateWithLifecycle()
     val useSubjectColorsForMetroTiles by viewModel.useSubjectColorsForMetroTiles.collectAsStateWithLifecycle()
@@ -504,6 +510,7 @@ fun AgendaPlusApp(
                             onDeleteCustomScheduleItem = { id -> viewModel.deleteCustomScheduleItem(id) },
                             onOpenKwtSlot = { appt -> viewModel.openKwtSlotSheet(appt) },
                             onHeaderCollapsedChange = { isHeaderCollapsed = it },
+                            studentName = session.studentName,
                             modifier = contentModifier
                         )
                     }
@@ -538,6 +545,8 @@ fun AgendaPlusApp(
                                 viewModel.openSubjectEditor(code, detectedName)
                             },
                             onHeaderCollapsedChange = { isHeaderCollapsed = it },
+                            studentName = session.studentName,
+                            onExportIcs = { scope, rawTitle -> viewModel.exportIcsFile(scope, rawTitle) },
                             modifier = contentModifier
                         )
                     }
@@ -690,6 +699,18 @@ fun AgendaPlusApp(
                             onSyncNow = { viewModel.syncWithWebNow() },
                             onPullLatest = { viewModel.pullFromWebNow() },
                             onUnpair = { viewModel.unpairFromWeb() },
+                            appointments = appointments,
+                            axolaCustomTheme = axolaCustomTheme,
+                            calendarBridgeConfig = calendarBridgeConfig,
+                            lessonDndConfig = lessonDndConfig,
+                            calendarSyncStatusMessage = calendarSyncStatusMessage,
+                            onApplyAxolaCustomTheme = { viewModel.setAxolaCustomTheme(it) },
+                            onImportAxolaThemeCode = { viewModel.importAxolaThemeCode(it) },
+                            onSetCalendarBridgeEnabled = { viewModel.setCalendarBridgeEnabled(it) },
+                            onSetCalendarHideCanceled = { viewModel.setCalendarHideCanceled(it) },
+                            onSyncCalendarNow = { viewModel.syncCalendarNow() },
+                            onExportIcsFile = { scope -> viewModel.exportIcsFile(scope) },
+                            onSetLessonDndConfig = { viewModel.setLessonDndConfig(it) },
                             onHeaderCollapsedChange = { isHeaderCollapsed = it },
                             modifier = contentModifier
                         )
@@ -843,6 +864,8 @@ fun AgendaPlusApp(
                 overallAverage = overallAvg,
                 studentName = session.studentName,
                 appThemeStyle = appThemeStyle,
+                axolaCustomTheme = axolaCustomTheme,
+                metroAccent = metroAccent,
                 onDismiss = { viewModel.closeGradeExportSheet() }
             )
         }

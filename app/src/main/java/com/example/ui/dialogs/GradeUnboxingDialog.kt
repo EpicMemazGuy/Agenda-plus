@@ -43,8 +43,12 @@ import com.example.model.GradeUnboxingMode
 import com.example.model.capitalizeSubjectName
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.LocalSubjectCustomizationState
+import com.example.ui.theme.LocalAxolaCustomTheme
 import com.example.ui.theme.LocalDarkThemeActive
+import com.example.ui.theme.LocalMetroAccent
 import com.example.util.GradeExporter
+import com.example.util.StoryAndScheduleExporter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -296,38 +300,86 @@ private fun GradeRevealedCelebrationCard(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            FilledTonalButton(
-                onClick = {
-                    val primaryArgb = android.graphics.Color.argb(
-                        (dynamicPrimary.alpha * 255).toInt(),
-                        (dynamicPrimary.red * 255).toInt(),
-                        (dynamicPrimary.green * 255).toInt(),
-                        (dynamicPrimary.blue * 255).toInt()
-                    )
-                    val file = GradeExporter.renderSingleGradeUnboxingCardPng(
-                        context = context,
-                        grade = grade,
-                        studentName = studentName,
-                        appThemeStyle = appThemeStyle,
-                        isDarkMode = isDarkMode,
-                        dynamicPrimaryArgb = primaryArgb
-                    )
-                    GradeExporter.shareFileViaProvider(
-                        context = context,
-                        file = file,
-                        mimeType = "image/png",
-                        chooserTitle = "Deel cijferkaart"
-                    )
-                },
-                shape = RoundedCornerShape(percent = 50),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag("unboxing_share_card_button")
+            val customizationState = LocalSubjectCustomizationState.current
+            val metroAccent = LocalMetroAccent.current
+            val axolaCustomTheme = LocalAxolaCustomTheme.current
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Default.IosShare, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Deel Cijferkaart", fontWeight = FontWeight.Bold)
+                FilledTonalButton(
+                    onClick = {
+                        val primaryArgb = android.graphics.Color.argb(
+                            (dynamicPrimary.alpha * 255).toInt(),
+                            (dynamicPrimary.red * 255).toInt(),
+                            (dynamicPrimary.green * 255).toInt(),
+                            (dynamicPrimary.blue * 255).toInt()
+                        )
+                        val file = StoryAndScheduleExporter.renderGradeStoryPng(
+                            context = context,
+                            grade = grade,
+                            subjectAverage = null,
+                            overallAverage = null,
+                            studentName = studentName,
+                            customizationState = customizationState,
+                            themeStyle = appThemeStyle,
+                            axolaTheme = axolaCustomTheme,
+                            metroAccent = metroAccent,
+                            isDarkMode = isDarkMode,
+                            dynamicPrimaryArgb = primaryArgb
+                        )
+                        GradeExporter.shareFileViaProvider(
+                            context = context,
+                            file = file,
+                            mimeType = "image/png",
+                            chooserTitle = "Deel 9:16 Cijfer Story"
+                        )
+                    },
+                    shape = RoundedCornerShape(percent = 50),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("unboxing_share_story_button")
+                ) {
+                    Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("9:16 Story", fontWeight = FontWeight.Bold)
+                }
+
+                FilledTonalButton(
+                    onClick = {
+                        val primaryArgb = android.graphics.Color.argb(
+                            (dynamicPrimary.alpha * 255).toInt(),
+                            (dynamicPrimary.red * 255).toInt(),
+                            (dynamicPrimary.green * 255).toInt(),
+                            (dynamicPrimary.blue * 255).toInt()
+                        )
+                        val file = GradeExporter.renderSingleGradeUnboxingCardPng(
+                            context = context,
+                            grade = grade,
+                            studentName = studentName,
+                            appThemeStyle = appThemeStyle,
+                            isDarkMode = isDarkMode,
+                            dynamicPrimaryArgb = primaryArgb
+                        )
+                        GradeExporter.shareFileViaProvider(
+                            context = context,
+                            file = file,
+                            mimeType = "image/png",
+                            chooserTitle = "Deel Cijferkaart"
+                        )
+                    },
+                    shape = RoundedCornerShape(percent = 50),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("unboxing_share_card_button")
+                ) {
+                    Icon(Icons.Default.IosShare, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Cijferkaart", fontWeight = FontWeight.Bold)
+                }
             }
 
             Row(

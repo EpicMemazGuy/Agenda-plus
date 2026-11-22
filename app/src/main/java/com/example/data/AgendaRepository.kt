@@ -1,6 +1,8 @@
 package com.example.data
 
 import android.content.Context
+import com.example.automation.CalendarBridgeManager
+import com.example.automation.LessonDndScheduler
 import com.example.data.db.AgendaDatabase
 import com.example.data.db.CustomScheduleItem
 import com.example.data.db.CustomScheduleRepository
@@ -202,6 +204,18 @@ class AgendaRepository(private val context: Context? = null) {
     private val _useSubjectColorsForMetroTiles = MutableStateFlow(prefs?.isUseSubjectColorsForMetroTiles() ?: false)
     val useSubjectColorsForMetroTiles: StateFlow<Boolean> = _useSubjectColorsForMetroTiles.asStateFlow()
 
+    private val _axolaCustomTheme = MutableStateFlow(prefs?.getAxolaCustomTheme() ?: AxolaCustomTheme())
+    val axolaCustomTheme: StateFlow<AxolaCustomTheme> = _axolaCustomTheme.asStateFlow()
+
+    private val _calendarBridgeConfig = MutableStateFlow(prefs?.getCalendarBridgeConfig() ?: CalendarBridgeConfig())
+    val calendarBridgeConfig: StateFlow<CalendarBridgeConfig> = _calendarBridgeConfig.asStateFlow()
+
+    private val _lessonDndConfig = MutableStateFlow(prefs?.getLessonDndConfig() ?: LessonDndConfig())
+    val lessonDndConfig: StateFlow<LessonDndConfig> = _lessonDndConfig.asStateFlow()
+
+    private val _calendarSyncStatusMessage = MutableStateFlow<String?>(null)
+    val calendarSyncStatusMessage: StateFlow<String?> = _calendarSyncStatusMessage.asStateFlow()
+
     private val _eloUrl = MutableStateFlow(prefs?.getEloUrl() ?: AppPreferencesStore.DEFAULT_ELO_URL)
     val eloUrl: StateFlow<String> = _eloUrl.asStateFlow()
 
@@ -376,6 +390,8 @@ class AgendaRepository(private val context: Context? = null) {
             prefs?.saveKwtSlots(bundle.kwtSlots)
             prefs?.saveAbsences(bundle.absences)
             prefs?.saveLastSyncTime(syncLabel)
+
+            syncAutomationBridges(cleanedAppointments)
 
             context?.let { ctx ->
                 UitvalNotificationHelper.evaluateAllNotifications(
@@ -755,6 +771,7 @@ class AgendaRepository(private val context: Context? = null) {
         _smartDefaultNamesEnabled.value = enabled
         prefs?.setSmartSubjectNamesEnabled(enabled)
         context?.let { WidgetUpdater.updateAllWidgets(it) }
+        triggerCalendarResyncAsync()
         notifyLocalDataChanged()
     }
 
@@ -779,6 +796,7 @@ class AgendaRepository(private val context: Context? = null) {
         _subjectCustomizations.value = updated
         prefs?.saveSubjectCustomizations(updated)
         context?.let { WidgetUpdater.updateAllWidgets(it) }
+        triggerCalendarResyncAsync()
         notifyLocalDataChanged()
     }
 
@@ -791,6 +809,7 @@ class AgendaRepository(private val context: Context? = null) {
         _subjectCustomizations.value = updated
         prefs?.saveSubjectCustomizations(updated)
         context?.let { WidgetUpdater.updateAllWidgets(it) }
+        triggerCalendarResyncAsync()
         notifyLocalDataChanged()
     }
 
@@ -798,7 +817,144 @@ class AgendaRepository(private val context: Context? = null) {
         _subjectCustomizations.value = emptyMap()
         prefs?.saveSubjectCustomizations(emptyMap())
         context?.let { WidgetUpdater.updateAllWidgets(it) }
+        triggerCalendarResyncAsync()
         notifyLocalDataChanged()
+    }
+
+    fun setAxolaCustomTheme(theme: AxolaCustomTheme) {
+        val normalized = theme.copy(
+            cornerRadiusDp = theme.cornerRadiusDp.coerceIn(0, 28),
+            primaryAccentHex = AxolaCustomTheme.normalizeHex(theme.primaryAccentHex, "#3B82F6"),
+            secondaryAccentHex = AxolaCustomTheme.normalizeHex(theme.secondaryAccentHex, "#EC4899")
+        )
+        _axolaCustomTheme.value = normalized
+        prefs?.saveAxolaCustomTheme(normalized)
+        context?.let { WidgetUpdater.updateAllWidgets(it) }
+        notifyLocalDataChanged()
+    }
+
+    fun importAxolaThemeCode(rawCode: String): Result<AxolaCustomTheme> {
+        val decoded = AxolaCustomTheme.decodeFromThemeCode(rawCode)
+        decoded.onSuccess { theme ->
+            setAxolaCustomTheme(theme)
+            setAppThemeStyle(AppThemeStyle.AXOLA_CUSTOM)
+        }
+        return decoded
+    }
+
+    fun setCalendarBridgeEnabled(enabled: Boolean) {
+        val updated = _calendarBridgeConfig.value.copy(enabled = enabled)
+        _calendarBridgeConfig.value = updated
+        prefs?.saveCalendarBridgeConfig(updated)
+        val ctx = context ?: return
+        if (enabled) {
+            syncCalendarNow()
+        } else {
+            CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                CalendarBridgeManager.clearMirroredCalendar(ctx)
+            }
+            _calendarSyncStatusMessage.value = "Lokale agenda-synchronisatie uitgeschakeld en opgeschoond."
+        }
+    }
+
+    fun setCalendarHideCanceled(hide: Boolean) {
+        val updated = _calendarBridgeConfig.value.copy(hideCanceledLessons = hide)
+        _calendarBridgeConfig.value = updated
+        prefs?.saveCalendarBridgeConfig(updated)
+        if (updated.enabled) {
+            syncCalendarNow()
+        }
+    }
+
+    fun clearCalendarSyncStatus() {
+        _calendarSyncStatusMessage.value = null
+    }
+
+    fun syncCalendarNow() {
+        val ctx = context ?: return
+        if (!CalendarBridgeManager.hasCalendarPermissions(ctx)) {
+            _calendarSyncStatusMessage.value = "Agendatoestemming is vereist om lessen te spiegelen."
+            return
+        }
+        val appts = _appointments.value
+        val cfg = _calendarBridgeConfig.value
+        val customState = SubjectCustomizationState(
+            customizations = _subjectCustomizations.value,
+            smartDefaultNamesEnabled = _smartDefaultNamesEnabled.value
+        )
+        CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+            val res = CalendarBridgeManager.syncUpcomingSchedule(ctx, appts, cfg, customState)
+            if (res.success) {
+                val updated = _calendarBridgeConfig.value.copy(
+                    lastSyncedAtMs = System.currentTimeMillis(),
+                    lastSyncedEventCount = res.syncedCount
+                )
+                _calendarBridgeConfig.value = updated
+                prefs?.saveCalendarBridgeConfig(updated)
+                _calendarSyncStatusMessage.value = "${res.syncedCount} lessen gesynchroniseerd naar 'Agenda+ Rooster'."
+            } else {
+                _calendarSyncStatusMessage.value = res.errorMessage ?: "Synchronisatie mislukt."
+            }
+        }
+    }
+
+    fun setLessonDndConfig(config: LessonDndConfig) {
+        val clamped = config.copy(
+            startBufferMinutes = config.startBufferMinutes.coerceIn(0, 10),
+            endBufferMinutes = config.endBufferMinutes.coerceIn(0, 10)
+        )
+        _lessonDndConfig.value = clamped
+        prefs?.saveLessonDndConfig(clamped)
+        context?.let { ctx ->
+            if (clamped.enabled) {
+                LessonDndScheduler.rescheduleAlarms(ctx, _appointments.value, clamped)
+            } else {
+                LessonDndScheduler.cancelAll(ctx)
+            }
+        }
+    }
+
+    private fun triggerCalendarResyncAsync() {
+        val ctx = context ?: return
+        if (!_calendarBridgeConfig.value.enabled || !CalendarBridgeManager.hasCalendarPermissions(ctx)) return
+        val appts = _appointments.value
+        val cfg = _calendarBridgeConfig.value
+        val customState = SubjectCustomizationState(
+            customizations = _subjectCustomizations.value,
+            smartDefaultNamesEnabled = _smartDefaultNamesEnabled.value
+        )
+        CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+            val res = CalendarBridgeManager.syncUpcomingSchedule(ctx, appts, cfg, customState)
+            if (res.success) {
+                val updated = _calendarBridgeConfig.value.copy(
+                    lastSyncedAtMs = System.currentTimeMillis(),
+                    lastSyncedEventCount = res.syncedCount
+                )
+                _calendarBridgeConfig.value = updated
+                prefs?.saveCalendarBridgeConfig(updated)
+            }
+        }
+    }
+
+    private fun syncAutomationBridges(appointments: List<Appointment> = _appointments.value) {
+        val ctx = context ?: return
+        val cfg = _calendarBridgeConfig.value
+        if (cfg.enabled && CalendarBridgeManager.hasCalendarPermissions(ctx)) {
+            val customState = SubjectCustomizationState(
+                customizations = _subjectCustomizations.value,
+                smartDefaultNamesEnabled = _smartDefaultNamesEnabled.value
+            )
+            val res = CalendarBridgeManager.syncUpcomingSchedule(ctx, appointments, cfg, customState)
+            if (res.success) {
+                val updated = cfg.copy(
+                    lastSyncedAtMs = System.currentTimeMillis(),
+                    lastSyncedEventCount = res.syncedCount
+                )
+                _calendarBridgeConfig.value = updated
+                prefs?.saveCalendarBridgeConfig(updated)
+            }
+        }
+        LessonDndScheduler.rescheduleAlarms(ctx, appointments, _lessonDndConfig.value)
     }
 
     fun setEloUrl(url: String) {
@@ -1114,8 +1270,14 @@ class AgendaRepository(private val context: Context? = null) {
             _schoolAddress.value = store.loadSchoolAddress()
             _todayBlocks.value = store.loadTodayBlocksConfig()
             _studySites.value = store.loadStudySites()
+            _axolaCustomTheme.value = store.getAxolaCustomTheme()
+            _calendarBridgeConfig.value = store.getCalendarBridgeConfig()
+            _lessonDndConfig.value = store.getLessonDndConfig()
             updateMonitorSchedule()
             recalculateSmartBusAndBridges()
+            CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                syncAutomationBridges()
+            }
             notifyLocalDataChanged()
         }
         return result
@@ -1236,9 +1398,6 @@ class AgendaRepository(private val context: Context? = null) {
                 val counts = SyncManager.lastExportCounts
                 val msg = "Gekoppeld met Web • ${counts.lessons} lessen, ${counts.grades} cijfers, ${counts.homework} huiswerk, ${counts.messages} berichten, ${counts.absences} verzuim"
                 com.example.util.RawConsoleLogger.info("WebSync", msg)
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
-                }
             }
         }
         return res
@@ -1275,6 +1434,11 @@ class AgendaRepository(private val context: Context? = null) {
             SyncManager.metroAccentFromWire(s.optString("metroAccent", ""))?.let { accent ->
                 _metroAccent.value = accent
                 prefs?.setMetroAccent(accent)
+            }
+            s.optJSONObject("axolaCustomTheme")?.let { axolaObj ->
+                val parsed = AxolaCustomTheme.fromJsonObject(axolaObj)
+                _axolaCustomTheme.value = parsed
+                prefs?.saveAxolaCustomTheme(parsed)
             }
             if (s.has("smartSubjectNames")) {
                 val smart = s.optBoolean("smartSubjectNames", true)
@@ -1485,6 +1649,10 @@ class AgendaRepository(private val context: Context? = null) {
         prefs?.clearSession()
         context?.let { ctx ->
             ScheduleMonitorJobService.cancel(ctx)
+            LessonDndScheduler.cancelAll(ctx)
+            CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                CalendarBridgeManager.clearMirroredCalendar(ctx)
+            }
             WidgetUpdater.updateAllWidgets(ctx)
         }
     }

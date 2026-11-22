@@ -20,12 +20,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import com.example.model.AppThemeStyle
+import com.example.model.AxolaCustomTheme
 import com.example.model.DarkModePreference
 import com.example.model.MetroAccent
 
 val LocalAppThemeStyle = staticCompositionLocalOf { AppThemeStyle.STANDARD }
 val LocalDarkThemeActive = staticCompositionLocalOf { false }
 val LocalMetroAccent = staticCompositionLocalOf { MetroAccent.COBALT }
+val LocalAxolaCustomTheme = staticCompositionLocalOf { AxolaCustomTheme() }
 
 private val DarkColorScheme = darkColorScheme(
     primary = NavyPrimaryDark,
@@ -344,11 +346,98 @@ private fun oneUiColorScheme(
     }
 }
 
+private fun contrastColorFor(bg: Color): Color {
+    val luminance = (0.299f * bg.red) + (0.587f * bg.green) + (0.114f * bg.blue)
+    return if (luminance > 0.60f) Color(0xFF101318) else Color.White
+}
+
+internal fun axolaCustomColorScheme(custom: AxolaCustomTheme): ColorScheme {
+    val bgSpec = custom.backgroundStyle
+    val isDark = bgSpec.isDark
+    val canvas = Color(bgSpec.canvasArgb)
+    val card = Color(bgSpec.cardArgb)
+    val elevated = Color(bgSpec.elevatedArgb)
+    val primary = Color(custom.primaryColorArgb)
+    val secondary = Color(custom.secondaryColorArgb)
+    val onBg = if (isDark) Color(0xFFF5F7FA) else Color(0xFF101318)
+    val onBgMuted = if (isDark) Color(0xFFA7B0C0) else Color(0xFF566070)
+    val primaryContainer = lerp(card, primary, if (isDark) 0.24f else 0.16f)
+    val secondaryContainer = lerp(card, secondary, if (isDark) 0.24f else 0.16f)
+    val outlineColor = if (isDark) Color.White.copy(alpha = 0.16f) else Color(0xFFD0D7E2)
+
+    return if (isDark) {
+        darkColorScheme(
+            primary = primary,
+            onPrimary = contrastColorFor(primary),
+            primaryContainer = primaryContainer,
+            onPrimaryContainer = Color.White,
+            secondary = secondary,
+            onSecondary = contrastColorFor(secondary),
+            secondaryContainer = secondaryContainer,
+            onSecondaryContainer = Color.White,
+            tertiary = secondary,
+            onTertiary = contrastColorFor(secondary),
+            tertiaryContainer = secondaryContainer,
+            onTertiaryContainer = Color.White,
+            background = canvas,
+            onBackground = onBg,
+            surface = canvas,
+            onSurface = onBg,
+            surfaceVariant = elevated,
+            onSurfaceVariant = onBgMuted,
+            outline = outlineColor,
+            outlineVariant = outlineColor.copy(alpha = 0.7f),
+            surfaceContainerLowest = canvas,
+            surfaceContainerLow = card,
+            surfaceContainer = card,
+            surfaceContainerHigh = elevated,
+            surfaceContainerHighest = lerp(elevated, primary, 0.08f),
+            error = Color(0xFFFF5C5C),
+            onError = Color.Black,
+            errorContainer = Color(0xFF3E1216),
+            onErrorContainer = Color(0xFFFFD8D6)
+        )
+    } else {
+        lightColorScheme(
+            primary = primary,
+            onPrimary = contrastColorFor(primary),
+            primaryContainer = primaryContainer,
+            onPrimaryContainer = Color(0xFF101318),
+            secondary = secondary,
+            onSecondary = contrastColorFor(secondary),
+            secondaryContainer = secondaryContainer,
+            onSecondaryContainer = Color(0xFF101318),
+            tertiary = secondary,
+            onTertiary = contrastColorFor(secondary),
+            tertiaryContainer = secondaryContainer,
+            onTertiaryContainer = Color(0xFF101318),
+            background = canvas,
+            onBackground = onBg,
+            surface = canvas,
+            onSurface = onBg,
+            surfaceVariant = elevated,
+            onSurfaceVariant = onBgMuted,
+            outline = outlineColor,
+            outlineVariant = outlineColor.copy(alpha = 0.8f),
+            surfaceContainerLowest = card,
+            surfaceContainerLow = card,
+            surfaceContainer = card,
+            surfaceContainerHigh = elevated,
+            surfaceContainerHighest = lerp(elevated, primary, 0.08f),
+            error = Color(0xFFD32F2F),
+            onError = Color.White,
+            errorContainer = Color(0xFFFFE4E2),
+            onErrorContainer = Color(0xFF690005)
+        )
+    }
+}
+
 @Composable
 fun AgendaPlusTheme(
     appThemeStyle: AppThemeStyle = AppThemeStyle.STANDARD,
     darkModePreference: DarkModePreference = DarkModePreference.SYSTEM,
     metroAccent: MetroAccent = MetroAccent.COBALT,
+    axolaCustomTheme: AxolaCustomTheme = AxolaCustomTheme(),
     systemDarkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
@@ -358,9 +447,11 @@ fun AgendaPlusTheme(
     val isOneUi = appThemeStyle == AppThemeStyle.ONE_UI
     val isMetro = appThemeStyle == AppThemeStyle.WINDOWS_PHONE
     val isIos = appThemeStyle == AppThemeStyle.IOS_LIQUID_GLASS
+    val isAxola = appThemeStyle == AppThemeStyle.AXOLA_CUSTOM
 
     val effectiveDark = when {
         isNothing -> true
+        isAxola -> axolaCustomTheme.backgroundStyle.isDark
         darkModePreference == DarkModePreference.LIGHT -> false
         darkModePreference == DarkModePreference.DARK -> true
         else -> systemDarkTheme
@@ -371,6 +462,7 @@ fun AgendaPlusTheme(
         isOneUi -> oneUiColorScheme(context = context, isDark = effectiveDark)
         isMetro -> metroColorScheme(accent = metroAccent, isDark = effectiveDark)
         isIos -> iosLiquidGlassColorScheme(isDark = effectiveDark)
+        isAxola -> axolaCustomColorScheme(axolaCustomTheme)
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (effectiveDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
@@ -383,6 +475,7 @@ fun AgendaPlusTheme(
         isOneUi -> OneUiTypography
         isMetro -> MetroTypography
         isIos -> IosLiquidGlassTypography
+        isAxola -> axolaTypography(axolaCustomTheme.typographyStyle)
         else -> Typography
     }
 
@@ -402,7 +495,8 @@ fun AgendaPlusTheme(
     CompositionLocalProvider(
         LocalAppThemeStyle provides appThemeStyle,
         LocalDarkThemeActive provides effectiveDark,
-        LocalMetroAccent provides metroAccent
+        LocalMetroAccent provides metroAccent,
+        LocalAxolaCustomTheme provides axolaCustomTheme
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

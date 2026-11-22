@@ -33,6 +33,7 @@ import com.example.model.GradeUnboxingMode
 import com.example.model.UiScalePreset
 import com.example.model.cleanSchoolText
 import com.example.services.WebSyncStatus
+import com.example.ui.theme.LocalAxolaCustomTheme
 import com.example.ui.theme.LocalDarkThemeActive
 import com.example.ui.theme.NothingOutline
 import com.example.ui.theme.NothingRed
@@ -81,8 +82,15 @@ fun AppTopBar(
     val oneUiMode = isOneUi85
     val windowsPhoneMode = isWindowsPhone
     val iosMode = isIosLiquidGlass
+    val axolaMode = isAxolaCustom
+    val axolaTheme = LocalAxolaCustomTheme.current
     val cardBorder: BorderStroke? = nothingCardBorder()
-    val pillShape = if (windowsPhoneMode) RectangleShape else RoundedCornerShape(percent = 50)
+    val pillShape = when {
+        windowsPhoneMode -> RectangleShape
+        axolaMode && axolaTheme.cornerRadiusDp <= 4 -> RectangleShape
+        axolaMode -> RoundedCornerShape(axolaTheme.cornerRadiusDp.dp)
+        else -> RoundedCornerShape(percent = 50)
+    }
 
     val cleanStudentName = session.studentName.cleanSchoolText() ?: "Account"
     val cleanStudentClass = session.studentClass.cleanSchoolText()
@@ -221,7 +229,7 @@ fun AppTopBar(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
                             Surface(
-                                shape = if (windowsPhoneMode) RectangleShape else CircleShape,
+                                shape = if (windowsPhoneMode || (axolaMode && axolaTheme.cornerRadiusDp <= 4)) RectangleShape else CircleShape,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(24.dp)
                             ) {

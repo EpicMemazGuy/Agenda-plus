@@ -1,6 +1,19 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,25 +31,64 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import com.example.automation.CalendarBridgeManager
+import com.example.automation.LessonDndScheduler
 import com.example.model.AgendaStyle
+import com.example.model.AppThemeStyle
+import com.example.model.DarkModePreference
 import com.example.model.UiScalePreset
 import com.example.ui.components.AgendaPlusLogo
+import com.example.ui.components.agendaPressable
+import com.example.ui.components.agendaSpring
+import com.example.ui.components.appButtonShape
+import com.example.ui.components.appCardShape
+import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.rememberAgendaHaptics
+import com.example.ui.theme.IosBlue
+import com.example.ui.theme.MetroCobalt
+import com.example.ui.theme.NothingBlack
+import com.example.ui.theme.NothingRed
+import com.example.ui.theme.OneUiBlueDark
+import com.example.ui.theme.OneUiBlueLight
 
 @Composable
 fun SetupWizardScreen(
     initialStyle: AgendaStyle,
     initialScale: Float,
-    onComplete: (AgendaStyle, Float) -> Unit,
+    initialThemeStyle: AppThemeStyle = AppThemeStyle.STANDARD,
+    initialDarkModePref: DarkModePreference = DarkModePreference.SYSTEM,
+    initialDndEnabled: Boolean = false,
+    initialCalendarBridgeEnabled: Boolean = false,
+    onPreviewTheme: (AppThemeStyle, DarkModePreference) -> Unit = { _, _ -> },
+    onComplete: (
+        style: AgendaStyle,
+        scale: Float,
+        themeStyle: AppThemeStyle,
+        darkModePref: DarkModePreference,
+        dndEnabled: Boolean,
+        calendarBridgeEnabled: Boolean
+    ) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptics = rememberAgendaHaptics()
     var step by remember { mutableIntStateOf(0) }
     var selectedStyle by remember { mutableStateOf(initialStyle) }
+    var selectedThemeStyle by remember { mutableStateOf(initialThemeStyle) }
+    var selectedDarkMode by remember { mutableStateOf(initialDarkModePref) }
+    var dndEnabled by remember { mutableStateOf(initialDndEnabled) }
+    var calendarBridgeEnabled by remember { mutableStateOf(initialCalendarBridgeEnabled) }
     var selectedPreset by remember {
         mutableStateOf(
             UiScalePreset.entries.minByOrNull { kotlin.math.abs(it.scaleFactor - initialScale) }
@@ -45,14 +97,17 @@ fun SetupWizardScreen(
     }
 
     if (step > 0) {
-        BackHandler { step-- }
+        BackHandler {
+            haptics.tick()
+            step--
+        }
     }
 
     Surface(
         modifier = modifier
             .fillMaxSize()
             .testTag("setup_wizard_screen"),
-        color = MaterialTheme.colorScheme.surface
+        color = MaterialTheme.colorScheme.background
     ) {
         Column(
             modifier = Modifier
@@ -71,12 +126,12 @@ fun SetupWizardScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    repeat(3) { index ->
+                    repeat(5) { index ->
                         Box(
                             modifier = Modifier
-                                .width(if (index == step) 28.dp else 10.dp)
+                                .width(if (index == step) 26.dp else 9.dp)
                                 .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp))
+                                .clip(if (selectedThemeStyle == AppThemeStyle.WINDOWS_PHONE) RectangleShape else RoundedCornerShape(4.dp))
                                 .background(
                                     if (index <= step) MaterialTheme.colorScheme.primary
                                     else MaterialTheme.colorScheme.surfaceContainerHighest
@@ -85,39 +140,98 @@ fun SetupWizardScreen(
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Stap ${step + 1} van 3",
+                        text = "Stap ${step + 1} van 5",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
                 TextButton(
-                    onClick = { onComplete(selectedStyle, selectedPreset.scaleFactor) },
+                    onClick = {
+                        haptics.tick()
+                        onComplete(
+                            selectedStyle,
+                            selectedPreset.scaleFactor,
+                            selectedThemeStyle,
+                            selectedDarkMode,
+                            dndEnabled,
+                            calendarBridgeEnabled
+                        )
+                    },
                     modifier = Modifier.testTag("wizard_skip_button")
                 ) {
                     Text("Overslaan")
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Main step content
-            Column(
+            // Main step content with crisp directional transitions
+            Box(
                 modifier = Modifier
                     .weight(1f)
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .fillMaxWidth()
             ) {
-                when (step) {
-                    0 -> WizardIntroStep()
-                    1 -> WizardAgendaStyleStep(
-                        selectedStyle = selectedStyle,
-                        onSelectStyle = { selectedStyle = it }
-                    )
-                    else -> WizardUiScaleStep(
-                        selectedPreset = selectedPreset,
-                        onSelectPreset = { selectedPreset = it }
-                    )
+                AnimatedContent(
+                    targetState = step,
+                    transitionSpec = {
+                        val forward = targetState > initialState
+                        (slideInHorizontally(agendaSpring()) { full -> if (forward) full / 4 else -full / 4 } +
+                            fadeIn()) togetherWith
+                            (slideOutHorizontally { full -> if (forward) -full / 6 else full / 6 } + fadeOut())
+                    },
+                    label = "wizard_step_transition"
+                ) { activeStep ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        when (activeStep) {
+                            0 -> WizardIntroStep()
+                            1 -> WizardThemePickerStep(
+                                selectedTheme = selectedThemeStyle,
+                                selectedDarkMode = selectedDarkMode,
+                                onSelectTheme = { style ->
+                                    haptics.tick()
+                                    selectedThemeStyle = style
+                                    onPreviewTheme(style, selectedDarkMode)
+                                },
+                                onSelectDarkMode = { pref ->
+                                    haptics.tick()
+                                    selectedDarkMode = pref
+                                    onPreviewTheme(selectedThemeStyle, pref)
+                                }
+                            )
+                            2 -> WizardAutopilotStep(
+                                dndEnabled = dndEnabled,
+                                calendarBridgeEnabled = calendarBridgeEnabled,
+                                onToggleDnd = {
+                                    haptics.confirm()
+                                    dndEnabled = it
+                                },
+                                onToggleCalendarBridge = {
+                                    haptics.confirm()
+                                    calendarBridgeEnabled = it
+                                }
+                            )
+                            3 -> WizardUiScaleStep(
+                                selectedPreset = selectedPreset,
+                                onSelectPreset = {
+                                    haptics.tick()
+                                    selectedPreset = it
+                                }
+                            )
+                            else -> WizardAgendaStyleStep(
+                                selectedStyle = selectedStyle,
+                                onSelectStyle = {
+                                    haptics.tick()
+                                    selectedStyle = it
+                                }
+                            )
+                        }
+                    }
                 }
             }
 
@@ -131,8 +245,11 @@ fun SetupWizardScreen(
             ) {
                 if (step > 0) {
                     OutlinedButton(
-                        onClick = { step-- },
-                        shape = RoundedCornerShape(percent = 50),
+                        onClick = {
+                            haptics.tick()
+                            step--
+                        },
+                        shape = appButtonShape(),
                         modifier = Modifier
                             .height(50.dp)
                             .testTag("wizard_back_button")
@@ -149,26 +266,35 @@ fun SetupWizardScreen(
 
                 Button(
                     onClick = {
-                        if (step < 2) {
+                        if (step < 4) {
+                            haptics.tick()
                             step++
                         } else {
-                            onComplete(selectedStyle, selectedPreset.scaleFactor)
+                            haptics.confirm()
+                            onComplete(
+                                selectedStyle,
+                                selectedPreset.scaleFactor,
+                                selectedThemeStyle,
+                                selectedDarkMode,
+                                dndEnabled,
+                                calendarBridgeEnabled
+                            )
                         }
                     },
-                    shape = RoundedCornerShape(percent = 50),
+                    shape = appButtonShape(),
                     modifier = Modifier
                         .weight(1f)
                         .height(50.dp)
-                        .testTag(if (step < 2) "wizard_next_button" else "wizard_finish_button")
+                        .testTag(if (step < 4) "wizard_next_button" else "wizard_finish_button")
                 ) {
                     Text(
-                        text = if (step < 2) "Volgende" else "Naar inloggen",
+                        text = if (step < 4) "Volgende" else "Naar inloggen",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(
-                        imageVector = if (step < 2) Icons.AutoMirrored.Filled.ArrowForward else Icons.Default.Check,
+                        imageVector = if (step < 4) Icons.AutoMirrored.Filled.ArrowForward else Icons.Default.Check,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
@@ -184,17 +310,17 @@ private fun WizardIntroStep() {
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         AgendaPlusLogo(
-            size = 88.dp,
+            size = 86.dp,
             modifier = Modifier.testTag("wizard_app_logo")
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
         Text(
-            text = "Stel Agenda+ in",
+            text = "Jouw School, Jouw Regels",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -204,30 +330,30 @@ private fun WizardIntroStep() {
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Kies in twee snelle stappen hoe jouw rooster en tekst eruitzien. Je kunt dit later altijd aanpassen.",
+            text = "Agenda+ is 100% gratis, zonder reclame en draait volledig lokaal op jouw telefoon.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         WizardHighlightItem(
-            icon = Icons.Default.ViewAgenda,
-            title = "Compact of Ruim Rooster",
-            description = "Bekijk al je lessen in één strak overzicht of in ruime leskaarten."
+            icon = Icons.Default.Lock,
+            title = "100% Lokaal & Privé",
+            description = "Jouw rooster, cijfers en berichten verlaten nooit jouw eigen toestel zonder jouw toestemming."
         )
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
         WizardHighlightItem(
-            icon = Icons.Default.WbSunny,
-            title = "Lokaal Weer & Meer-hub",
-            description = "Actueel weer op Vandaag, Magister Berichten, Studiewijzers en je favoriete leersites."
+            icon = Icons.Default.Palette,
+            title = "5 Vrije Thema's + AXOLA Studio",
+            description = "Kies uit Nothing OS, Windows Phone, iOS Liquid Glass, One UI of Material You — alles gratis."
         )
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
         WizardHighlightItem(
             icon = Icons.Default.Widgets,
-            title = "Startscherm-widgets",
-            description = "Zie direct je volgende les, cijfers en huiswerk zonder de app te openen."
+            title = "Slimme Autopiloot & Widgets",
+            description = "Automatisch Niet Storen in de les, smartwatch-agenda en directe cijfer- & roosterwidgets."
         )
     }
 }
@@ -239,8 +365,9 @@ private fun WizardHighlightItem(
     description: String
 ) {
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = appCardShape(standard = 20.dp, nothing = 22.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = nothingCardBorder(),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -248,7 +375,7 @@ private fun WizardHighlightItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = RoundedCornerShape(14.dp),
+                shape = appCardShape(standard = 14.dp, nothing = 14.dp),
                 color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.size(44.dp)
             ) {
@@ -275,6 +402,331 @@ private fun WizardHighlightItem(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WizardThemePickerStep(
+    selectedTheme: AppThemeStyle,
+    selectedDarkMode: DarkModePreference,
+    onSelectTheme: (AppThemeStyle) -> Unit,
+    onSelectDarkMode: (DarkModePreference) -> Unit
+) {
+    val themes = remember {
+        listOf(
+            AppThemeStyle.NOTHING_OS,
+            AppThemeStyle.WINDOWS_PHONE,
+            AppThemeStyle.IOS_LIQUID_GLASS,
+            AppThemeStyle.ONE_UI,
+            AppThemeStyle.STANDARD
+        )
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Kies Jouw Stijl",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Tik op een thema om direct het live uiterlijk van Agenda+ te ervaren.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("wizard_dark_mode_segmented")
+        ) {
+            DarkModePreference.entries.forEachIndexed { idx, pref ->
+                SegmentedButton(
+                    selected = selectedDarkMode == pref,
+                    onClick = { onSelectDarkMode(pref) },
+                    enabled = selectedTheme != AppThemeStyle.NOTHING_OS,
+                    shape = if (selectedTheme == AppThemeStyle.WINDOWS_PHONE) {
+                        RectangleShape
+                    } else {
+                        SegmentedButtonDefaults.itemShape(idx, DarkModePreference.entries.size)
+                    },
+                    modifier = Modifier.testTag("wizard_dark_mode_${pref.name}")
+                ) {
+                    Text(pref.labelDutch, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        themes.forEach { style ->
+            val isSelected = selectedTheme == style
+            val accentColor = when (style) {
+                AppThemeStyle.NOTHING_OS -> NothingRed
+                AppThemeStyle.WINDOWS_PHONE -> MetroCobalt
+                AppThemeStyle.IOS_LIQUID_GLASS -> IosBlue
+                AppThemeStyle.ONE_UI -> OneUiBlueDark
+                else -> Color(0xFF3B6FD8)
+            }
+            val canvasBg = when (style) {
+                AppThemeStyle.NOTHING_OS -> NothingBlack
+                AppThemeStyle.WINDOWS_PHONE -> NothingBlack
+                AppThemeStyle.IOS_LIQUID_GLASS -> Color(0xFF141821)
+                AppThemeStyle.ONE_UI -> OneUiBlueLight.copy(alpha = 0.14f)
+                else -> MaterialTheme.colorScheme.surfaceContainerLow
+            }
+            val rowShape = when (style) {
+                AppThemeStyle.WINDOWS_PHONE -> RectangleShape
+                AppThemeStyle.IOS_LIQUID_GLASS -> RoundedCornerShape(22.dp)
+                AppThemeStyle.NOTHING_OS -> RoundedCornerShape(20.dp)
+                AppThemeStyle.ONE_UI -> RoundedCornerShape(24.dp)
+                else -> RoundedCornerShape(18.dp)
+            }
+
+            Surface(
+                shape = rowShape,
+                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+                border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else nothingCardBorder(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 5.dp)
+                    .clip(rowShape)
+                    .agendaPressable(onClick = { onSelectTheme(style) })
+                    .testTag("wizard_theme_${style.name}")
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = if (style == AppThemeStyle.WINDOWS_PHONE) RectangleShape else RoundedCornerShape(12.dp),
+                        color = canvasBg,
+                        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.6f)),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Box(
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clip(if (style == AppThemeStyle.WINDOWS_PHONE) RectangleShape else CircleShape)
+                                    .background(accentColor)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = style.labelDutch,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = style.subtitleDutch,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    RadioButton(
+                        selected = isSelected,
+                        onClick = { onSelectTheme(style) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WizardAutopilotStep(
+    dndEnabled: Boolean,
+    calendarBridgeEnabled: Boolean,
+    onToggleDnd: (Boolean) -> Unit,
+    onToggleCalendarBridge: (Boolean) -> Unit
+) {
+    val context = LocalContext.current
+    var hasCalendarPerm by remember { mutableStateOf(CalendarBridgeManager.hasCalendarPermissions(context)) }
+    var hasPolicyAccess by remember { mutableStateOf(LessonDndScheduler.hasPolicyAccess(context)) }
+
+    val calendarPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val granted = grants[Manifest.permission.READ_CALENDAR] == true &&
+            grants[Manifest.permission.WRITE_CALENDAR] == true
+        hasCalendarPerm = granted || CalendarBridgeManager.hasCalendarPermissions(context)
+        if (hasCalendarPerm) {
+            onToggleCalendarBridge(true)
+        }
+    }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        hasCalendarPerm = CalendarBridgeManager.hasCalendarPermissions(context)
+        hasPolicyAccess = LessonDndScheduler.hasPolicyAccess(context)
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "Slimme School-Autopiloot",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = "Zet deze automatiseringen direct aan of stel ze later in bij Meer.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // 1. Silent-in-Class DND Card
+        Surface(
+            shape = appCardShape(standard = 20.dp, nothing = 22.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = nothingCardBorder(),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = appCardShape(standard = 12.dp, nothing = 12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.DoNotDisturbOn,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Automatisch stil in de les",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Zet je telefoon stil bij lesbegin en herstel tijdens pauzes of uitval.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = dndEnabled,
+                        onCheckedChange = onToggleDnd,
+                        modifier = Modifier.testTag("wizard_dnd_switch")
+                    )
+                }
+
+                if (dndEnabled && !hasPolicyAccess && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    TextButton(
+                        onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
+                        },
+                        modifier = Modifier.testTag("wizard_dnd_permission_button")
+                    ) {
+                        Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Geef Niet Storen-toegang")
+                    }
+                }
+            }
+        }
+
+        // 2. Smartwatch & System Calendar Sync Card
+        Surface(
+            shape = appCardShape(standard = 20.dp, nothing = 22.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = nothingCardBorder(),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = appCardShape(standard = 12.dp, nothing = 12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Watch,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Smartwatch & Agenda Sync",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Spiegel lessen automatisch naar Wear OS / Galaxy Watch en Google Agenda.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = calendarBridgeEnabled && hasCalendarPerm,
+                        onCheckedChange = { want ->
+                            if (want && !hasCalendarPerm) {
+                                calendarPermissionLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.READ_CALENDAR,
+                                        Manifest.permission.WRITE_CALENDAR
+                                    )
+                                )
+                            } else {
+                                onToggleCalendarBridge(want)
+                            }
+                        },
+                        modifier = Modifier.testTag("wizard_calendar_switch")
+                    )
+                }
             }
         }
     }
@@ -311,7 +763,7 @@ private fun WizardAgendaStyleStep(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(appCardShape(standard = 12.dp, nothing = 12.dp))
                     .background(MaterialTheme.colorScheme.surface)
                     .padding(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -350,14 +802,15 @@ private fun StyleOptionCard(
     testTag: String,
     previewContent: @Composable () -> Unit
 ) {
+    val cardShape = appCardShape(standard = 22.dp, nothing = 22.dp)
     Surface(
-        shape = RoundedCornerShape(22.dp),
+        shape = cardShape,
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
-        border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else nothingCardBorder(),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .clickable(onClick = onClick)
+            .clip(cardShape)
+            .agendaPressable(onClick = onClick)
             .testTag(testTag)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -417,7 +870,7 @@ private fun MiniCompactRow(time: String, period: String, subject: String, room: 
             modifier = Modifier.weight(1f)
         )
         Surface(
-            shape = RoundedCornerShape(percent = 50),
+            shape = appButtonShape(),
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Text(
@@ -433,7 +886,7 @@ private fun MiniCompactRow(time: String, period: String, subject: String, room: 
 @Composable
 private fun MiniSpaciousCard(period: String, subject: String, time: String, room: String) {
     Surface(
-        shape = RoundedCornerShape(14.dp),
+        shape = appCardShape(standard = 14.dp, nothing = 14.dp),
         color = MaterialTheme.colorScheme.surface,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -442,7 +895,7 @@ private fun MiniSpaciousCard(period: String, subject: String, time: String, room
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                shape = RoundedCornerShape(8.dp),
+                shape = appCardShape(standard = 8.dp, nothing = 8.dp),
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(32.dp)
             ) {
@@ -533,8 +986,9 @@ private fun WizardUiScaleStep(
         Spacer(modifier = Modifier.height(8.dp))
 
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = appCardShape(standard = 20.dp, nothing = 20.dp),
             color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = nothingCardBorder(),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding((16 * scale).dp)) {
@@ -550,7 +1004,7 @@ private fun WizardUiScaleStep(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Surface(
-                        shape = RoundedCornerShape(percent = 50),
+                        shape = appButtonShape(),
                         color = MaterialTheme.colorScheme.primaryContainer
                     ) {
                         Text(
@@ -570,7 +1024,7 @@ private fun WizardUiScaleStep(
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = appCardShape(standard = 12.dp, nothing = 12.dp),
                     color = MaterialTheme.colorScheme.surfaceContainer,
                     modifier = Modifier.fillMaxWidth()
                 ) {

@@ -87,6 +87,8 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
     val lastSyncTime: StateFlow<String> = repository.lastSyncTime
 
     val hasCompletedOnboarding: StateFlow<Boolean> = repository.hasCompletedOnboarding
+    val hasSkippedLogin: StateFlow<Boolean> = repository.hasSkippedLogin
+    val hapticsEnabled: StateFlow<Boolean> = repository.hapticsEnabled
     val hasSeenTutorial: StateFlow<Boolean> = repository.hasSeenTutorial
     val navPromptDismissed: StateFlow<Boolean> = repository.navPromptDismissed
     val offlineModeEnabled: StateFlow<Boolean> = repository.offlineModeEnabled
@@ -610,8 +612,30 @@ class AgendaViewModel(application: Application) : AndroidViewModel(application) 
         _showAddTaskDialog.value = false
     }
 
-    fun completeOnboarding(style: AgendaStyle, scale: Float) {
-        repository.completeOnboarding(style, scale)
+    fun completeOnboarding(
+        style: AgendaStyle,
+        scale: Float,
+        themeStyle: AppThemeStyle? = null,
+        darkModePref: DarkModePreference? = null,
+        dndEnabled: Boolean? = null,
+        calendarBridgeEnabled: Boolean? = null
+    ) {
+        repository.completeOnboarding(
+            style = style,
+            scale = scale,
+            themeStyle = themeStyle,
+            darkModePref = darkModePref,
+            dndEnabled = dndEnabled,
+            calendarBridgeEnabled = calendarBridgeEnabled
+        )
+    }
+
+    fun skipMagisterLogin() {
+        repository.skipMagisterLogin()
+    }
+
+    fun setHapticsEnabled(enabled: Boolean) {
+        repository.setHapticsEnabled(enabled)
     }
 
     fun reopenOnboarding() {

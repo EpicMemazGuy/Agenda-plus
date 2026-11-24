@@ -8,7 +8,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,11 +32,13 @@ import com.example.model.SubjectGradeSummary
 import com.example.model.capitalizeSubjectName
 import java.util.Locale
 import com.example.ui.components.AppThemedHeader
+import com.example.ui.components.GradesLoadingSkeleton
 import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.LocalSubjectCustomizationState
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.NothingConcentricGradeRing
 import com.example.ui.components.OneUiPillBadge
+import com.example.ui.components.agendaPressable
 import com.example.ui.components.appButtonShape
 import com.example.ui.components.appCardShape
 import com.example.ui.components.appInnerCardShape
@@ -53,7 +55,10 @@ import com.example.ui.components.oneUiPillContainerColor
 import com.example.ui.components.oneUiPillContentColor
 import com.example.ui.components.oneUiSpring
 import com.example.ui.components.oneUiTween
+import com.example.ui.components.rememberAgendaHaptics
+import com.example.ui.components.rememberAnimatedScoreText
 import com.example.ui.components.rememberSubjectDisplay
+import com.example.ui.components.staggeredEntrance
 import com.example.ui.theme.MetroCrimson
 import kotlin.math.round
 
@@ -87,6 +92,7 @@ fun filterGradeSummariesByScope(
 @Composable
 fun CijfersScreen(
     summaries: List<SubjectGradeSummary>,
+    isRefreshing: Boolean = false,
     gradeUnboxingEnabled: Boolean = true,
     unboxedGradeIds: Set<String> = emptySet(),
     onOpenWhatIf: (SubjectGradeSummary) -> Unit,
@@ -97,6 +103,7 @@ fun CijfersScreen(
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val haptics = rememberAgendaHaptics()
     val oneUiMode = isOneUi85
     val windowsPhoneMode = isWindowsPhone
     val iosMode = isIosLiquidGlass
@@ -121,6 +128,7 @@ fun CijfersScreen(
             round((total / filteredSummaries.size) * 10) / 10.0
         } else 0.0
     }
+    val animatedOverallText = rememberAnimatedScoreText(overallAverage, locale = Locale.US)
 
     val allGradesSorted = remember(filteredSummaries) {
         filteredSummaries.flatMap { it.grades }.sortedByDescending { it.date }
@@ -150,14 +158,14 @@ fun CijfersScreen(
             item(key = "themed_cijfers_header") {
                 AppThemedHeader(
                     title = "Cijfers",
-                    subtitle = "Algemeen gemiddelde: $overallAverage",
+                    subtitle = "Algemeen gemiddelde: $animatedOverallText",
                     isScrolled = isScrolled
                 )
             }
         }
 
         // GPA Overview Hero Card
-        item {
+        item(key = "gpa_overview_card") {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -201,7 +209,7 @@ fun CijfersScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "$overallAverage",
+                                    text = animatedOverallText,
                                     style = MaterialTheme.typography.displayLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -220,7 +228,10 @@ fun CijfersScreen(
                             modifier = Modifier
                                 .padding(4.dp)
                                 .clip(overgangShape)
-                                .clickable(onClick = onOpenOvergangsSimulator)
+                                .agendaPressable {
+                                    haptics.tick()
+                                    onOpenOvergangsSimulator()
+                                }
                                 .minimumInteractiveComponentSize()
                                 .testTag("open_overgangsnorm_simulator")
                         ) {
@@ -290,7 +301,10 @@ fun CijfersScreen(
                 GradeScopeFilter.entries.forEachIndexed { idx, scopeFilter ->
                     SegmentedButton(
                         selected = selectedScope == scopeFilter,
-                        onClick = { selectedScope = scopeFilter },
+                        onClick = {
+                            haptics.tick()
+                            selectedScope = scopeFilter
+                        },
                         shape = if (windowsPhoneMode) RectangleShape else SegmentedButtonDefaults.itemShape(idx, GradeScopeFilter.entries.size),
                         modifier = Modifier.testTag("grade_scope_${scopeFilter.name}")
                     ) {
@@ -308,7 +322,10 @@ fun CijfersScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     FilledTonalButton(
-                        onClick = onOpenExportSheet,
+                        onClick = {
+                            haptics.tick()
+                            onOpenExportSheet()
+                        },
                         shape = appButtonShape(),
                         modifier = Modifier
                             .weight(1f)
@@ -326,7 +343,10 @@ fun CijfersScreen(
 
                     if (latestGrade != null) {
                         Button(
-                            onClick = { onPlayGradeUnboxing(latestGrade) },
+                            onClick = {
+                                haptics.tick()
+                                onPlayGradeUnboxing(latestGrade)
+                            },
                             shape = appButtonShape(),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (nextUnrevealedGrade != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
@@ -353,7 +373,7 @@ fun CijfersScreen(
         }
 
         // Section Title: Vakken & Cijfers
-        item {
+        item(key = "cijfers_section_title") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -373,8 +393,12 @@ fun CijfersScreen(
             }
         }
 
-        if (filteredSummaries.isEmpty()) {
-            item {
+        if (isRefreshing && filteredSummaries.isEmpty()) {
+            item(key = "grades_loading_skeleton") {
+                GradesLoadingSkeleton()
+            }
+        } else if (filteredSummaries.isEmpty()) {
+            item(key = "empty_grades_card") {
                 Surface(
                     shape = appCardShape(standard = 20.dp, nothing = 20.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -407,14 +431,18 @@ fun CijfersScreen(
                 }
             }
         } else {
-            items(filteredSummaries, key = { it.subjectCode + "_" + it.subjectName }) { summary ->
+            itemsIndexed(
+                items = filteredSummaries,
+                key = { _, it -> it.subjectCode + "_" + it.subjectName }
+            ) { idx, summary ->
                 SubjectGradeCard(
                     summary = summary,
                     gradeUnboxingEnabled = gradeUnboxingEnabled,
                     unboxedGradeIds = unboxedGradeIds,
                     onWhatIfClick = { onOpenWhatIf(summary) },
                     onUnboxGrade = onPlayGradeUnboxing,
-                    onEditSubject = onEditSubject
+                    onEditSubject = onEditSubject,
+                    modifier = Modifier.staggeredEntrance(idx)
                 )
             }
         }
@@ -432,6 +460,8 @@ fun SubjectGradeCard(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val haptics = rememberAgendaHaptics()
+    val animatedSubjectAvg = rememberAnimatedScoreText(summary.weightedAverage, locale = Locale.US)
     val windowsPhoneMode = isWindowsPhone
     val nothingMode = isNothingOs
     val customState = LocalSubjectCustomizationState.current
@@ -480,7 +510,10 @@ fun SubjectGradeCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(rowTouchShape)
-                    .clickable { expanded = !expanded },
+                    .clickable {
+                        haptics.tick()
+                        expanded = !expanded
+                    },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -562,7 +595,7 @@ fun SubjectGradeCard(
                     // Average Pill or Metro bold counter
                     if (windowsPhoneMode) {
                         Text(
-                            text = "${summary.weightedAverage}",
+                            text = animatedSubjectAvg,
                             style = MaterialTheme.typography.titleLarge,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Light,
@@ -579,7 +612,7 @@ fun SubjectGradeCard(
                             }
                         ) {
                             Text(
-                                text = "${summary.weightedAverage}",
+                                text = animatedSubjectAvg,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = when {
@@ -593,7 +626,10 @@ fun SubjectGradeCard(
                     }
 
                     IconButton(
-                        onClick = { onEditSubject(subjectDisplay.normalizedCode, subjectDisplay.rawSubjectText) },
+                        onClick = {
+                            haptics.tick()
+                            onEditSubject(subjectDisplay.normalizedCode, subjectDisplay.rawSubjectText)
+                        },
                         modifier = Modifier
                             .minimumInteractiveComponentSize()
                             .testTag("edit_subject_${summary.subjectCode}")
@@ -607,7 +643,10 @@ fun SubjectGradeCard(
                     }
 
                     IconButton(
-                        onClick = { expanded = !expanded },
+                        onClick = {
+                            haptics.tick()
+                            expanded = !expanded
+                        },
                         modifier = Modifier
                             .minimumInteractiveComponentSize()
                             .testTag("expand_subject_${summary.subjectCode}")
@@ -709,7 +748,10 @@ fun SubjectGradeCard(
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Button(
-                        onClick = onWhatIfClick,
+                        onClick = {
+                            haptics.tick()
+                            onWhatIfClick()
+                        },
                         shape = appButtonShape(),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (onMetroColored) Color.Black.copy(alpha = 0.35f) else MaterialTheme.colorScheme.primary,
@@ -717,6 +759,7 @@ fun SubjectGradeCard(
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
+                            .heightIn(min = 48.dp)
                             .testTag("what_if_button_${summary.subjectCode}")
                     ) {
                         Icon(
@@ -725,7 +768,7 @@ fun SubjectGradeCard(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("What-If Cijfer Berekenen voor ${subjectDisplay.displayName}")
+                        Text("Wat moet ik halen? • ${subjectDisplay.displayName}")
                     }
                 }
             }

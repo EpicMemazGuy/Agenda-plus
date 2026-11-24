@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -69,6 +69,8 @@ import com.example.ui.components.isIosLiquidGlass
 import com.example.ui.components.isOneUi85
 import com.example.ui.components.isWindowsPhone
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.rememberAgendaHaptics
+import com.example.ui.components.staggeredEntrance
 import java.util.Locale
 
 data class DetectedSubjectRow(
@@ -91,6 +93,7 @@ fun VakkenAanpassenScreen(
 ) {
     BackHandler { onBack() }
 
+    val haptics = rememberAgendaHaptics()
     var showAddCodeDialog by remember { mutableStateOf(false) }
     var newCodeInput by remember { mutableStateOf("") }
     var showResetAllDialog by remember { mutableStateOf(false) }
@@ -143,13 +146,16 @@ fun VakkenAanpassenScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item {
+        item(key = "vakken_header") {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 IconButton(
-                    onClick = onBack,
+                    onClick = {
+                        haptics.tick()
+                        onBack()
+                    },
                     modifier = Modifier
                         .minimumInteractiveComponentSize()
                         .testTag("vakken_back_button")
@@ -192,7 +198,7 @@ fun VakkenAanpassenScreen(
         }
 
         // Settings & Actions Card
-        item {
+        item(key = "vakken_settings_card") {
             Card(
                 shape = cardShape,
                 border = nothingCardBorder(),
@@ -227,7 +233,10 @@ fun VakkenAanpassenScreen(
                         }
                         Switch(
                             checked = smartDefaultNamesEnabled,
-                            onCheckedChange = onToggleSmartDefaults,
+                            onCheckedChange = {
+                                haptics.confirm()
+                                onToggleSmartDefaults(it)
+                            },
                             modifier = Modifier.testTag("vakken_smart_defaults_switch")
                         )
                     }
@@ -252,7 +261,10 @@ fun VakkenAanpassenScreen(
                         }
                         Switch(
                             checked = useSubjectColorsForMetroTiles,
-                            onCheckedChange = onToggleMetroTileColors,
+                            onCheckedChange = {
+                                haptics.confirm()
+                                onToggleMetroTileColors(it)
+                            },
                             modifier = Modifier.testTag("vakken_metro_tile_colors_switch")
                         )
                     }
@@ -295,7 +307,7 @@ fun VakkenAanpassenScreen(
         }
 
         if (allDetectedSubjects.isEmpty()) {
-            item {
+            item(key = "vakken_empty") {
                 Card(
                     shape = cardShape,
                     border = nothingCardBorder(),
@@ -320,7 +332,7 @@ fun VakkenAanpassenScreen(
                 }
             }
         } else {
-            items(allDetectedSubjects, key = { it.normalizedCode }) { row ->
+            itemsIndexed(allDetectedSubjects, key = { _, it -> it.normalizedCode }) { idx, row ->
                 val resolved = remember(row, stateSnapshot) {
                     SubjectCustomizationCatalog.resolveSubject(
                         rawSubject = row.detectedLabel,
@@ -339,8 +351,12 @@ fun VakkenAanpassenScreen(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .staggeredEntrance(idx)
                         .clip(cardShape)
-                        .clickable { onOpenSubjectEditor(row.normalizedCode, row.detectedLabel) }
+                        .clickable {
+                            haptics.tick()
+                            onOpenSubjectEditor(row.normalizedCode, row.detectedLabel)
+                        }
                         .testTag("vakken_row_${row.normalizedCode}")
                 ) {
                     Row(

@@ -44,6 +44,7 @@ import com.example.model.capitalizeSubjectName
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.nothingCardBorder
 import com.example.ui.components.LocalSubjectCustomizationState
+import com.example.ui.components.rememberAgendaHaptics
 import com.example.ui.theme.LocalAxolaCustomTheme
 import com.example.ui.theme.LocalDarkThemeActive
 import com.example.ui.theme.LocalMetroAccent
@@ -66,8 +67,19 @@ fun GradeUnboxingDialog(
     onRevealComplete: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val haptics = rememberAgendaHaptics()
     var activeMode by remember(initialMode) { mutableStateOf(initialMode) }
     var isRevealed by remember(grade.id, activeMode) { mutableStateOf(false) }
+
+    LaunchedEffect(isRevealed, grade.id) {
+        if (isRevealed) {
+            if (grade.score >= 8.0) {
+                haptics.celebrationOrAlert()
+            } else {
+                haptics.confirm()
+            }
+        }
+    }
 
     Dialog(
         onDismissRequest = {
@@ -129,6 +141,7 @@ fun GradeUnboxingDialog(
                         FilterChip(
                             selected = activeMode == mode,
                             onClick = {
+                                haptics.tick()
                                 activeMode = mode
                                 onChangeMode(mode)
                                 isRevealed = false
@@ -193,7 +206,10 @@ fun GradeUnboxingDialog(
 
                 if (!isRevealed) {
                     TextButton(
-                        onClick = { isRevealed = true },
+                        onClick = {
+                            haptics.tick()
+                            isRevealed = true
+                        },
                         modifier = Modifier
                             .align(Alignment.End)
                             .testTag("unboxing_skip_button")
@@ -235,6 +251,7 @@ private fun GradeRevealedCelebrationCard(
     onDone: () -> Unit
 ) {
     val context = LocalContext.current
+    val haptics = rememberAgendaHaptics()
     val isDarkMode = LocalDarkThemeActive.current
     val dynamicPrimary = MaterialTheme.colorScheme.primary
     val primaryRarity = gradeRarityColor(grade.score)
@@ -396,7 +413,10 @@ private fun GradeRevealedCelebrationCard(
                     Text("Opnieuw")
                 }
                 Button(
-                    onClick = onDone,
+                    onClick = {
+                        haptics.confirm()
+                        onDone()
+                    },
                     shape = RoundedCornerShape(percent = 50),
                     modifier = Modifier
                         .weight(1f)
@@ -534,6 +554,7 @@ private fun TapItUpMinigame(
     onRevealed: () -> Unit
 ) {
     var taps by remember(grade.id) { mutableIntStateOf(0) }
+    val haptics = rememberAgendaHaptics()
     val targetTaps = 10
     val progress = (taps.toFloat() / targetTaps).coerceIn(0f, 1f)
     val scale = remember { Animatable(1f) }
@@ -567,6 +588,7 @@ private fun TapItUpMinigame(
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceContainer)
                 .clickable(enabled = taps < targetTaps) {
+                    haptics.tick()
                     taps++
                     scope.launch {
                         scale.snapTo(1.12f)
@@ -615,11 +637,13 @@ private fun PenaltiesMinigame(
     var keeperCorner by remember(grade.id) { mutableIntStateOf(1) }
     var attemptCount by remember(grade.id) { mutableIntStateOf(0) }
     var statusText by remember(grade.id) { mutableStateOf("Kies een hoek en schiet!") }
+    val haptics = rememberAgendaHaptics()
     val ballProgress = remember(grade.id) { Animatable(0f) }
     val scope = rememberCoroutineScope()
 
     fun takeShot(corner: Int) {
         if (ballProgress.isRunning) return
+        haptics.tick()
         attemptCount++
         chosenCorner = corner
         // Keeper can save shot 1 occasionally for suspense, never blocks shot 2+
@@ -866,6 +890,7 @@ private fun PlinkoDropMinigame(
     onRevealed: () -> Unit
 ) {
     var dropStarted by remember(grade.id) { mutableStateOf(false) }
+    val haptics = rememberAgendaHaptics()
     var ballX by remember(grade.id) { mutableFloatStateOf(0.5f) }
     var ballY by remember(grade.id) { mutableFloatStateOf(0.08f) }
     var finishedSlot by remember(grade.id) { mutableStateOf<Int?>(null) }
@@ -1008,7 +1033,10 @@ private fun PlinkoDropMinigame(
 
         if (!dropStarted) {
             Button(
-                onClick = { dropStarted = true },
+                onClick = {
+                    haptics.tick()
+                    dropStarted = true
+                },
                 shape = RoundedCornerShape(percent = 50),
                 modifier = Modifier
                     .fillMaxWidth()

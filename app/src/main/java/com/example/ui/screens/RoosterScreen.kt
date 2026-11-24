@@ -15,9 +15,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -73,6 +77,7 @@ import com.example.ui.components.LocalSubjectCustomizationState
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.OneUiPillBadge
 import com.example.ui.components.ScheduleLoadingSkeleton
+import com.example.ui.components.agendaPressable
 import com.example.ui.components.appButtonShape
 import com.example.ui.components.appCardShape
 import com.example.ui.components.appInnerCardShape
@@ -89,7 +94,10 @@ import com.example.ui.components.oneUiPillContainerColor
 import com.example.ui.components.oneUiPillContentColor
 import com.example.ui.components.oneUiSpring
 import com.example.ui.components.oneUiTween
+import com.example.ui.components.rememberAgendaHaptics
 import com.example.ui.components.rememberSubjectDisplay
+import com.example.ui.components.staggeredEntrance
+import com.example.ui.dialogs.LessonDetailSheet
 import com.example.ui.theme.MetroCrimson
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -151,18 +159,47 @@ fun RoosterScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val haptics = rememberAgendaHaptics()
     val oneUiMode = isOneUi85
     val windowsPhoneMode = isWindowsPhone
     val iosMode = isIosLiquidGlass
     val usesFrostedInset = oneUiMode || iosMode
     val listState = rememberLazyListState()
-    val isScrolled by remember {
-        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 70 }
+    val dayPagerStates = remember { List(5) { LazyListState() } }
+    val pagerState = rememberPagerState(
+        initialPage = (selectedDay - 1).coerceIn(0, 4),
+        pageCount = { 5 }
+    )
+    LaunchedEffect(selectedDay, viewMode) {
+        if (viewMode == 0) {
+            val targetPage = (selectedDay - 1).coerceIn(0, 4)
+            if (pagerState.currentPage != targetPage) {
+                pagerState.animateScrollToPage(targetPage)
+            }
+        }
+    }
+    LaunchedEffect(pagerState.settledPage, viewMode) {
+        if (viewMode == 0) {
+            val settledDay = pagerState.settledPage + 1
+            if (settledDay != selectedDay) {
+                haptics.tick()
+                onSelectDay(settledDay)
+            }
+        }
+    }
+    val activeListState = if (viewMode == 0) {
+        dayPagerStates[pagerState.currentPage.coerceIn(0, 4)]
+    } else {
+        listState
+    }
+    val isScrolled by remember(activeListState) {
+        derivedStateOf { activeListState.firstVisibleItemIndex > 0 || activeListState.firstVisibleItemScrollOffset > 70 }
     }
     LaunchedEffect(isScrolled, usesFrostedInset) {
         onHeaderCollapsedChange(usesFrostedInset && isScrolled)
     }
     var weekOffset by remember { mutableIntStateOf(0) }
+    var selectedLessonForDetail by remember { mutableStateOf<Appointment?>(null) }
     var showShareOptionsSheet by remember { mutableStateOf(false) }
     var showRoosterPngDialog by remember { mutableStateOf(false) }
     var showStoryDialog by remember { mutableStateOf(false) }
@@ -277,480 +314,709 @@ fun RoosterScreen(
     }
 
     val oneUiInsets = LocalOneUiScreenInsets.current
-    LazyColumn(
-        state = listState,
+    val horizontalPad = appScreenHorizontalPadding(if (agendaStyle == AgendaStyle.COMPACT) 12.dp else 16.dp)
+    val itemSpacing = if (agendaStyle == AgendaStyle.COMPACT) 10.dp else 14.dp
+
+    Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = appScreenHorizontalPadding(if (agendaStyle == AgendaStyle.COMPACT) 12.dp else 16.dp))
+            .padding(horizontal = horizontalPad)
+            .padding(top = oneUiInsets.calculateTopPadding() + 10.dp)
             .testTag("rooster_screen"),
-        verticalArrangement = Arrangement.spacedBy(if (agendaStyle == AgendaStyle.COMPACT) 10.dp else 14.dp),
-        contentPadding = PaddingValues(
-            top = oneUiInsets.calculateTopPadding() + 10.dp,
-            bottom = oneUiInsets.calculateBottomPadding() + 24.dp
-        )
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // 1. Live Week Banner & Week Navigation
-        item {
-            val weekNavControls: @Composable () -> Unit = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = { weekOffset-- },
-                        modifier = Modifier
-                            .minimumInteractiveComponentSize()
-                            .testTag("rooster_prev_week_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                            contentDescription = "Vorige week"
-                        )
-                    }
-                    val weekPillShape = appButtonShape()
-                    Surface(
-                        shape = weekPillShape,
-                        color = if (oneUiMode) oneUiPillContainerColor() else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier
-                            .clip(weekPillShape)
-                            .clickable { weekOffset = 0 }
-                    ) {
-                        Text(
-                            text = if (weekOffset == 0) "Actueel" else "W$weekNumber",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (oneUiMode) oneUiPillContentColor() else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        )
-                    }
-                    IconButton(
-                        onClick = { weekOffset++ },
-                        modifier = Modifier
-                            .minimumInteractiveComponentSize()
-                            .testTag("rooster_next_week_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = "Volgende week"
-                        )
-                    }
-                }
-            }
-
-            if (oneUiMode || windowsPhoneMode || iosMode) {
-                AppThemedHeader(
-                    title = if (viewMode == 3) "Toetsen" else "Lesrooster",
-                    subtitle = if (viewMode == 3) {
-                        "${upcomingTests.size} aankomende toets(en) • PW, SO, MO"
-                    } else {
-                        "Week $weekNumber • ${days.first().dateString} - ${days.last().dateString}"
+        val weekNavControls: @Composable () -> Unit = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = {
+                        haptics.tick()
+                        weekOffset--
                     },
-                    isScrolled = isScrolled,
-                    trailingContent = if (viewMode != 3) weekNavControls else null
-                )
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .testTag("rooster_prev_week_button")
                 ) {
-                    Column {
-                        Text(
-                            text = if (viewMode == 3) "Toetsen & Deadlines" else "Lesrooster",
-                            style = if (agendaStyle == AgendaStyle.COMPACT) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = if (viewMode == 3) {
-                                "${upcomingTests.size} aankomende toets(en) • PW, SO, MO"
-                            } else {
-                                "Week $weekNumber • ${days.first().dateString} - ${days.last().dateString}"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    weekNavControls()
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                        contentDescription = "Vorige week"
+                    )
+                }
+                val weekPillShape = appButtonShape()
+                Surface(
+                    shape = weekPillShape,
+                    color = if (oneUiMode) oneUiPillContainerColor() else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier
+                        .clip(weekPillShape)
+                        .clickable {
+                            haptics.tick()
+                            weekOffset = 0
+                        }
+                ) {
+                    Text(
+                        text = if (weekOffset == 0) "Actueel" else "W$weekNumber",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (oneUiMode) oneUiPillContentColor() else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        haptics.tick()
+                        weekOffset++
+                    },
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .testTag("rooster_next_week_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = "Volgende week"
+                    )
                 }
             }
         }
 
-        // 2. View Mode Switcher: Dag, 3-Dagen, Week, Toetsen
-        item {
-            SingleChoiceSegmentedButtonRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("rooster_view_mode_segmented")
+        if (oneUiMode || windowsPhoneMode || iosMode) {
+            AppThemedHeader(
+                title = if (viewMode == 3) "Toetsen" else "Lesrooster",
+                subtitle = if (viewMode == 3) {
+                    "${upcomingTests.size} aankomende toets(en) • PW, SO, MO"
+                } else {
+                    "Week $weekNumber • ${days.first().dateString} - ${days.last().dateString}"
+                },
+                isScrolled = isScrolled,
+                trailingContent = if (viewMode != 3) weekNavControls else null
+            )
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                SegmentedButton(
-                    selected = viewMode == 0,
-                    onClick = { onSelectViewMode(0) },
-                    shape = if (windowsPhoneMode) RectangleShape else SegmentedButtonDefaults.itemShape(index = 0, count = 4),
-                    modifier = Modifier.testTag("rooster_mode_dag")
-                ) {
-                    Text("Dag", maxLines = 1)
+                Column {
+                    Text(
+                        text = if (viewMode == 3) "Toetsen & Deadlines" else "Lesrooster",
+                        style = if (agendaStyle == AgendaStyle.COMPACT) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = if (viewMode == 3) {
+                            "${upcomingTests.size} aankomende toets(en) • PW, SO, MO"
+                        } else {
+                            "Week $weekNumber • ${days.first().dateString} - ${days.last().dateString}"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                SegmentedButton(
-                    selected = viewMode == 1,
-                    onClick = { onSelectViewMode(1) },
-                    shape = if (windowsPhoneMode) RectangleShape else SegmentedButtonDefaults.itemShape(index = 1, count = 4),
-                    modifier = Modifier.testTag("rooster_mode_3dagen")
-                ) {
-                    Text("3-Dagen", maxLines = 1)
-                }
-                SegmentedButton(
-                    selected = viewMode == 2,
-                    onClick = { onSelectViewMode(2) },
-                    shape = if (windowsPhoneMode) RectangleShape else SegmentedButtonDefaults.itemShape(index = 2, count = 4),
-                    modifier = Modifier.testTag("rooster_mode_week")
-                ) {
-                    Text("Week", maxLines = 1)
-                }
-                SegmentedButton(
-                    selected = viewMode == 3,
-                    onClick = { onSelectViewMode(3) },
-                    shape = if (windowsPhoneMode) RectangleShape else SegmentedButtonDefaults.itemShape(index = 3, count = 4),
-                    modifier = Modifier.testTag("rooster_mode_toetsen")
-                ) {
-                    Text("Toetsen", maxLines = 1)
-                }
+                weekNavControls()
+            }
+        }
+
+        // 2. View Mode Switcher: Dag, 3-Dagen, Week, Toetsen
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("rooster_view_mode_segmented")
+        ) {
+            SegmentedButton(
+                selected = viewMode == 0,
+                onClick = {
+                    haptics.tick()
+                    onSelectViewMode(0)
+                },
+                shape = if (windowsPhoneMode) RectangleShape else SegmentedButtonDefaults.itemShape(index = 0, count = 4),
+                modifier = Modifier.testTag("rooster_mode_dag")
+            ) {
+                Text("Dag", maxLines = 1)
+            }
+            SegmentedButton(
+                selected = viewMode == 1,
+                onClick = {
+                    haptics.tick()
+                    onSelectViewMode(1)
+                },
+                shape = if (windowsPhoneMode) RectangleShape else SegmentedButtonDefaults.itemShape(index = 1, count = 4),
+                modifier = Modifier.testTag("rooster_mode_3dagen")
+            ) {
+                Text("3-Dagen", maxLines = 1)
+            }
+            SegmentedButton(
+                selected = viewMode == 2,
+                onClick = {
+                    haptics.tick()
+                    onSelectViewMode(2)
+                },
+                shape = if (windowsPhoneMode) RectangleShape else SegmentedButtonDefaults.itemShape(index = 2, count = 4),
+                modifier = Modifier.testTag("rooster_mode_week")
+            ) {
+                Text("Week", maxLines = 1)
+            }
+            SegmentedButton(
+                selected = viewMode == 3,
+                onClick = {
+                    haptics.tick()
+                    onSelectViewMode(3)
+                },
+                shape = if (windowsPhoneMode) RectangleShape else SegmentedButtonDefaults.itemShape(index = 3, count = 4),
+                modifier = Modifier.testTag("rooster_mode_toetsen")
+            ) {
+                Text("Toetsen", maxLines = 1)
             }
         }
 
         // 3. Interactive Horizontal Day Selector Strip (hidden in Toetsen mode)
         if (viewMode != 3) {
-            item {
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("day_strip_selector"),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(days) { day ->
-                        val isSelected = selectedDay == day.dayNumber
-                        val dayShape = appInnerCardShape(standard = 16.dp, nothing = 16.dp)
-                        Surface(
-                            modifier = Modifier
-                                .width(if (agendaStyle == AgendaStyle.COMPACT) 62.dp else 68.dp)
-                                .clip(dayShape)
-                                .clickable { onSelectDay(day.dayNumber) }
-                                .testTag("day_selector_${day.dayNumber}"),
-                            shape = dayShape,
-                            border = nothingCardBorder(isAlert = day.hasDisruption && !isSelected),
-                            color = if (isSelected) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)
-                            },
-                            contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("day_strip_selector"),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(days, key = { it.dayNumber }) { day ->
+                    val isSelected = selectedDay == day.dayNumber
+                    val dayShape = appInnerCardShape(standard = 16.dp, nothing = 16.dp)
+                    Surface(
+                        modifier = Modifier
+                            .width(if (agendaStyle == AgendaStyle.COMPACT) 62.dp else 68.dp)
+                            .clip(dayShape)
+                            .clickable {
+                                haptics.tick()
+                                onSelectDay(day.dayNumber)
+                            }
+                            .testTag("day_selector_${day.dayNumber}"),
+                        shape = dayShape,
+                        border = nothingCardBorder(isAlert = day.hasDisruption && !isSelected),
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow)
+                        },
+                        contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = if (agendaStyle == AgendaStyle.COMPACT) 8.dp else 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Column(
-                                modifier = Modifier.padding(vertical = if (agendaStyle == AgendaStyle.COMPACT) 8.dp else 12.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = if (windowsPhoneMode) day.nameDutch.lowercase(Locale("nl", "NL")) else day.nameDutch,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = day.dateString.split(" ").first(),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                )
+                            Text(
+                                text = if (windowsPhoneMode) day.nameDutch.lowercase(Locale("nl", "NL")) else day.nameDutch,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = day.dateString.split(" ").first(),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                            )
 
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (day.hasDisruption) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(5.dp)
-                                                .clip(if (windowsPhoneMode) RectangleShape else CircleShape)
-                                                .background(
-                                                    if (isSelected) MaterialTheme.colorScheme.primary
-                                                    else MaterialTheme.colorScheme.error
-                                                )
-                                        )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (day.hasDisruption) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .clip(if (windowsPhoneMode) RectangleShape else CircleShape)
+                                            .background(
+                                                if (isSelected) MaterialTheme.colorScheme.primary
+                                                else MaterialTheme.colorScheme.error
+                                            )
+                                    )
+                                }
+                                if (day.workloadCount > 0) {
+                                    val heatColor = when {
+                                        day.workloadCount >= 3 -> MaterialTheme.colorScheme.error
+                                        day.workloadCount == 2 -> MaterialTheme.colorScheme.tertiary
+                                        else -> MaterialTheme.colorScheme.primary
                                     }
-                                    if (day.workloadCount > 0) {
-                                        val heatColor = when {
-                                            day.workloadCount >= 3 -> MaterialTheme.colorScheme.error
-                                            day.workloadCount == 2 -> MaterialTheme.colorScheme.tertiary
-                                            else -> MaterialTheme.colorScheme.primary
-                                        }
-                                        Box(
-                                            modifier = Modifier
-                                                .width((day.workloadCount.coerceAtMost(3) * 5).dp)
-                                                .height(4.dp)
-                                                .clip(if (windowsPhoneMode) RectangleShape else CircleShape)
-                                                .background(heatColor)
-                                        )
-                                    }
-                                    if (!day.hasDisruption && day.workloadCount == 0) {
-                                        Spacer(modifier = Modifier.size(5.dp))
-                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .width((day.workloadCount.coerceAtMost(3) * 5).dp)
+                                            .height(4.dp)
+                                            .clip(if (windowsPhoneMode) RectangleShape else CircleShape)
+                                            .background(heatColor)
+                                    )
+                                }
+                                if (!day.hasDisruption && day.workloadCount == 0) {
+                                    Spacer(modifier = Modifier.size(5.dp))
                                 }
                             }
                         }
                     }
                 }
             }
-        }
 
-        if (viewMode != 3) {
-            item(key = "rooster_add_custom_row") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        haptics.tick()
+                        showShareOptionsSheet = true
+                    },
+                    shape = appButtonShape(),
+                    modifier = Modifier
+                        .height(40.dp)
+                        .testTag("rooster_share_button")
                 ) {
-                    OutlinedButton(
-                        onClick = { showShareOptionsSheet = true },
-                        shape = appButtonShape(),
-                        modifier = Modifier
-                            .height(40.dp)
-                            .testTag("rooster_share_button")
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = "Deel Rooster", modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Deel Rooster")
-                    }
-                    FilledTonalButton(
-                        onClick = { onAddCustomScheduleItem(selectedDayItem.dateIso, selectedDayItem.dayNumber) },
-                        shape = appButtonShape(),
-                        modifier = Modifier
-                            .height(40.dp)
-                            .testTag("rooster_add_custom_block_button")
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Persoonlijk blok")
-                    }
+                    Icon(Icons.Default.Share, contentDescription = "Deel Rooster", modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Deel Rooster")
+                }
+                FilledTonalButton(
+                    onClick = {
+                        haptics.tick()
+                        onAddCustomScheduleItem(selectedDayItem.dateIso, selectedDayItem.dayNumber)
+                    },
+                    shape = appButtonShape(),
+                    modifier = Modifier
+                        .height(40.dp)
+                        .testTag("rooster_add_custom_block_button")
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Persoonlijk blok")
                 }
             }
         }
 
-        // 4. Toetsen View OR Schedule Skeleton / Empty / Dense or Spacious List
-        if (viewMode == 3) {
-            if (upcomingTests.isEmpty()) {
-                item {
-                    Surface(
-                        shape = appCardShape(standard = 20.dp, nothing = 20.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                        border = nothingCardBorder(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("toetsen_empty_card")
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(28.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.School,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(44.dp)
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = "Geen geplande toetsen gevonden",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Aankomende proefwerken, SO's, MO's en deadlines uit Magister verschijnen hier chronologisch.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+        // 4. Dag HorizontalPager OR 3-Dagen / Week / Toetsen LazyColumn
+        if (viewMode == 0) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .testTag("rooster_dag_pager"),
+                beyondViewportPageCount = 1
+            ) { pageIdx ->
+                val pageDay = days.getOrElse(pageIdx) { selectedDayItem }
+                val pageAppts = remember(appointments, pageDay, hasIsoDates) {
+                    appointments.filter { appt ->
+                        if (hasIsoDates) appt.dateIso == pageDay.dateIso else appt.dayOfWeek == pageDay.dayNumber
+                    }.sortedWith(compareBy({ it.periodIndex }, { it.startTime }))
                 }
-            } else {
-                items(upcomingTests, key = { it.id }) { test ->
-                    val checklist = testPrepChecklists[test.id]
-                    UpcomingTestCard(
-                        test = test,
-                        checklistProgressText = checklist?.let { "${it.completedCount}/${it.topics.size} klaar" },
-                        onClick = {
-                            onOpenTestPrep(
-                                test.id,
-                                test.subject.capitalizeSubjectName(),
-                                "${test.typeBadge} ${test.subject.capitalizeSubjectName()}",
-                                test.description,
-                                test.dateIso
-                            )
-                        }
+                val pageCustom = remember(customScheduleItems, pageDay) {
+                    customScheduleItems
+                        .filter { it.appliesToDate(pageDay.dateIso, pageDay.dayNumber) }
+                        .sortedBy { it.startTime }
+                }
+                val pageTimeline = remember(pageAppts, pageCustom) {
+                    (pageAppts.map { RoosterDayEntry.Lesson(it) } + pageCustom.map { RoosterDayEntry.Custom(it) })
+                        .sortedBy { it.sortTime }
+                }
+                LazyColumn(
+                    state = dayPagerStates[pageIdx],
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(itemSpacing),
+                    contentPadding = PaddingValues(
+                        top = 4.dp,
+                        bottom = oneUiInsets.calculateBottomPadding() + 24.dp
                     )
-                }
-            }
-        } else if (isRefreshing && appointments.isEmpty()) {
-            item {
-                ScheduleLoadingSkeleton(
-                    agendaStyle = agendaStyle,
-                    statusLabel = "Rooster ophalen van Magister..."
-                )
-            }
-        } else if (currentAppointments.isEmpty() && visibleCustomItems.values.all { it.isEmpty() }) {
-            item {
-                Surface(
-                    shape = appCardShape(standard = 20.dp, nothing = 20.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    border = nothingCardBorder(),
-                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.EventBusy,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(44.dp)
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = "Geen lessen gepland voor ${selectedDayItem.nameDutch} ${selectedDayItem.dateString}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Kies een andere dag, bekijk de hele week of schakel naar volgende week",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(14.dp))
-                        OutlinedButton(
-                            onClick = { onSelectViewMode(2) }
-                        ) {
-                            Icon(Icons.Default.CalendarViewWeek, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Bekijk Hele Week")
+                    if (isRefreshing && appointments.isEmpty()) {
+                        item(key = "dag_skeleton_$pageIdx") {
+                            ScheduleLoadingSkeleton(
+                                agendaStyle = agendaStyle,
+                                statusLabel = "Rooster ophalen van Magister..."
+                            )
                         }
-                    }
-                }
-            }
-        } else if (agendaStyle == AgendaStyle.COMPACT) {
-            groupedByDay.forEach { (dayHeader, dayAppointments) ->
-                if (viewMode != 0) {
-                    item(key = "header_$dayHeader") {
-                        Text(
-                            text = if (oneUiMode || windowsPhoneMode) dayHeader else dayHeader.uppercase(),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (oneUiMode) FontWeight.Medium else FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = 4.dp, start = 4.dp)
-                        )
-                    }
-                }
-
-                item(key = "compact_group_$dayHeader") {
-                    Surface(
-                        shape = appCardShape(standard = 18.dp, nothing = 24.dp),
-                        color = appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
-                        border = nothingCardBorder(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("compact_rooster_container")
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            dayAppointments.forEachIndexed { idx, appt ->
-                                val isKwtItem = appt.isKwt || kwtSlots.any { it.appointmentId == appt.id }
-                                CompactRoosterRow(
-                                    appointment = appt,
-                                    isKwtSelectable = isKwtItem,
-                                    changedDiff = changedLessonDiffs[appt.id],
-                                    onOpenKwt = { onOpenKwtSlot(appt) },
-                                    onEditSubject = onEditSubject
-                                )
-                                if (idx < dayAppointments.lastIndex) {
-                                    NothingAwareDivider(
-                                        color = MaterialTheme.colorScheme.surfaceVariant,
-                                        insetStart = if (oneUiMode) 52.dp else 0.dp,
-                                        modifier = if (oneUiMode) Modifier else Modifier.padding(horizontal = 12.dp)
+                    } else if (pageAppts.isEmpty() && pageCustom.isEmpty()) {
+                        item(key = "dag_empty_${pageDay.dateIso}") {
+                            Surface(
+                                shape = appCardShape(standard = 20.dp, nothing = 20.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                border = nothingCardBorder(),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.EventBusy,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(44.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text(
+                                        text = "Geen lessen gepland voor ${pageDay.nameDutch} ${pageDay.dateString}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Swipe naar een andere dag, bekijk de hele week of schakel naar volgende week",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    OutlinedButton(
+                                        onClick = {
+                                            haptics.tick()
+                                            onSelectViewMode(2)
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.CalendarViewWeek, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Bekijk Hele Week")
+                                    }
+                                }
+                            }
+                        }
+                    } else if (agendaStyle == AgendaStyle.COMPACT) {
+                        if (pageAppts.isNotEmpty()) {
+                            item(key = "dag_compact_${pageDay.dateIso}") {
+                                Surface(
+                                    shape = appCardShape(standard = 18.dp, nothing = 24.dp),
+                                    color = appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+                                    border = nothingCardBorder(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("compact_rooster_container")
+                                ) {
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        pageAppts.forEachIndexed { idx, appt ->
+                                            val isKwtItem = appt.isKwt || kwtSlots.any { it.appointmentId == appt.id }
+                                            CompactRoosterRow(
+                                                appointment = appt,
+                                                isKwtSelectable = isKwtItem,
+                                                changedDiff = changedLessonDiffs[appt.id],
+                                                onOpenKwt = { onOpenKwtSlot(appt) },
+                                                onOpenDetail = {
+                                                    haptics.tick()
+                                                    selectedLessonForDetail = appt
+                                                },
+                                                onEditSubject = onEditSubject
+                                            )
+                                            if (idx < pageAppts.lastIndex) {
+                                                NothingAwareDivider(
+                                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                                    insetStart = if (oneUiMode) 52.dp else 0.dp,
+                                                    modifier = if (oneUiMode) Modifier else Modifier.padding(horizontal = 12.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        itemsIndexed(pageCustom, key = { _, it -> "dag_compact_custom_${pageDay.dateIso}_${it.id}" }) { idx, custom ->
+                            CustomScheduleItemCard(
+                                item = custom,
+                                onToggleCompleted = {
+                                    haptics.confirm()
+                                    onToggleCustomScheduleItem(custom.id, it)
+                                },
+                                onEdit = { onEditCustomScheduleItem(custom) },
+                                onDelete = { onDeleteCustomScheduleItem(custom.id) },
+                                modifier = Modifier.staggeredEntrance(idx)
+                            )
+                        }
+                        item(key = "dag_legend_compact_${pageDay.dateIso}") {
+                            RoosterStatusLegendRow()
+                        }
+                    } else {
+                        itemsIndexed(pageTimeline, key = { _, it -> "${pageDay.dateIso}_${it.key}" }) { idx, entry ->
+                            when (entry) {
+                                is RoosterDayEntry.Lesson -> {
+                                    val appt = entry.appointment
+                                    val isKwtItem = appt.isKwt || kwtSlots.any { it.appointmentId == appt.id }
+                                    RoosterPeriodCard(
+                                        appointment = appt,
+                                        isKwtSelectable = isKwtItem,
+                                        changedDiff = changedLessonDiffs[appt.id],
+                                        onOpenKwt = { onOpenKwtSlot(appt) },
+                                        onOpenDetail = {
+                                            haptics.tick()
+                                            selectedLessonForDetail = appt
+                                        },
+                                        onEditSubject = onEditSubject,
+                                        modifier = Modifier.staggeredEntrance(idx)
+                                    )
+                                }
+                                is RoosterDayEntry.Custom -> {
+                                    CustomScheduleItemCard(
+                                        item = entry.item,
+                                        onToggleCompleted = {
+                                            haptics.confirm()
+                                            onToggleCustomScheduleItem(entry.item.id, it)
+                                        },
+                                        onEdit = { onEditCustomScheduleItem(entry.item) },
+                                        onDelete = { onDeleteCustomScheduleItem(entry.item.id) },
+                                        modifier = Modifier.staggeredEntrance(idx)
                                     )
                                 }
                             }
                         }
+                        item(key = "dag_legend_spacious_${pageDay.dateIso}") {
+                            RoosterStatusLegendRow()
+                        }
                     }
                 }
             }
-            visibleCustomItems.forEach { (dayItem, itemsForDay) ->
-                items(itemsForDay, key = { "compact_custom_${dayItem.dateIso}_${it.id}" }) { custom ->
-                    CustomScheduleItemCard(
-                        item = custom,
-                        onToggleCompleted = { onToggleCustomScheduleItem(custom.id, it) },
-                        onEdit = { onEditCustomScheduleItem(custom) },
-                        onDelete = { onDeleteCustomScheduleItem(custom.id) }
-                    )
-                }
-            }
-            item(key = "rooster_status_legend_compact") {
-                RoosterStatusLegendRow()
-            }
         } else {
-            val dayHeadersOrder = if (viewMode == 0) listOf(selectedDayItem) else if (viewMode == 1) days.filter { it.dayNumber in selectedDay..(selectedDay + 2).coerceAtMost(5) } else days
-            dayHeadersOrder.forEach { dayItem ->
-                val dayAppts = currentAppointments.filter { appt ->
-                    if (hasIsoDates) appt.dateIso == dayItem.dateIso else appt.dayOfWeek == dayItem.dayNumber
-                }
-                val dayCustom = visibleCustomItems[dayItem].orEmpty()
-                val dayTimeline = (dayAppts.map { RoosterDayEntry.Lesson(it) } + dayCustom.map { RoosterDayEntry.Custom(it) })
-                    .sortedBy { it.sortTime }
-
-                if (dayTimeline.isNotEmpty()) {
-                    if (viewMode != 0) {
-                        item(key = "spacious_header_${dayItem.dateIso}") {
-                            val headerLabel = "${dayItem.nameDutch} ${dayItem.dateString}"
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(itemSpacing),
+                contentPadding = PaddingValues(
+                    top = 4.dp,
+                    bottom = oneUiInsets.calculateBottomPadding() + 24.dp
+                )
+            ) {
+                if (viewMode == 3) {
+                    if (upcomingTests.isEmpty()) {
+                        item(key = "toetsen_empty") {
+                            Surface(
+                                shape = appCardShape(standard = 20.dp, nothing = 20.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                border = nothingCardBorder(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("toetsen_empty_card")
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(28.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.School,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(44.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text(
+                                        text = "Geen geplande toetsen gevonden",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Aankomende proefwerken, SO's, MO's en deadlines uit Magister verschijnen hier chronologisch.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        itemsIndexed(upcomingTests, key = { _, it -> it.id }) { idx, test ->
+                            val checklist = testPrepChecklists[test.id]
+                            UpcomingTestCard(
+                                test = test,
+                                checklistProgressText = checklist?.let { "${it.completedCount}/${it.topics.size} klaar" },
+                                onClick = {
+                                    haptics.tick()
+                                    onOpenTestPrep(
+                                        test.id,
+                                        test.subject.capitalizeSubjectName(),
+                                        "${test.typeBadge} ${test.subject.capitalizeSubjectName()}",
+                                        test.description,
+                                        test.dateIso
+                                    )
+                                },
+                                modifier = Modifier.staggeredEntrance(idx)
+                            )
+                        }
+                    }
+                } else if (isRefreshing && appointments.isEmpty()) {
+                    item(key = "rooster_loading_skeleton") {
+                        ScheduleLoadingSkeleton(
+                            agendaStyle = agendaStyle,
+                            statusLabel = "Rooster ophalen van Magister..."
+                        )
+                    }
+                } else if (currentAppointments.isEmpty() && visibleCustomItems.values.all { it.isEmpty() }) {
+                    item(key = "rooster_multi_empty") {
+                        Surface(
+                            shape = appCardShape(standard = 20.dp, nothing = 20.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            border = nothingCardBorder(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.EventBusy,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(44.dp)
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = "Geen lessen gepland voor ${selectedDayItem.nameDutch} ${selectedDayItem.dateString}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Kies een andere dag, bekijk de hele week of schakel naar volgende week",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(14.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        haptics.tick()
+                                        onSelectViewMode(2)
+                                    }
+                                ) {
+                                    Icon(Icons.Default.CalendarViewWeek, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Bekijk Hele Week")
+                                }
+                            }
+                        }
+                    }
+                } else if (agendaStyle == AgendaStyle.COMPACT) {
+                    groupedByDay.forEach { (dayHeader, dayAppointments) ->
+                        item(key = "header_$dayHeader") {
                             Text(
-                                text = if (oneUiMode || windowsPhoneMode) headerLabel else headerLabel.uppercase(),
+                                text = if (oneUiMode || windowsPhoneMode) dayHeader else dayHeader.uppercase(),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = if (oneUiMode) FontWeight.Medium else FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(top = 4.dp, start = 4.dp)
                             )
                         }
-                    }
-                    items(dayTimeline, key = { "${dayItem.dateIso}_${it.key}" }) { entry ->
-                        when (entry) {
-                            is RoosterDayEntry.Lesson -> {
-                                val appt = entry.appointment
-                                val isKwtItem = appt.isKwt || kwtSlots.any { it.appointmentId == appt.id }
-                                RoosterPeriodCard(
-                                    appointment = appt,
-                                    isKwtSelectable = isKwtItem,
-                                    changedDiff = changedLessonDiffs[appt.id],
-                                    onOpenKwt = { onOpenKwtSlot(appt) },
-                                    onEditSubject = onEditSubject
-                                )
-                            }
-                            is RoosterDayEntry.Custom -> {
-                                CustomScheduleItemCard(
-                                    item = entry.item,
-                                    onToggleCompleted = { onToggleCustomScheduleItem(entry.item.id, it) },
-                                    onEdit = { onEditCustomScheduleItem(entry.item) },
-                                    onDelete = { onDeleteCustomScheduleItem(entry.item.id) }
-                                )
+
+                        item(key = "compact_group_$dayHeader") {
+                            Surface(
+                                shape = appCardShape(standard = 18.dp, nothing = 24.dp),
+                                color = appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
+                                border = nothingCardBorder(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("compact_rooster_container")
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    dayAppointments.forEachIndexed { idx, appt ->
+                                        val isKwtItem = appt.isKwt || kwtSlots.any { it.appointmentId == appt.id }
+                                        CompactRoosterRow(
+                                            appointment = appt,
+                                            isKwtSelectable = isKwtItem,
+                                            changedDiff = changedLessonDiffs[appt.id],
+                                            onOpenKwt = { onOpenKwtSlot(appt) },
+                                            onOpenDetail = {
+                                                haptics.tick()
+                                                selectedLessonForDetail = appt
+                                            },
+                                            onEditSubject = onEditSubject
+                                        )
+                                        if (idx < dayAppointments.lastIndex) {
+                                            NothingAwareDivider(
+                                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                                insetStart = if (oneUiMode) 52.dp else 0.dp,
+                                                modifier = if (oneUiMode) Modifier else Modifier.padding(horizontal = 12.dp)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
+                    visibleCustomItems.forEach { (dayItem, itemsForDay) ->
+                        itemsIndexed(itemsForDay, key = { _, it -> "compact_custom_${dayItem.dateIso}_${it.id}" }) { idx, custom ->
+                            CustomScheduleItemCard(
+                                item = custom,
+                                onToggleCompleted = {
+                                    haptics.confirm()
+                                    onToggleCustomScheduleItem(custom.id, it)
+                                },
+                                onEdit = { onEditCustomScheduleItem(custom) },
+                                onDelete = { onDeleteCustomScheduleItem(custom.id) },
+                                modifier = Modifier.staggeredEntrance(idx)
+                            )
+                        }
+                    }
+                    item(key = "rooster_status_legend_compact") {
+                        RoosterStatusLegendRow()
+                    }
+                } else {
+                    val dayHeadersOrder = if (viewMode == 1) days.filter { it.dayNumber in selectedDay..(selectedDay + 2).coerceAtMost(5) } else days
+                    dayHeadersOrder.forEach { dayItem ->
+                        val dayAppts = currentAppointments.filter { appt ->
+                            if (hasIsoDates) appt.dateIso == dayItem.dateIso else appt.dayOfWeek == dayItem.dayNumber
+                        }
+                        val dayCustom = visibleCustomItems[dayItem].orEmpty()
+                        val dayTimeline = (dayAppts.map { RoosterDayEntry.Lesson(it) } + dayCustom.map { RoosterDayEntry.Custom(it) })
+                            .sortedBy { it.sortTime }
+
+                        if (dayTimeline.isNotEmpty()) {
+                            item(key = "spacious_header_${dayItem.dateIso}") {
+                                val headerLabel = "${dayItem.nameDutch} ${dayItem.dateString}"
+                                Text(
+                                    text = if (oneUiMode || windowsPhoneMode) headerLabel else headerLabel.uppercase(),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (oneUiMode) FontWeight.Medium else FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+                                )
+                            }
+                            itemsIndexed(dayTimeline, key = { _, it -> "${dayItem.dateIso}_${it.key}" }) { idx, entry ->
+                                when (entry) {
+                                    is RoosterDayEntry.Lesson -> {
+                                        val appt = entry.appointment
+                                        val isKwtItem = appt.isKwt || kwtSlots.any { it.appointmentId == appt.id }
+                                        RoosterPeriodCard(
+                                            appointment = appt,
+                                            isKwtSelectable = isKwtItem,
+                                            changedDiff = changedLessonDiffs[appt.id],
+                                            onOpenKwt = { onOpenKwtSlot(appt) },
+                                            onOpenDetail = {
+                                                haptics.tick()
+                                                selectedLessonForDetail = appt
+                                            },
+                                            onEditSubject = onEditSubject,
+                                            modifier = Modifier.staggeredEntrance(idx)
+                                        )
+                                    }
+                                    is RoosterDayEntry.Custom -> {
+                                        CustomScheduleItemCard(
+                                            item = entry.item,
+                                            onToggleCompleted = {
+                                                haptics.confirm()
+                                                onToggleCustomScheduleItem(entry.item.id, it)
+                                            },
+                                            onEdit = { onEditCustomScheduleItem(entry.item) },
+                                            onDelete = { onDeleteCustomScheduleItem(entry.item.id) },
+                                            modifier = Modifier.staggeredEntrance(idx)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    item(key = "rooster_status_legend_spacious") {
+                        RoosterStatusLegendRow()
+                    }
                 }
-            }
-            item(key = "rooster_status_legend_spacious") {
-                RoosterStatusLegendRow()
             }
         }
     }
@@ -1142,6 +1408,35 @@ fun RoosterScreen(
             }
         )
     }
+
+    selectedLessonForDetail?.let { detailAppt ->
+        val isKwtItem = detailAppt.isKwt || kwtSlots.any { it.appointmentId == detailAppt.id }
+        val subjectTitle = detailAppt.subjectName.cleanSchoolText() ?: detailAppt.title.cleanSchoolText() ?: "Les"
+        LessonDetailSheet(
+            appointment = detailAppt,
+            changedDiff = changedLessonDiffs[detailAppt.id],
+            isKwtSelectable = isKwtItem,
+            onDismiss = { selectedLessonForDetail = null },
+            onOpenTestPrep = { key, subject, title, toetsstof, targetDateIso ->
+                selectedLessonForDetail = null
+                onOpenTestPrep(key, subject, title, toetsstof, targetDateIso)
+            },
+            onOpenKwtSlot = {
+                selectedLessonForDetail = null
+                onOpenKwtSlot(detailAppt)
+            },
+            onEditSubject = { code, detectedName ->
+                selectedLessonForDetail = null
+                onEditSubject(code, detectedName)
+            },
+            onPlanStudyBlock = {
+                selectedLessonForDetail = null
+                val targetIso = detailAppt.dateIso.takeIf { it.length == 10 } ?: selectedDayItem.dateIso
+                val targetDow = detailAppt.dayOfWeek.takeIf { it in 1..7 } ?: selectedDayItem.dayNumber
+                onAddCustomScheduleItem(targetIso, targetDow)
+            }
+        )
+    }
 }
 
 @Composable
@@ -1219,6 +1514,7 @@ fun CompactRoosterRow(
     isKwtSelectable: Boolean = false,
     changedDiff: String? = null,
     onOpenKwt: () -> Unit = {},
+    onOpenDetail: (() -> Unit)? = null,
     onEditSubject: (code: String, detectedName: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
@@ -1266,6 +1562,7 @@ fun CompactRoosterRow(
             .combinedClickable(
                 onClick = {
                     when {
+                        onOpenDetail != null -> onOpenDetail()
                         isKwtSelectable -> onOpenKwt()
                         cleanHomework != null -> showHomework = !showHomework
                     }
@@ -1536,6 +1833,7 @@ fun RoosterPeriodCard(
     isKwtSelectable: Boolean = false,
     changedDiff: String? = null,
     onOpenKwt: () -> Unit = {},
+    onOpenDetail: (() -> Unit)? = null,
     onEditSubject: (code: String, detectedName: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
@@ -1586,12 +1884,16 @@ fun RoosterPeriodCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clip(cardShape)
-            .combinedClickable(
-                onClick = { if (isKwtSelectable) onOpenKwt() },
+            .agendaPressable(
                 onLongClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onEditSubject(subjectDisplay.normalizedCode, subjectDisplay.rawSubjectText)
+                },
+                onClick = {
+                    when {
+                        onOpenDetail != null -> onOpenDetail()
+                        isKwtSelectable -> onOpenKwt()
+                    }
                 }
             )
             .testTag("rooster_period_card_${appointment.id}"),

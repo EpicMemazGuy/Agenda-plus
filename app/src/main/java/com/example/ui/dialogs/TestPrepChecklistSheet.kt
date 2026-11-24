@@ -1,5 +1,6 @@
 package com.example.ui.dialogs
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,6 +11,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.example.model.TestPrepChecklist
 import com.example.model.capitalizeSubjectName
 import com.example.ui.components.OneUiPillBadge
+import com.example.ui.components.agendaSpring
 import com.example.ui.components.appCardShape
 import com.example.ui.components.appInnerCardShape
 import com.example.ui.components.appScreenHorizontalPadding
@@ -31,6 +34,7 @@ import com.example.ui.components.appSheetShape
 import com.example.ui.components.appThumbnailShape
 import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.rememberAgendaHaptics
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,6 +48,13 @@ fun TestPrepChecklistSheet(
     onDismiss: () -> Unit
 ) {
     var newTopicInput by remember { mutableStateOf("") }
+    val haptics = rememberAgendaHaptics()
+    val animatedProgress by animateFloatAsState(
+        targetValue = checklist.progress,
+        animationSpec = agendaSpring(),
+        label = "test_prep_progress"
+    )
+    val allDone = checklist.topics.isNotEmpty() && checklist.completedCount == checklist.topics.size
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -154,7 +165,7 @@ fun TestPrepChecklistSheet(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     LinearProgressIndicator(
-                        progress = { checklist.progress },
+                        progress = { animatedProgress },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(8.dp)
@@ -162,9 +173,41 @@ fun TestPrepChecklistSheet(
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                     )
+                    if (allDone) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            shape = appInnerCardShape(standard = 12.dp, nothing = 14.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("test_prep_all_completed_banner")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.EmojiEvents,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Alles afgerond — lekker bezig!",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(10.dp))
                     FilledTonalButton(
-                        onClick = { onAutoSplitToDate(targetDateIso) },
+                        onClick = {
+                            haptics.confirm()
+                            onAutoSplitToDate(targetDateIso)
+                        },
                         shape = RoundedCornerShape(percent = 50),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -212,7 +255,10 @@ fun TestPrepChecklistSheet(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(topicShape)
-                                .clickable { onToggleTopic(topic.id) }
+                                .clickable {
+                                    haptics.confirm()
+                                    onToggleTopic(topic.id)
+                                }
                                 .testTag("test_prep_topic_${topic.id}")
                         ) {
                             Row(
@@ -223,7 +269,10 @@ fun TestPrepChecklistSheet(
                             ) {
                                 Checkbox(
                                     checked = topic.isChecked,
-                                    onCheckedChange = { onToggleTopic(topic.id) }
+                                    onCheckedChange = {
+                                        haptics.confirm()
+                                        onToggleTopic(topic.id)
+                                    }
                                 )
                                 Text(
                                     text = topic.title,
@@ -238,7 +287,10 @@ fun TestPrepChecklistSheet(
                                     modifier = Modifier.weight(1f)
                                 )
                                 IconButton(
-                                    onClick = { onRemoveTopic(topic.id) },
+                                    onClick = {
+                                        haptics.tick()
+                                        onRemoveTopic(topic.id)
+                                    },
                                     modifier = Modifier.minimumInteractiveComponentSize()
                                 ) {
                                     Icon(
@@ -274,6 +326,7 @@ fun TestPrepChecklistSheet(
                     onClick = {
                         val trimmed = newTopicInput.trim()
                         if (trimmed.isNotEmpty()) {
+                            haptics.confirm()
                             onAddTopic(trimmed)
                             newTopicInput = ""
                         }

@@ -21,6 +21,7 @@ import com.example.model.MetroAccent
 import com.example.model.SubjectCustomization
 import com.example.model.SubjectCustomizationState
 import com.example.model.TaskCategory
+import com.example.ui.screens.computeTodayHeroStatus
 import com.example.util.DayStoryMode
 import com.example.util.RoosterExportAspect
 import com.example.util.RoosterExportScope
@@ -626,6 +627,161 @@ class AgendaPlusV030Test {
         val badges = upcoming.associate { it.subject to it.typeBadge }
         assertEquals("SO", badges["Frans"])
         assertEquals("PW", badges["Geschiedenis"])
-        assertEquals("PO", badges["PO Aardrijkskunde Onderzoek"])
+        assertEquals("PO", badges["Aardrijkskunde"])
+    }
+
+    // =========================================================================
+    // 7. Motion & Polish Preferences + Live Hero Status Tests
+    // =========================================================================
+
+    @Test
+    fun test_haptics_and_skipped_login_preferences_and_backup() {
+        val store = AppPreferencesStore(context)
+        // Ensure clean baseline
+        store.setHapticsEnabled(true)
+        store.setHasSkippedLogin(false)
+
+        assertTrue("Haptics must default to true", store.isHapticsEnabled())
+        assertFalse("Skipped login must default to false", store.hasSkippedLogin())
+
+        store.setHapticsEnabled(false)
+        store.setHasSkippedLogin(true)
+        assertFalse(store.isHapticsEnabled())
+        assertTrue(store.hasSkippedLogin())
+
+        val backupJson = store.exportChoicesBackupJson()
+        assertTrue(backupJson.contains("hapticsEnabled"))
+
+        store.setHapticsEnabled(true)
+        assertTrue(store.isHapticsEnabled())
+
+        val restoreResult = store.importChoicesBackupJson(backupJson)
+        assertTrue("Restoring backup with hapticsEnabled must succeed", restoreResult.isSuccess)
+        assertFalse("Restored hapticsEnabled should be false", store.isHapticsEnabled())
+
+        store.setHasSkippedLogin(false)
+        assertFalse(store.hasSkippedLogin())
+    }
+
+    @Test
+    fun test_compute_today_hero_status_states() {
+        val todayIso = "2026-11-23" // Monday
+        fun calAt(hour: Int, minute: Int, second: Int = 0, day: Int = 23): Calendar =
+            Calendar.getInstance().apply {
+                set(2026, Calendar.NOVEMBER, day, hour, minute, second)
+                set(Calendar.MILLISECOND, 0)
+            }
+
+        val lesson1 = Appointment(
+            id = 501L,
+            title = "Wi - wfre",
+            subjectCode = "wi",
+            subjectName = "Wiskunde",
+            teacherName = "W. Frederik",
+            teacherInitials = "WFRE",
+            classroom = "101",
+            periodIndex = 1,
+            startTime = "08:30",
+            endTime = "09:20",
+            dayOfWeek = 1,
+            dateIso = todayIso
+        )
+        val lesson2Canceled = Appointment(
+            id = 502L,
+            title = "Ne - mvdl",
+            subjectCode = "ne",
+            subjectName = "Nederlands",
+            teacherName = "M. van der Laan",
+            teacherInitials = "MVDL",
+            classroom = "102",
+            periodIndex = 2,
+            startTime = "09:20",
+            endTime = "10:10",
+            dayOfWeek = 1,
+            dateIso = todayIso,
+            isCanceled = true
+        )
+        val lesson3 = Appointment(
+            id = 503L,
+            title = "En - dvr",
+            subjectCode = "en",
+            subjectName = "Engels",
+            teacherName = "De Vries",
+            teacherInitials = "DVR",
+            classroom = "103",
+            periodIndex = 3,
+            startTime = "10:30",
+            endTime = "11:20",
+            dayOfWeek = 1,
+            dateIso = todayIso
+        )
+        val lesson4Later = Appointment(
+            id = 504L,
+            title = "Gs - jan",
+            subjectCode = "gs",
+            subjectName = "Geschiedenis",
+            teacherName = "Jansen",
+            teacherInitials = "JAN",
+            classroom = "104",
+            periodIndex = 5,
+            startTime = "12:30",
+            endTime = "13:20",
+            dayOfWeek = 1,
+            dateIso = todayIso
+        )
+        val tuesdayTest = Appointment(
+            id = 505L,
+            title = "PW Biologie Hfst 4",
+            subjectCode = "bi",
+            subjectName = "Biologie",
+            teacherName = "Smit",
+            teacherInitials = "SMI",
+            classroom = "202",
+            periodIndex = 1,
+            startTime = "08:30",
+            endTime = "09:20",
+            dayOfWeek = 2,
+            dateIso = "2026-11-24",
+            infoType = 2,
+            homework = "Hfst 4"
+        )
+        val appts = listOf(lesson1, lesson2Canceled, lesson3, lesson4Later, tuesdayTest)
+
+        // 1. InLesson (at 08:55 -> 25 min elapsed of 50 min = 0.5f, 25 min remaining)
+        val inLesson = computeTodayHeroStatus(appts, emptyList(), calAt(8, 55, 0))
+        assertTrue(inLesson is com.example.ui.screens.TodayHeroStatus.InLesson)
+        val inLessonState = inLesson as com.example.ui.screens.TodayHeroStatus.InLesson
+        assertEquals(501L, inLessonState.appointment.id)
+        assertEquals(0.5f, inLessonState.progressFraction, 0.02f)
+        assertEquals(25, inLessonState.remainingMinutes)
+
+        // 2. GapOrUitval during canceled lesson (at 09:40 -> Nederlands canceled, next Engels)
+        val uitval = computeTodayHeroStatus(appts, emptyList(), calAt(9, 40, 0))
+        assertTrue(uitval is com.example.ui.screens.TodayHeroStatus.GapOrUitval)
+        val uitvalState = uitval as com.example.ui.screens.TodayHeroStatus.GapOrUitval
+        assertEquals(502L, uitvalState.canceledOrGapAppointment?.id)
+        assertEquals(503L, uitvalState.nextActiveAppointment?.id)
+
+        // 3. Break (at 10:15 -> 15 min until Engels, after earlier lesson1)
+        val onBreak = computeTodayHeroStatus(appts, emptyList(), calAt(10, 15, 0))
+        assertTrue(onBreak is com.example.ui.screens.TodayHeroStatus.Break)
+        val breakState = onBreak as com.example.ui.screens.TodayHeroStatus.Break
+        assertEquals(503L, breakState.nextAppointment.id)
+        assertEquals(15, breakState.minutesUntil)
+
+        // 4. GapOrUitval for >25 min gap (at 11:30 -> 60 min until Geschiedenis)
+        val gap = computeTodayHeroStatus(appts, emptyList(), calAt(11, 30, 0))
+        assertTrue(gap is com.example.ui.screens.TodayHeroStatus.GapOrUitval)
+        val gapState = gap as com.example.ui.screens.TodayHeroStatus.GapOrUitval
+        assertEquals(504L, gapState.nextActiveAppointment?.id)
+        assertEquals(60, gapState.minutesUntilNext)
+
+        // 5. WeekendOrEvening (at 19:00 -> no more lessons Monday, next Tuesday PW Biologie)
+        val evening = computeTodayHeroStatus(appts, emptyList(), calAt(19, 0, 0))
+        assertTrue(evening is com.example.ui.screens.TodayHeroStatus.WeekendOrEvening)
+        val eveningState = evening as com.example.ui.screens.TodayHeroStatus.WeekendOrEvening
+        assertEquals(505L, eveningState.nextActiveAppointment?.id)
+        assertTrue(eveningState.countdownLabel.contains("Volgende les"))
+        assertTrue(eveningState.upcomingTestsPreview.any { it.subject == "Biologie" })
     }
 }

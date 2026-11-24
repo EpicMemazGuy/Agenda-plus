@@ -44,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -67,6 +68,7 @@ import com.example.ui.components.appButtonShape
 import com.example.ui.components.appCardShape
 import com.example.ui.components.appScreenHorizontalPadding
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.rememberAgendaHaptics
 import com.example.ui.theme.LocalAppThemeStyle
 import com.example.ui.theme.LocalAxolaCustomTheme
 import com.example.ui.theme.LocalDarkThemeActive
@@ -88,7 +90,9 @@ fun AxolaStudioScreen(
     BackHandler { onBack() }
 
     val context = LocalContext.current
+    val haptics = rememberAgendaHaptics()
     var draftTheme by remember(currentTheme) { mutableStateOf(currentTheme) }
+    var lastRadiusStep by remember(currentTheme) { mutableIntStateOf(currentTheme.cornerRadiusDp) }
     var primaryHexInput by remember(currentTheme) { mutableStateOf(currentTheme.primaryAccentHex) }
     var secondaryHexInput by remember(currentTheme) { mutableStateOf(currentTheme.secondaryAccentHex) }
     var importCodeInput by remember { mutableStateOf("") }
@@ -269,8 +273,10 @@ fun AxolaStudioScreen(
                             FilterChip(
                                 selected = draftTheme.basePreset == preset,
                                 onClick = {
+                                    haptics.tick()
                                     val cloned = AxolaCustomTheme.fromBasePreset(preset)
                                     draftTheme = cloned
+                                    lastRadiusStep = cloned.cornerRadiusDp
                                     primaryHexInput = cloned.primaryAccentHex
                                     secondaryHexInput = cloned.secondaryAccentHex
                                     statusFeedback = "Sjabloon '${preset.labelDutch}' geladen."
@@ -319,7 +325,12 @@ fun AxolaStudioScreen(
                     Slider(
                         value = draftTheme.cornerRadiusDp.toFloat(),
                         onValueChange = { value ->
-                            draftTheme = draftTheme.copy(cornerRadiusDp = value.roundToInt().coerceIn(0, 28))
+                            val step = value.roundToInt().coerceIn(0, 28)
+                            if (step != lastRadiusStep) {
+                                lastRadiusStep = step
+                                haptics.tick()
+                            }
+                            draftTheme = draftTheme.copy(cornerRadiusDp = step)
                         },
                         valueRange = 0f..28f,
                         steps = 27,
@@ -340,7 +351,10 @@ fun AxolaStudioScreen(
                         AxolaBackgroundStyle.entries.forEach { bg ->
                             FilterChip(
                                 selected = draftTheme.backgroundStyle == bg,
-                                onClick = { draftTheme = draftTheme.copy(backgroundStyle = bg) },
+                                onClick = {
+                                    haptics.tick()
+                                    draftTheme = draftTheme.copy(backgroundStyle = bg)
+                                },
                                 label = { Text(bg.labelDutch) },
                                 modifier = Modifier
                                     .heightIn(min = 48.dp)
@@ -452,7 +466,10 @@ fun AxolaStudioScreen(
                         AxolaBorderStyle.entries.forEach { border ->
                             FilterChip(
                                 selected = draftTheme.borderStyle == border,
-                                onClick = { draftTheme = draftTheme.copy(borderStyle = border) },
+                                onClick = {
+                                    haptics.tick()
+                                    draftTheme = draftTheme.copy(borderStyle = border)
+                                },
                                 label = { Text(border.labelDutch) },
                                 modifier = Modifier
                                     .heightIn(min = 48.dp)
@@ -473,7 +490,10 @@ fun AxolaStudioScreen(
                         AxolaTypographyStyle.entries.forEach { typo ->
                             FilterChip(
                                 selected = draftTheme.typographyStyle == typo,
-                                onClick = { draftTheme = draftTheme.copy(typographyStyle = typo) },
+                                onClick = {
+                                    haptics.tick()
+                                    draftTheme = draftTheme.copy(typographyStyle = typo)
+                                },
                                 label = { Text(typo.labelDutch) },
                                 modifier = Modifier
                                     .heightIn(min = 48.dp)
@@ -509,6 +529,7 @@ fun AxolaStudioScreen(
                     )
                     OutlinedButton(
                         onClick = {
+                            haptics.confirm()
                             val code = draftTheme.encodeToThemeCode()
                             val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                             cb?.setPrimaryClip(ClipData.newPlainText("AXOLA Themacode", code))
@@ -540,13 +561,16 @@ fun AxolaStudioScreen(
                         onClick = {
                             val res = onImportThemeCode(importCodeInput)
                             res.onSuccess { imported ->
+                                haptics.confirm()
                                 draftTheme = imported
+                                lastRadiusStep = imported.cornerRadiusDp
                                 primaryHexInput = imported.primaryAccentHex
                                 secondaryHexInput = imported.secondaryAccentHex
                                 importCodeInput = ""
                                 statusFeedback = "Themacode geïmporteerd en toegepast!"
                                 isErrorFeedback = false
                             }.onFailure { err ->
+                                haptics.tick()
                                 statusFeedback = err.message ?: "Ongeldige themacode."
                                 isErrorFeedback = true
                             }
@@ -581,6 +605,7 @@ fun AxolaStudioScreen(
 
                 Button(
                     onClick = {
+                        haptics.confirm()
                         onApplyTheme(draftTheme)
                         statusFeedback = "AXOLA Studio thema opgeslagen en geactiveerd!"
                         isErrorFeedback = false
@@ -607,6 +632,7 @@ private fun ColorSwatchRow(
     tagPrefix: String,
     onSelectHex: (String) -> Unit
 ) {
+    val haptics = rememberAgendaHaptics()
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -619,7 +645,10 @@ private fun ColorSwatchRow(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .clickable { onSelectHex(hex) }
+                    .clickable {
+                        haptics.tick()
+                        onSelectHex(hex)
+                    }
                     .testTag("${tagPrefix}_${hex.removePrefix("#")}"),
                 contentAlignment = Alignment.Center
             ) {

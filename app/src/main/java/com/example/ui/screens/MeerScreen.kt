@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,6 +59,7 @@ import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
+import com.example.ui.components.agendaPressable
 import com.example.ui.components.appButtonShape
 import com.example.ui.components.appCardShape
 import com.example.ui.components.appInnerCardShape
@@ -69,6 +71,9 @@ import com.example.ui.components.isNothingOs
 import com.example.ui.components.isOneUi85
 import com.example.ui.components.isWindowsPhone
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.rememberAgendaHaptics
+import com.example.ui.components.rememberAnimatedIntCount
+import com.example.ui.components.staggeredEntrance
 import com.example.ui.theme.IosBlue
 import com.example.ui.theme.IosDarkCard
 import com.example.ui.theme.IosLightCard
@@ -174,11 +179,16 @@ fun MeerScreen(
     onSyncCalendarNow: () -> Unit = {},
     onExportIcsFile: (IcsScope) -> java.io.File? = { null },
     onSetLessonDndConfig: (LessonDndConfig) -> Unit = {},
+    hapticsEnabled: Boolean = true,
+    onSetHapticsEnabled: (Boolean) -> Unit = {},
+    onLoginRequested: () -> Unit = {},
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val haptics = rememberAgendaHaptics()
     if (currentSection != MeerSection.HOME) {
         BackHandler {
+            haptics.tick()
             onSelectSection(MeerSection.HOME)
         }
     }
@@ -226,7 +236,10 @@ fun MeerScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
-                        onClick = { onSelectSection(MeerSection.HOME) },
+                        onClick = {
+                            haptics.tick()
+                            onSelectSection(MeerSection.HOME)
+                        },
                         modifier = Modifier
                             .minimumInteractiveComponentSize()
                             .testTag("meer_back_button")
@@ -317,7 +330,10 @@ fun MeerScreen(
                                     }
                                     Switch(
                                         checked = offlineModeEnabled,
-                                        onCheckedChange = onSetOfflineMode,
+                                        onCheckedChange = {
+                                            haptics.confirm()
+                                            onSetOfflineMode(it)
+                                        },
                                         modifier = Modifier.testTag("offline_mode_switch")
                                     )
                                 }
@@ -333,6 +349,7 @@ fun MeerScreen(
 
                     // Weekly Focus Stats card
                     item(key = "meer_weekly_focus") {
+                        val animatedFocusMinutes = rememberAnimatedIntCount(weeklyFocusMinutes)
                         Surface(
                             shape = appCardShape(standard = 20.dp, nothing = 24.dp),
                             color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -363,7 +380,7 @@ fun MeerScreen(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "Focus deze week: $weeklyFocusMinutes min",
+                                        text = "Focus deze week: $animatedFocusMinutes min",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -736,6 +753,9 @@ fun MeerScreen(
                     onSyncNow = onSyncNow,
                     onPullLatest = onPullLatest,
                     onUnpair = onUnpair,
+                    hapticsEnabled = hapticsEnabled,
+                    onSetHapticsEnabled = onSetHapticsEnabled,
+                    onLoginRequested = onLoginRequested,
                     onHeaderCollapsedChange = { collapsed ->
                         onHeaderCollapsedChange(usesFrostedInset && collapsed)
                     }
@@ -795,6 +815,7 @@ private fun MeerMenuTile(
     onClick: () -> Unit,
     tag: String
 ) {
+    val haptics = rememberAgendaHaptics()
     val tileShape = appCardShape(standard = 18.dp, nothing = 22.dp)
     Card(
         shape = tileShape,
@@ -805,7 +826,10 @@ private fun MeerMenuTile(
         modifier = Modifier
             .fillMaxWidth()
             .clip(tileShape)
-            .clickable(onClick = onClick)
+            .agendaPressable {
+                haptics.tick()
+                onClick()
+            }
             .testTag(tag)
     ) {
         Row(
@@ -929,8 +953,12 @@ private fun MeerSettingsView(
     onSyncNow: () -> Unit = {},
     onPullLatest: () -> Unit = {},
     onUnpair: () -> Unit = {},
+    hapticsEnabled: Boolean = true,
+    onSetHapticsEnabled: (Boolean) -> Unit = {},
+    onLoginRequested: () -> Unit = {},
     onHeaderCollapsedChange: (Boolean) -> Unit = {}
 ) {
+    val haptics = rememberAgendaHaptics()
     val oneUiMode = isOneUi85
     val windowsPhoneMode = isWindowsPhone
     val iosMode = isIosLiquidGlass
@@ -1005,7 +1033,7 @@ private fun MeerSettingsView(
         }
 
         // 1. Thema & Weergave (Interactive Live Theme Picker for all 5 themes)
-        item {
+        item(key = "settings_theme_and_display") {
             Surface(
                 shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                 color = appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainerLow),
@@ -1033,20 +1061,26 @@ private fun MeerSettingsView(
                             .fillMaxWidth()
                             .testTag("settings_theme_picker_row")
                     ) {
-                        items(AppThemeStyle.entries) { style ->
+                        items(AppThemeStyle.entries, key = { it.name }) { style ->
                             ThemeLivePreviewCard(
                                 style = style,
                                 selected = appThemeStyle == style,
                                 currentMetroAccent = metroAccent,
                                 axolaCustomTheme = axolaCustomTheme,
-                                onClick = { onSetAppThemeStyle(style) }
+                                onClick = {
+                                    haptics.tick()
+                                    onSetAppThemeStyle(style)
+                                }
                             )
                         }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
                     OutlinedButton(
-                        onClick = onOpenAxolaStudio,
+                        onClick = {
+                            haptics.tick()
+                            onOpenAxolaStudio()
+                        },
                         shape = appButtonShape(),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1082,7 +1116,10 @@ private fun MeerSettingsView(
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(44.dp)
-                                        .clickable { onSetMetroAccent(accent) }
+                                        .clickable {
+                                            haptics.tick()
+                                            onSetMetroAccent(accent)
+                                        }
                                         .testTag("settings_metro_accent_${accent.name}")
                                 ) {
                                     Box(
@@ -1123,7 +1160,10 @@ private fun MeerSettingsView(
                         DarkModePreference.entries.forEachIndexed { idx, pref ->
                             SegmentedButton(
                                 selected = darkModePreference == pref,
-                                onClick = { onSetDarkModePreference(pref) },
+                                onClick = {
+                                    haptics.tick()
+                                    onSetDarkModePreference(pref)
+                                },
                                 enabled = appThemeStyle != AppThemeStyle.NOTHING_OS,
                                 shape = SegmentedButtonDefaults.itemShape(idx, DarkModePreference.entries.size),
                                 modifier = Modifier.testTag("settings_dark_mode_${pref.name}")
@@ -1149,6 +1189,17 @@ private fun MeerSettingsView(
                     NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                     Spacer(modifier = Modifier.height(12.dp))
                     SettingsSwitchRow(
+                        title = "Haptische feedback",
+                        subtitle = "Subtiele trillingen bij interacties, schuifregelaars en cijfers",
+                        checked = hapticsEnabled,
+                        onCheckedChange = onSetHapticsEnabled,
+                        tag = "settings_haptics_switch"
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    NothingAwareDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    SettingsSwitchRow(
                         title = "Slimme Standaardnamen",
                         subtitle = "Herken Magister-codes automatisch (bijv. wi -> Wiskunde)",
                         checked = smartDefaultNamesEnabled,
@@ -1157,7 +1208,10 @@ private fun MeerSettingsView(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     OutlinedButton(
-                        onClick = onOpenVakkenAanpassen,
+                        onClick = {
+                            haptics.tick()
+                            onOpenVakkenAanpassen()
+                        },
                         shape = appButtonShape(),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1183,7 +1237,10 @@ private fun MeerSettingsView(
                         AgendaStyle.entries.forEachIndexed { idx, style ->
                             SegmentedButton(
                                 selected = agendaStyle == style,
-                                onClick = { onSetAgendaStyle(style) },
+                                onClick = {
+                                    haptics.tick()
+                                    onSetAgendaStyle(style)
+                                },
                                 shape = SegmentedButtonDefaults.itemShape(idx, AgendaStyle.entries.size)
                             ) {
                                 Text(style.labelDutch)
@@ -1202,7 +1259,10 @@ private fun MeerSettingsView(
                         UiScalePreset.entries.forEachIndexed { idx, preset ->
                             SegmentedButton(
                                 selected = currentPreset == preset,
-                                onClick = { onSetUiScale(preset.scaleFactor) },
+                                onClick = {
+                                    haptics.tick()
+                                    onSetUiScale(preset.scaleFactor)
+                                },
                                 shape = SegmentedButtonDefaults.itemShape(idx, UiScalePreset.entries.size)
                             ) {
                                 Text(preset.labelDutch)
@@ -1214,7 +1274,7 @@ private fun MeerSettingsView(
         }
 
         // 2. Meldingen (Uitval/Wijzigingen, Cijfers, Toetsen)
-        item {
+        item(key = "settings_notifications_sync") {
             Surface(
                 shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1389,7 +1449,7 @@ private fun MeerSettingsView(
         }
 
         // 3. Cijfer Unboxing Minigames
-        item {
+        item(key = "settings_grade_unboxing") {
             Surface(
                 shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1426,7 +1486,10 @@ private fun MeerSettingsView(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(optionShape)
-                                    .clickable { onSetGradeUnboxingMode(mode) }
+                                    .clickable {
+                                        haptics.tick()
+                                        onSetGradeUnboxingMode(mode)
+                                    }
                                     .testTag("settings_unboxing_mode_${mode.name}")
                             ) {
                                 Row(
@@ -1459,7 +1522,7 @@ private fun MeerSettingsView(
         }
 
         // 4. Updates & Keuzes-backup
-        item {
+        item(key = "settings_updates_backup") {
             Surface(
                 shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1553,7 +1616,7 @@ private fun MeerSettingsView(
         }
 
         // 5. Web Sync & Pairing
-        item {
+        item(key = "settings_web_sync") {
             WebSyncCard(
                 syncState = webSyncState,
                 session = session,
@@ -1565,7 +1628,7 @@ private fun MeerSettingsView(
         }
 
         // 6. Account, Console & Reset
-        item {
+        item(key = "settings_account_diagnostics") {
             Surface(
                 shape = appCardShape(standard = 18.dp, nothing = 22.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1577,10 +1640,31 @@ private fun MeerSettingsView(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "Account & Diagnose (${session.studentName.cleanSchoolText() ?: "Leerling"})",
+                        text = if (session.isAuthenticated) {
+                            "Account & Diagnose (${session.studentName.cleanSchoolText() ?: "Leerling"})"
+                        } else {
+                            "Account & Diagnose (Gastmodus)"
+                        },
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
+                    if (!session.isAuthenticated) {
+                        Button(
+                            onClick = {
+                                haptics.confirm()
+                                onLoginRequested()
+                            },
+                            shape = appButtonShape(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .testTag("settings_login_magister_button")
+                        ) {
+                            Icon(Icons.Default.Login, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Inloggen met Magister", fontWeight = FontWeight.Bold)
+                        }
+                    }
                     OutlinedButton(
                         onClick = onOpenRawConsole,
                         shape = RoundedCornerShape(percent = 50),
@@ -1667,9 +1751,13 @@ private fun SettingsSwitchRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        val haptics = rememberAgendaHaptics()
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange,
+            onCheckedChange = {
+                haptics.confirm()
+                onCheckedChange(it)
+            },
             modifier = Modifier.testTag(tag)
         )
     }
@@ -1730,7 +1818,7 @@ private fun AfwezigheidView(
                 }
             }
         } else {
-            items(absences, key = { it.id }) { record ->
+            itemsIndexed(absences, key = { _, it -> it.id }) { idx, record ->
                 val isAlert = record.type == AbsenceType.UNEXCUSED || !record.isApproved
                 Card(
                     shape = appCardShape(standard = 20.dp, nothing = 24.dp),
@@ -1740,6 +1828,7 @@ private fun AfwezigheidView(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .staggeredEntrance(idx)
                         .testTag("absence_record_${record.id}")
                 ) {
                     Row(
@@ -2028,6 +2117,7 @@ private fun CalendarBridgeSection(
     BackHandler { onBack() }
 
     val context = LocalContext.current
+    val haptics = rememberAgendaHaptics()
     var hasCalendarPerm by remember { mutableStateOf(CalendarBridgeManager.hasCalendarPermissions(context)) }
     var icsStatus by remember { mutableStateOf<String?>(null) }
 
@@ -2171,6 +2261,7 @@ private fun CalendarBridgeSection(
                     }
                     Button(
                         onClick = {
+                            haptics.confirm()
                             if (!hasCalendarPerm) {
                                 permissionLauncher.launch(
                                     arrayOf(
@@ -2278,6 +2369,9 @@ private fun LessonDndSection(
     BackHandler { onBack() }
 
     val context = LocalContext.current
+    val haptics = rememberAgendaHaptics()
+    var lastStartStep by remember(config.startBufferMinutes) { mutableIntStateOf(config.startBufferMinutes) }
+    var lastEndStep by remember(config.endBufferMinutes) { mutableIntStateOf(config.endBufferMinutes) }
     var hasPolicyAccess by remember { mutableStateOf(LessonDndScheduler.hasPolicyAccess(context)) }
     var hasExactAlarmPerm by remember { mutableStateOf(LessonDndScheduler.canScheduleExactAlarms(context)) }
 
@@ -2436,7 +2530,10 @@ private fun LessonDndSection(
                         LessonDndMode.entries.forEachIndexed { idx, mode ->
                             SegmentedButton(
                                 selected = config.mode == mode,
-                                onClick = { onUpdateConfig(config.copy(mode = mode)) },
+                                onClick = {
+                                    haptics.tick()
+                                    onUpdateConfig(config.copy(mode = mode))
+                                },
                                 shape = SegmentedButtonDefaults.itemShape(idx, LessonDndMode.entries.size),
                                 modifier = Modifier.testTag("dnd_mode_${mode.name}")
                             ) {
@@ -2469,7 +2566,12 @@ private fun LessonDndSection(
                     Slider(
                         value = config.startBufferMinutes.toFloat(),
                         onValueChange = { value ->
-                            onUpdateConfig(config.copy(startBufferMinutes = value.roundToInt().coerceIn(0, 10)))
+                            val step = value.roundToInt().coerceIn(0, 10)
+                            if (step != lastStartStep) {
+                                lastStartStep = step
+                                haptics.tick()
+                            }
+                            onUpdateConfig(config.copy(startBufferMinutes = step))
                         },
                         valueRange = 0f..10f,
                         steps = 9,
@@ -2497,7 +2599,12 @@ private fun LessonDndSection(
                     Slider(
                         value = config.endBufferMinutes.toFloat(),
                         onValueChange = { value ->
-                            onUpdateConfig(config.copy(endBufferMinutes = value.roundToInt().coerceIn(0, 10)))
+                            val step = value.roundToInt().coerceIn(0, 10)
+                            if (step != lastEndStep) {
+                                lastEndStep = step
+                                haptics.tick()
+                            }
+                            onUpdateConfig(config.copy(endBufferMinutes = step))
                         },
                         valueRange = 0f..10f,
                         steps = 9,

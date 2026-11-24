@@ -47,6 +47,18 @@ class AppPreferencesStore(context: Context) {
         prefs.edit().putBoolean(KEY_ONBOARDING_DONE, completed).apply()
     }
 
+    fun hasSkippedLogin(): Boolean = prefs.getBoolean(KEY_SKIPPED_LOGIN, false)
+
+    fun setHasSkippedLogin(skipped: Boolean) {
+        prefs.edit().putBoolean(KEY_SKIPPED_LOGIN, skipped).apply()
+    }
+
+    fun isHapticsEnabled(): Boolean = prefs.getBoolean(KEY_HAPTICS_ENABLED, true)
+
+    fun setHapticsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_HAPTICS_ENABLED, enabled).apply()
+    }
+
     fun hasSeenTutorial(): Boolean = prefs.getBoolean(KEY_TUTORIAL_SEEN, false)
 
     fun setTutorialSeen(seen: Boolean) {
@@ -1359,6 +1371,7 @@ class AppPreferencesStore(context: Context) {
             put("agendaStyle", getAgendaStyle().name)
             put("uiScale", getUiScale().toDouble())
             put("eloUrl", getEloUrl())
+            put("hapticsEnabled", isHapticsEnabled())
             put("savedBusLine", getSavedBusLine())
             put("activeCommuteModeId", getActiveCommuteModeId())
             put("morningLockNotificationEnabled", isMorningLockNotificationEnabled())
@@ -1506,6 +1519,10 @@ class AppPreferencesStore(context: Context) {
         }
         root.optString("eloUrl").takeIf { it.isNotBlank() }?.let {
             setEloUrl(it)
+            restoredCount++
+        }
+        if (root.has("hapticsEnabled")) {
+            setHapticsEnabled(root.optBoolean("hapticsEnabled", true))
             restoredCount++
         }
         if (root.has("savedBusLine")) {
@@ -1682,6 +1699,8 @@ class AppPreferencesStore(context: Context) {
         private const val PREFS_NAME = "agenda_plus_prefs"
         private const val SECRET_SESSION_PREFS_NAME = "agenda_plus_secret_session_prefs"
         private const val KEY_ONBOARDING_DONE = "onboarding_done"
+        private const val KEY_SKIPPED_LOGIN = "skipped_login"
+        private const val KEY_HAPTICS_ENABLED = "haptics_enabled"
         private const val KEY_TUTORIAL_SEEN = "tutorial_seen"
         private const val KEY_NAV_PROMPT_DISMISSED = "nav_prompt_dismissed"
         private const val KEY_OFFLINE_MODE_ENABLED = "offline_mode_enabled"

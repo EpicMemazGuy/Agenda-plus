@@ -152,6 +152,12 @@ class AgendaRepository(private val context: Context? = null) {
     )
     val hasCompletedOnboarding: StateFlow<Boolean> = _hasCompletedOnboarding.asStateFlow()
 
+    private val _hasSkippedLogin = MutableStateFlow(prefs?.hasSkippedLogin() ?: false)
+    val hasSkippedLogin: StateFlow<Boolean> = _hasSkippedLogin.asStateFlow()
+
+    private val _hapticsEnabled = MutableStateFlow(prefs?.isHapticsEnabled() ?: true)
+    val hapticsEnabled: StateFlow<Boolean> = _hapticsEnabled.asStateFlow()
+
     private val _hasSeenTutorial = MutableStateFlow(prefs?.hasSeenTutorial() ?: false)
     val hasSeenTutorial: StateFlow<Boolean> = _hasSeenTutorial.asStateFlow()
 
@@ -312,6 +318,8 @@ class AgendaRepository(private val context: Context? = null) {
         prefs?.saveSessionSync(session)
         prefs?.setOnboardingCompleted(true)
         _hasCompletedOnboarding.value = true
+        prefs?.setHasSkippedLogin(false)
+        _hasSkippedLogin.value = false
 
         if (prefs != null && !prefs.hasCustomWeatherLocation()) {
             val schoolCity = finalTenant.city.cleanSchoolText()
@@ -716,13 +724,44 @@ class AgendaRepository(private val context: Context? = null) {
         return live ?: cached
     }
 
-    fun completeOnboarding(style: AgendaStyle, scale: Float) {
+    fun completeOnboarding(
+        style: AgendaStyle,
+        scale: Float,
+        themeStyle: AppThemeStyle? = null,
+        darkModePref: DarkModePreference? = null,
+        dndEnabled: Boolean? = null,
+        calendarBridgeEnabled: Boolean? = null
+    ) {
         _agendaStyle.value = style
         _uiScale.value = scale.coerceIn(0.85f, 1.20f)
         _hasCompletedOnboarding.value = true
         prefs?.setAgendaStyle(style)
         prefs?.setUiScale(_uiScale.value)
         prefs?.setOnboardingCompleted(true)
+        themeStyle?.let { setAppThemeStyle(it) }
+        darkModePref?.let { setDarkModePreference(it) }
+        dndEnabled?.let { enabled ->
+            val current = _lessonDndConfig.value
+            if (current.enabled != enabled) {
+                setLessonDndConfig(current.copy(enabled = enabled))
+            }
+        }
+        calendarBridgeEnabled?.let { enabled ->
+            if (_calendarBridgeConfig.value.enabled != enabled) {
+                setCalendarBridgeEnabled(enabled)
+            }
+        }
+    }
+
+    fun skipMagisterLogin() {
+        _hasSkippedLogin.value = true
+        prefs?.setHasSkippedLogin(true)
+    }
+
+    fun setHapticsEnabled(enabled: Boolean) {
+        _hapticsEnabled.value = enabled
+        prefs?.setHapticsEnabled(enabled)
+        notifyLocalDataChanged()
     }
 
     fun reopenOnboarding() {
@@ -1646,6 +1685,8 @@ class AgendaRepository(private val context: Context? = null) {
         _smartBusAdvice.value = null
         _unboxedGradeIds.value = emptySet()
         _lastSyncTime.value = "Uitgelogd"
+        _hasSkippedLogin.value = false
+        prefs?.setHasSkippedLogin(false)
         prefs?.clearSession()
         context?.let { ctx ->
             ScheduleMonitorJobService.cancel(ctx)

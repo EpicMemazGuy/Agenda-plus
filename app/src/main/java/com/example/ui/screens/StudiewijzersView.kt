@@ -10,7 +10,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -38,6 +38,8 @@ import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
 import com.example.ui.components.oneUiSpring
 import com.example.ui.components.oneUiTween
+import com.example.ui.components.rememberAgendaHaptics
+import com.example.ui.components.staggeredEntrance
 
 @Composable
 fun StudiewijzersView(
@@ -51,6 +53,7 @@ fun StudiewijzersView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val haptics = rememberAgendaHaptics()
     var showAddSiteDialog by remember { mutableStateOf(false) }
     var showEditEloDialog by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -78,11 +81,15 @@ fun StudiewijzersView(
     val oneUiInsets = LocalOneUiScreenInsets.current
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = if (oneUiMode) Color.Transparent else MaterialTheme.colorScheme.background,
         modifier = modifier.testTag("studiewijzers_view"),
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { showAddSiteDialog = true },
+                onClick = {
+                    haptics.tick()
+                    showAddSiteDialog = true
+                },
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
                 text = { Text("Bron toevoegen") },
                 containerColor = MaterialTheme.colorScheme.primary,
@@ -194,10 +201,11 @@ fun StudiewijzersView(
                     }
                 }
             } else {
-                items(filteredGuides, key = { it.id }) { guide ->
+                itemsIndexed(filteredGuides, key = { _, it -> it.id }) { idx, guide ->
                     StudyGuideAccordionCard(
                         guide = guide,
-                        onOpenResource = { title, url -> onOpenInApp(title, url) }
+                        onOpenResource = { title, url -> onOpenInApp(title, url) },
+                        modifier = Modifier.staggeredEntrance(idx)
                     )
                 }
             }
@@ -354,12 +362,22 @@ fun StudiewijzersView(
                 }
             }
 
-            items(studySites, key = { it.id }) { site ->
+            itemsIndexed(studySites, key = { _, it -> it.id }) { idx, site ->
                 BronSiteCard(
                     site = site,
-                    onOpenInApp = { onOpenInApp(site.name, site.url) },
-                    onOpenExternal = { openExternalBrowser(site.url) },
-                    onDelete = { onRemoveStudySite(site.id) }
+                    onOpenInApp = {
+                        haptics.tick()
+                        onOpenInApp(site.name, site.url)
+                    },
+                    onOpenExternal = {
+                        haptics.tick()
+                        openExternalBrowser(site.url)
+                    },
+                    onDelete = {
+                        haptics.confirm()
+                        onRemoveStudySite(site.id)
+                    },
+                    modifier = Modifier.staggeredEntrance(idx)
                 )
             }
         }
@@ -390,7 +408,8 @@ fun StudiewijzersView(
 @Composable
 private fun StudyGuideAccordionCard(
     guide: StudyGuide,
-    onOpenResource: (String, String) -> Unit
+    onOpenResource: (String, String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -400,7 +419,7 @@ private fun StudyGuideAccordionCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .testTag("study_guide_card_${guide.id}")
     ) {
@@ -528,7 +547,8 @@ private fun BronSiteCard(
     site: StudySite,
     onOpenInApp: () -> Unit,
     onOpenExternal: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val hostText = remember(site.url) {
         runCatching { Uri.parse(site.url).host }.getOrNull()?.removePrefix("www.") ?: site.url
@@ -541,7 +561,7 @@ private fun BronSiteCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(cardShape)
             .clickable(onClick = onOpenInApp)

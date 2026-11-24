@@ -239,6 +239,26 @@ data class Appointment(
 
     val isPracticalAssignment: Boolean
         get() = isPoMatch(title)
+
+    val testBadgeLabel: String?
+        get() {
+            if (!isTestOrExam && !isPresentation) return null
+            val lower = title.lowercase()
+            return when {
+                infoType == 2 -> "PW"
+                infoType == 4 -> "SO"
+                infoType == 5 -> "MO"
+                infoType == 3 -> if (lower.contains("tentamen") || lower.contains("examen")) "Tentamen" else "Toets"
+                isPresentationKeywordMatch(title) -> "Presentatie"
+                isPoMatch(title) -> "PO"
+                Regex("""\b(pw|proefwerk)\b""").containsMatchIn(lower) -> "PW"
+                Regex("""\b(so|schriftelijke overhoring)\b""").containsMatchIn(lower) -> "SO"
+                Regex("""\b(mo|mondelinge overhoring)\b""").containsMatchIn(lower) -> "MO"
+                lower.contains("tentamen") || lower.contains("examen") -> "Tentamen"
+                isTestOrExam -> "Toets"
+                else -> "Presentatie"
+            }
+        }
 }
 
 data class Disruption(

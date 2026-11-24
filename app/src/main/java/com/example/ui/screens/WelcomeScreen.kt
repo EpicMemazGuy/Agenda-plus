@@ -1,10 +1,8 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -22,23 +20,28 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.SchoolProvider
 import com.example.ui.components.AgendaPlusLogo
-import com.example.ui.components.isNothingOs
+import com.example.ui.components.agendaPressable
+import com.example.ui.components.appButtonShape
+import com.example.ui.components.appCardShape
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.rememberAgendaHaptics
 
 @Composable
 fun WelcomeScreen(
     onSelectProvider: (SchoolProvider) -> Unit,
+    onSkipLogin: (() -> Unit)? = null,
     onOpenRawConsole: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val nothingMode = isNothingOs
+    val haptics = rememberAgendaHaptics()
     val cardBorder = nothingCardBorder()
+    val cardShape = appCardShape(standard = 22.dp, nothing = 22.dp)
 
     Surface(
         modifier = modifier
             .fillMaxSize()
             .testTag("welcome_screen"),
-        color = MaterialTheme.colorScheme.surface
+        color = MaterialTheme.colorScheme.background
     ) {
         Column(
             modifier = Modifier
@@ -72,13 +75,16 @@ fun WelcomeScreen(
 
             // Magister Login Card
             Surface(
-                shape = RoundedCornerShape(22.dp),
+                shape = cardShape,
                 border = cardBorder,
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(22.dp))
-                    .clickable { onSelectProvider(SchoolProvider.MAGISTER) }
+                    .clip(cardShape)
+                    .agendaPressable {
+                        haptics.confirm()
+                        onSelectProvider(SchoolProvider.MAGISTER)
+                    }
                     .testTag("magister_login_card")
             ) {
                 Row(
@@ -86,7 +92,7 @@ fun WelcomeScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(14.dp),
+                        shape = appCardShape(standard = 14.dp, nothing = 14.dp),
                         color = MaterialTheme.colorScheme.primaryContainer,
                         modifier = Modifier.size(48.dp)
                     ) {
@@ -113,7 +119,7 @@ fun WelcomeScreen(
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Surface(
-                            shape = RoundedCornerShape(percent = 50),
+                            shape = appButtonShape(),
                             color = MaterialTheme.colorScheme.primary
                         ) {
                             Text(
@@ -139,10 +145,36 @@ fun WelcomeScreen(
                 }
             }
 
+            if (onSkipLogin != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = {
+                        haptics.tick()
+                        onSkipLogin()
+                    },
+                    shape = appButtonShape(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("welcome_skip_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Explore,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Overslaan (eerst rondkijken)",
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             Surface(
-                shape = RoundedCornerShape(20.dp),
+                shape = appCardShape(standard = 20.dp, nothing = 20.dp),
                 border = cardBorder,
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier.fillMaxWidth()

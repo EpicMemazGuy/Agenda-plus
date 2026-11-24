@@ -3,11 +3,13 @@ package com.example.ui.screens
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,6 +21,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -26,7 +31,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
 import com.example.data.db.CustomScheduleItem
 import com.example.model.*
@@ -38,9 +42,10 @@ import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.LocalSubjectCustomizationState
 import com.example.ui.components.NothingAwareDivider
 import com.example.ui.components.NothingDotMatrixSpinner
-import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
 import com.example.ui.components.ScheduleLoadingSkeleton
+import com.example.ui.components.agendaPressable
+import com.example.ui.components.agendaSpring
 import com.example.ui.components.appButtonShape
 import com.example.ui.components.appCardShape
 import com.example.ui.components.appInnerCardShape
@@ -55,14 +60,16 @@ import com.example.ui.components.isWindowsPhone
 import com.example.ui.components.nothingCardBorder
 import com.example.ui.components.oneUiPillContainerColor
 import com.example.ui.components.oneUiPillContentColor
+import com.example.ui.components.rememberAgendaHaptics
 import com.example.ui.components.rememberSubjectDisplay
-import com.example.ui.theme.MetroCrimson
-import androidx.compose.ui.graphics.toArgb
+import com.example.ui.components.staggeredEntrance
 import com.example.ui.dialogs.ImageExportPreviewDialog
+import com.example.ui.dialogs.LessonDetailSheet
 import com.example.ui.theme.LocalAppThemeStyle
 import com.example.ui.theme.LocalAxolaCustomTheme
 import com.example.ui.theme.LocalDarkThemeActive
 import com.example.ui.theme.LocalMetroAccent
+import com.example.ui.theme.MetroCrimson
 import com.example.util.DayStoryMode
 import com.example.util.StoryAndScheduleExporter
 import kotlinx.coroutines.Dispatchers
@@ -70,11 +77,221 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 import kotlin.math.roundToInt
 
 private sealed class TodayTimelineEntry(val sortTime: String, val key: String) {
     class Lesson(val appointment: Appointment) : TodayTimelineEntry(appointment.startTime, "lesson_${appointment.id}")
     class Custom(val item: CustomScheduleItem) : TodayTimelineEntry(item.startTime, "custom_${item.id}")
+}
+
+internal sealed class TodayHeroStatus {
+    data class InLesson(
+        val appointment: Appointment,
+        val progressFraction: Float,
+        val remainingMinutes: Int,
+        val statusLabel: String
+    ) : TodayHeroStatus()
+
+    data class Break(
+        val nextAppointment: Appointment,
+        val minutesUntil: Int,
+        val statusLabel: String
+    ) : TodayHeroStatus()
+
+    data class GapOrUitval(
+        val canceledOrGapAppointment: Appointment?,
+        val nextActiveAppointment: Appointment?,
+        val minutesUntilNext: Int?,
+        val statusLabel: String
+    ) : TodayHeroStatus()
+
+    data class UpcomingToday(
+        val nextAppointment: Appointment,
+        val statusLabel: String
+    ) : TodayHeroStatus()
+
+    data class WeekendOrEvening(
+        val nextActiveAppointment: Appointment?,
+        val countdownLabel: String,
+        val upcomingTestsPreview: List<UpcomingTestEntry>
+    ) : TodayHeroStatus()
+}
+
+private fun parseHhmmMinutes(hhmm: String): Int? {
+    val parts = hhmm.trim().split(":")
+    if (parts.size < 2) return null
+    val h = parts[0].toIntOrNull() ?: return null
+    val m = parts[1].toIntOrNull() ?: return null
+    return h * 60 + m
+}
+
+internal fun computeTodayHeroStatus(
+    appointments: List<Appointment>,
+    tasks: List<HomeworkTask>,
+    nowCal: Calendar = Calendar.getInstance()
+): TodayHeroStatus {
+    val isoFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    val todayIso = isoFormat.format(nowCal.time)
+    val dayNum = when (nowCal.get(Calendar.DAY_OF_WEEK)) {
+        Calendar.MONDAY -> 1
+        Calendar.TUESDAY -> 2
+        Calendar.WEDNESDAY -> 3
+        Calendar.THURSDAY -> 4
+        Calendar.FRIDAY -> 5
+        Calendar.SATURDAY -> 6
+        else -> 7
+    }
+    val nowMin = nowCal.get(Calendar.HOUR_OF_DAY) * 60 + nowCal.get(Calendar.MINUTE)
+    val nowSec = nowCal.get(Calendar.SECOND)
+
+    val hasIso = appointments.any { it.dateIso.isNotBlank() }
+    val todayList = if (hasIso) {
+        appointments.filter { it.dateIso == todayIso }.sortedWith(compareBy({ it.periodIndex }, { it.startTime }))
+    } else {
+        appointments.filter { it.dayOfWeek == dayNum }.sortedWith(compareBy({ it.periodIndex }, { it.startTime }))
+    }
+
+    val activeNow = todayList.firstOrNull { appt ->
+        if (appt.isCanceled) return@firstOrNull false
+        val start = parseHhmmMinutes(appt.startTime) ?: return@firstOrNull false
+        val end = parseHhmmMinutes(appt.endTime) ?: return@firstOrNull false
+        nowMin in start until end
+    }
+    if (activeNow != null) {
+        val startMin = parseHhmmMinutes(activeNow.startTime) ?: nowMin
+        val endMin = parseHhmmMinutes(activeNow.endTime) ?: (startMin + 45)
+        val totalSec = ((endMin - startMin).coerceAtLeast(1)) * 60
+        val elapsedSec = ((nowMin - startMin) * 60 + nowSec).coerceIn(0, totalSec)
+        val fraction = (elapsedSec.toFloat() / totalSec.toFloat()).coerceIn(0f, 1f)
+        val remaining = (endMin - nowMin).coerceAtLeast(1)
+        return TodayHeroStatus.InLesson(
+            appointment = activeNow,
+            progressFraction = fraction,
+            remainingMinutes = remaining,
+            statusLabel = "Nu bezig • nog ${remaining}m (tot ${activeNow.endTime})"
+        )
+    }
+
+    val nextActiveToday = todayList.firstOrNull { appt ->
+        if (appt.isCanceled) return@firstOrNull false
+        val start = parseHhmmMinutes(appt.startTime) ?: return@firstOrNull false
+        start > nowMin
+    }
+
+    val canceledNow = todayList.firstOrNull { appt ->
+        if (!appt.isCanceled) return@firstOrNull false
+        val start = parseHhmmMinutes(appt.startTime) ?: return@firstOrNull false
+        val end = parseHhmmMinutes(appt.endTime) ?: return@firstOrNull false
+        nowMin in start until end
+    }
+    if (canceledNow != null) {
+        val minsUntil = nextActiveToday?.let { next ->
+            ((parseHhmmMinutes(next.startTime) ?: nowMin) - nowMin).coerceAtLeast(1)
+        }
+        val subjectLabel = canceledNow.subjectName.cleanSchoolText() ?: canceledNow.title.cleanSchoolText() ?: "Les"
+        val label = if (minsUntil != null) {
+            "Uitval ($subjectLabel) • volgende over ${minsUntil}m"
+        } else {
+            "Uitval ($subjectLabel) • vrij"
+        }
+        return TodayHeroStatus.GapOrUitval(
+            canceledOrGapAppointment = canceledNow,
+            nextActiveAppointment = nextActiveToday,
+            minutesUntilNext = minsUntil,
+            statusLabel = label
+        )
+    }
+
+    if (nextActiveToday != null) {
+        val startMin = parseHhmmMinutes(nextActiveToday.startTime) ?: nowMin
+        val diffMin = (startMin - nowMin).coerceAtLeast(0)
+        val secLeft = (59 - nowSec).coerceIn(0, 59)
+        val hadEarlierLesson = todayList.any { appt ->
+            if (appt.isCanceled) return@any false
+            val end = parseHhmmMinutes(appt.endTime) ?: return@any false
+            end <= nowMin
+        }
+        if (hadEarlierLesson) {
+            return if (diffMin <= 25) {
+                TodayHeroStatus.Break(
+                    nextAppointment = nextActiveToday,
+                    minutesUntil = diffMin,
+                    statusLabel = "Pauze • volgende les over ${diffMin}m ${String.format(Locale.US, "%02d", secLeft)}s"
+                )
+            } else {
+                TodayHeroStatus.GapOrUitval(
+                    canceledOrGapAppointment = null,
+                    nextActiveAppointment = nextActiveToday,
+                    minutesUntilNext = diffMin,
+                    statusLabel = "Tussenuur • volgende les over ${diffMin}m"
+                )
+            }
+        } else {
+            val label = if (diffMin >= 60) {
+                "Begint over ${diffMin / 60}u ${diffMin % 60}m"
+            } else {
+                "Begint over ${diffMin}m ${String.format(Locale.US, "%02d", secLeft)}s"
+            }
+            return TodayHeroStatus.UpcomingToday(
+                nextAppointment = nextActiveToday,
+                statusLabel = label
+            )
+        }
+    }
+
+    val futureNext = if (hasIso) {
+        appointments
+            .filter { !it.isCanceled && it.dateIso > todayIso }
+            .sortedWith(compareBy({ it.dateIso }, { it.periodIndex }, { it.startTime }))
+            .firstOrNull()
+    } else {
+        appointments
+            .filter { !it.isCanceled && it.dayOfWeek > dayNum }
+            .sortedWith(compareBy({ it.dayOfWeek }, { it.periodIndex }, { it.startTime }))
+            .firstOrNull()
+            ?: appointments
+                .filter { !it.isCanceled }
+                .sortedWith(compareBy({ it.dayOfWeek }, { it.periodIndex }, { it.startTime }))
+                .firstOrNull()
+    }
+
+    val countdownLabel = if (futureNext != null && futureNext.dateIso.length == 10) {
+        val targetDate = runCatching { isoFormat.parse(futureNext.dateIso) }.getOrNull()
+        val startMin = parseHhmmMinutes(futureNext.startTime) ?: (8 * 60 + 30)
+        if (targetDate != null) {
+            val targetCal = Calendar.getInstance().apply {
+                time = targetDate
+                set(Calendar.HOUR_OF_DAY, startMin / 60)
+                set(Calendar.MINUTE, startMin % 60)
+                set(Calendar.SECOND, 0)
+            }
+            val diffMins = ((targetCal.timeInMillis - nowCal.timeInMillis) / 60_000L).coerceAtLeast(1L)
+            val days = diffMins / (60 * 24)
+            val hours = (diffMins / 60) % 24
+            val mins = diffMins % 60
+            when {
+                days >= 1 -> "Volgende les over ${days}d ${hours}u"
+                hours >= 1 -> "Volgende les over ${hours}u ${mins}m"
+                else -> "Volgende les over ${mins}m"
+            }
+        } else {
+            "Volgende les om ${futureNext.startTime}"
+        }
+    } else if (futureNext != null) {
+        "Volgende les om ${futureNext.startTime}"
+    } else {
+        "Geen lessen meer gepland"
+    }
+
+    val upcomingTestsPreview = buildUpcomingTestsList(appointments, tasks, todayIso).take(2)
+    return TodayHeroStatus.WeekendOrEvening(
+        nextActiveAppointment = futureNext,
+        countdownLabel = countdownLabel,
+        upcomingTestsPreview = upcomingTestsPreview
+    )
 }
 
 @Composable
@@ -116,11 +333,15 @@ fun TodayFeedScreen(
     onToggleCustomScheduleItem: (Long, Boolean) -> Unit = { _, _ -> },
     onDeleteCustomScheduleItem: (Long) -> Unit = {},
     onOpenKwtSlot: (Appointment) -> Unit = {},
+    onOpenTestPrep: (key: String, subject: String, title: String, toetsstof: String, targetDateIso: String?) -> Unit = { _, _, _, _, _ -> },
+    onEditSubject: (code: String, detectedName: String) -> Unit = { _, _ -> },
+    onPlanStudyBlockForDate: (dateIso: String, dayOfWeek: Int) -> Unit = { _, _ -> },
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     studentName: String = "",
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val haptics = rememberAgendaHaptics()
     val oneUiMode = isOneUi85
     val windowsPhoneMode = isWindowsPhone
     val iosMode = isIosLiquidGlass
@@ -134,6 +355,7 @@ fun TodayFeedScreen(
     }
     var showCityPickerDialog by remember { mutableStateOf(false) }
     var showStoryExportDialog by remember { mutableStateOf(false) }
+    var selectedLessonForDetail by remember { mutableStateOf<Appointment?>(null) }
     var storyMode by remember { mutableStateOf(DayStoryMode.TODAY_SCHEDULE) }
     var hideTeacherAndRoom by remember { mutableStateOf(false) }
     var storyPngFile by remember { mutableStateOf<File?>(null) }
@@ -211,34 +433,12 @@ fun TodayFeedScreen(
     val endTimeSummary = todayClasses.lastOrNull { !it.isCanceled }?.endTime
         ?: todayClasses.lastOrNull()?.endTime
 
-    var statusBadgeText by remember { mutableStateOf("") }
-    LaunchedEffect(nextClass) {
+    var heroStatus by remember(appointments, tasks) {
+        mutableStateOf(computeTodayHeroStatus(appointments, tasks, Calendar.getInstance()))
+    }
+    LaunchedEffect(appointments, tasks) {
         while (true) {
-            if (nextClass != null) {
-                val cal = java.util.Calendar.getInstance()
-                val isoFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-                val todayIso = isoFormat.format(cal.time)
-                val hhmm = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(cal.time)
-
-                statusBadgeText = when {
-                    nextClass.dateIso.isNotBlank() && nextClass.dateIso != todayIso ->
-                        "Volgende les (${nextClass.dateIso})"
-                    hhmm >= nextClass.startTime && hhmm < nextClass.endTime ->
-                        "Nu bezig tot ${nextClass.endTime}"
-                    else -> {
-                        val parts = nextClass.startTime.split(":")
-                        val targetMin = (parts.getOrNull(0)?.toIntOrNull() ?: 0) * 60 + (parts.getOrNull(1)?.toIntOrNull() ?: 0)
-                        val nowMin = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
-                        val diffMin = (targetMin - nowMin).coerceAtLeast(0)
-                        if (diffMin >= 60) {
-                            "Over ${diffMin / 60}u ${diffMin % 60}m"
-                        } else {
-                            val secLeft = (59 - cal.get(java.util.Calendar.SECOND)).coerceIn(0, 59)
-                            "Begint over ${diffMin}m ${String.format("%02d", secLeft)}s"
-                        }
-                    }
-                }
-            }
+            heroStatus = computeTodayHeroStatus(appointments, tasks, Calendar.getInstance())
             delay(1000L)
         }
     }
@@ -333,56 +533,118 @@ fun TodayFeedScreen(
                         }
                     } else {
                         item(key = "block_next_lesson") {
-                            if (nextClass != null) {
-                                HeroClassCard(
-                                    appointment = nextClass,
-                                    statusLabel = statusBadgeText.ifBlank { "${nextClass.startTime} - ${nextClass.endTime}" },
-                                    changedDiff = changedLessonDiffs[nextClass.id],
-                                    onCardClick = onNavigateToRooster
-                                )
-                            } else {
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("hero_empty_card"),
-                                    shape = appCardShape(standard = 24.dp, nothing = 24.dp),
-                                    border = nothingCardBorder(),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceContainer
-                                    )
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(20.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Surface(
-                                            shape = CircleShape,
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            modifier = Modifier.size(44.dp)
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(
-                                                    imageVector = Icons.Default.EventAvailable,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                    modifier = Modifier.size(22.dp)
-                                                )
-                                            }
+                            when (val status = heroStatus) {
+                                is TodayHeroStatus.InLesson -> {
+                                    HeroClassCard(
+                                        appointment = status.appointment,
+                                        statusLabel = status.statusLabel,
+                                        changedDiff = changedLessonDiffs[status.appointment.id],
+                                        progressFraction = status.progressFraction,
+                                        onCardClick = {
+                                            haptics.tick()
+                                            selectedLessonForDetail = status.appointment
                                         }
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Text(
-                                            text = "Geen actieve les op dit moment",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                is TodayHeroStatus.Break -> {
+                                    HeroClassCard(
+                                        appointment = status.nextAppointment,
+                                        statusLabel = status.statusLabel,
+                                        changedDiff = changedLessonDiffs[status.nextAppointment.id],
+                                        onCardClick = {
+                                            haptics.tick()
+                                            selectedLessonForDetail = status.nextAppointment
+                                        }
+                                    )
+                                }
+                                is TodayHeroStatus.GapOrUitval -> {
+                                    val displayAppt = status.nextActiveAppointment ?: status.canceledOrGapAppointment
+                                    if (displayAppt != null) {
+                                        HeroClassCard(
+                                            appointment = displayAppt,
+                                            statusLabel = status.statusLabel,
+                                            changedDiff = changedLessonDiffs[displayAppt.id],
+                                            isAlertHero = status.canceledOrGapAppointment != null,
+                                            onCardClick = {
+                                                haptics.tick()
+                                                selectedLessonForDetail = displayAppt
+                                            }
                                         )
-                                        Text(
-                                            text = "Druk op verversen rechtsboven om je rooster bij te werken.",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    } else {
+                                        WeekendEveningHeroCard(
+                                            countdownLabel = status.statusLabel,
+                                            nextActiveAppointment = null,
+                                            upcomingTestsPreview = emptyList(),
+                                            onOpenTestPrep = { t ->
+                                                haptics.tick()
+                                                onOpenTestPrep(
+                                                    t.id,
+                                                    t.subject.capitalizeSubjectName(),
+                                                    "${t.typeBadge} ${t.subject.capitalizeSubjectName()}",
+                                                    t.description,
+                                                    t.dateIso
+                                                )
+                                            },
+                                            onPlanStudyBlock = {
+                                                haptics.confirm()
+                                                val cal = Calendar.getInstance()
+                                                val iso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time)
+                                                val dow = when (cal.get(Calendar.DAY_OF_WEEK)) {
+                                                    Calendar.MONDAY -> 1
+                                                    Calendar.TUESDAY -> 2
+                                                    Calendar.WEDNESDAY -> 3
+                                                    Calendar.THURSDAY -> 4
+                                                    Calendar.FRIDAY -> 5
+                                                    Calendar.SATURDAY -> 6
+                                                    else -> 7
+                                                }
+                                                onPlanStudyBlockForDate(iso, dow)
+                                            },
+                                            onOpenRooster = {
+                                                haptics.tick()
+                                                onNavigateToRooster()
+                                            }
                                         )
                                     }
+                                }
+                                is TodayHeroStatus.UpcomingToday -> {
+                                    HeroClassCard(
+                                        appointment = status.nextAppointment,
+                                        statusLabel = status.statusLabel,
+                                        changedDiff = changedLessonDiffs[status.nextAppointment.id],
+                                        onCardClick = {
+                                            haptics.tick()
+                                            selectedLessonForDetail = status.nextAppointment
+                                        }
+                                    )
+                                }
+                                is TodayHeroStatus.WeekendOrEvening -> {
+                                    WeekendEveningHeroCard(
+                                        countdownLabel = status.countdownLabel,
+                                        nextActiveAppointment = status.nextActiveAppointment,
+                                        upcomingTestsPreview = status.upcomingTestsPreview,
+                                        onOpenTestPrep = { t ->
+                                            haptics.tick()
+                                            onOpenTestPrep(
+                                                t.id,
+                                                t.subject.capitalizeSubjectName(),
+                                                "${t.typeBadge} ${t.subject.capitalizeSubjectName()}",
+                                                t.description,
+                                                t.dateIso
+                                            )
+                                        },
+                                        onPlanStudyBlock = {
+                                            haptics.confirm()
+                                            val targetTest = status.upcomingTestsPreview.firstOrNull()
+                                            val targetIso = targetTest?.dateIso?.takeIf { it.length == 10 }
+                                                ?: SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Calendar.getInstance().time)
+                                            onPlanStudyBlockForDate(targetIso, 1)
+                                        },
+                                        onOpenRooster = {
+                                            haptics.tick()
+                                            status.nextActiveAppointment?.let { selectedLessonForDetail = it } ?: onNavigateToRooster()
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -660,7 +922,10 @@ fun TodayFeedScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     IconButton(
-                                        onClick = { onToggleTask(task.id) },
+                                        onClick = {
+                                            haptics.confirm()
+                                            onToggleTask(task.id)
+                                        },
                                         modifier = Modifier
                                             .minimumInteractiveComponentSize()
                                             .testTag("toggle_task_${task.id}")
@@ -726,7 +991,7 @@ fun TodayFeedScreen(
         }
 
         // 5. Today's Schedule Section
-        item {
+        item(key = "today_schedule_header") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -744,7 +1009,10 @@ fun TodayFeedScreen(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     OutlinedButton(
-                        onClick = { showStoryExportDialog = true },
+                        onClick = {
+                            haptics.tick()
+                            showStoryExportDialog = true
+                        },
                         shape = appButtonShape(),
                         modifier = Modifier
                             .height(36.dp)
@@ -755,7 +1023,10 @@ fun TodayFeedScreen(
                         Text("9:16 Story")
                     }
                     TextButton(
-                        onClick = onAddCustomScheduleItem,
+                        onClick = {
+                            haptics.tick()
+                            onAddCustomScheduleItem()
+                        },
                         modifier = Modifier.testTag("today_add_custom_block_button")
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -763,7 +1034,10 @@ fun TodayFeedScreen(
                         Text("Blok")
                     }
                     TextButton(
-                        onClick = onNavigateToRooster,
+                        onClick = {
+                            haptics.tick()
+                            onNavigateToRooster()
+                        },
                         modifier = Modifier.testTag("view_all_schedule_button")
                     ) {
                         Text("Rooster")
@@ -773,7 +1047,7 @@ fun TodayFeedScreen(
         }
 
         if (mergedTimeline.isEmpty()) {
-            item {
+            item(key = "today_schedule_empty") {
                 Surface(
                     shape = appCardShape(standard = 16.dp, nothing = 20.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -792,7 +1066,7 @@ fun TodayFeedScreen(
             }
         } else if (agendaStyle == AgendaStyle.COMPACT) {
             if (todayClasses.isNotEmpty()) {
-                item {
+                item(key = "today_compact_container") {
                     Surface(
                         shape = appCardShape(standard = 18.dp, nothing = 24.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -806,7 +1080,12 @@ fun TodayFeedScreen(
                                     appointment = appt,
                                     isKwtSelectable = isKwtItem,
                                     changedDiff = changedLessonDiffs[appt.id],
-                                    onOpenKwt = { onOpenKwtSlot(appt) }
+                                    onOpenKwt = { onOpenKwtSlot(appt) },
+                                    onOpenDetail = {
+                                        haptics.tick()
+                                        selectedLessonForDetail = appt
+                                    },
+                                    onEditSubject = onEditSubject
                                 )
                                 if (idx < todayClasses.lastIndex) {
                                     NothingAwareDivider(
@@ -820,16 +1099,20 @@ fun TodayFeedScreen(
                     }
                 }
             }
-            items(todayCustomItems, key = { "today_custom_${it.id}" }) { custom ->
+            itemsIndexed(todayCustomItems, key = { _, it -> "today_custom_${it.id}" }) { idx, custom ->
                 CustomScheduleItemCard(
                     item = custom,
-                    onToggleCompleted = { onToggleCustomScheduleItem(custom.id, it) },
+                    onToggleCompleted = {
+                        haptics.confirm()
+                        onToggleCustomScheduleItem(custom.id, it)
+                    },
                     onEdit = { onEditCustomScheduleItem(custom) },
-                    onDelete = { onDeleteCustomScheduleItem(custom.id) }
+                    onDelete = { onDeleteCustomScheduleItem(custom.id) },
+                    modifier = Modifier.staggeredEntrance(idx)
                 )
             }
         } else {
-            items(mergedTimeline, key = { it.key }) { entry ->
+            itemsIndexed(mergedTimeline, key = { _, it -> it.key }) { idx, entry ->
                 when (entry) {
                     is TodayTimelineEntry.Lesson -> {
                         val isKwtItem = entry.appointment.isKwt || kwtSlots.any { it.appointmentId == entry.appointment.id }
@@ -837,15 +1120,24 @@ fun TodayFeedScreen(
                             appointment = entry.appointment,
                             isKwtSelectable = isKwtItem,
                             changedDiff = changedLessonDiffs[entry.appointment.id],
-                            onOpenKwt = { onOpenKwtSlot(entry.appointment) }
+                            onOpenKwt = { onOpenKwtSlot(entry.appointment) },
+                            onOpenDetail = {
+                                haptics.tick()
+                                selectedLessonForDetail = entry.appointment
+                            },
+                            modifier = Modifier.staggeredEntrance(idx)
                         )
                     }
                     is TodayTimelineEntry.Custom -> {
                         CustomScheduleItemCard(
                             item = entry.item,
-                            onToggleCompleted = { onToggleCustomScheduleItem(entry.item.id, it) },
+                            onToggleCompleted = {
+                                haptics.confirm()
+                                onToggleCustomScheduleItem(entry.item.id, it)
+                            },
                             onEdit = { onEditCustomScheduleItem(entry.item) },
-                            onDelete = { onDeleteCustomScheduleItem(entry.item.id) }
+                            onDelete = { onDeleteCustomScheduleItem(entry.item.id) },
+                            modifier = Modifier.staggeredEntrance(idx)
                         )
                     }
                 }
@@ -957,6 +1249,226 @@ fun TodayFeedScreen(
                 }
             }
         )
+    }
+
+    selectedLessonForDetail?.let { detailAppt ->
+        val isKwtItem = detailAppt.isKwt || kwtSlots.any { it.appointmentId == detailAppt.id }
+        val subjectTitle = detailAppt.subjectName.cleanSchoolText() ?: detailAppt.title.cleanSchoolText() ?: "Les"
+        LessonDetailSheet(
+            appointment = detailAppt,
+            changedDiff = changedLessonDiffs[detailAppt.id],
+            isKwtSelectable = isKwtItem,
+            onDismiss = { selectedLessonForDetail = null },
+            onOpenTestPrep = { key, subject, title, toetsstof, targetDateIso ->
+                selectedLessonForDetail = null
+                onOpenTestPrep(key, subject, title, toetsstof, targetDateIso)
+            },
+            onOpenKwtSlot = {
+                selectedLessonForDetail = null
+                onOpenKwtSlot(detailAppt)
+            },
+            onEditSubject = { code, detectedName ->
+                selectedLessonForDetail = null
+                onEditSubject(code, detectedName)
+            },
+            onPlanStudyBlock = {
+                selectedLessonForDetail = null
+                val targetIso = detailAppt.dateIso.takeIf { it.length == 10 }
+                    ?: SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Calendar.getInstance().time)
+                onPlanStudyBlockForDate(targetIso, detailAppt.dayOfWeek.coerceIn(1, 7))
+            }
+        )
+    }
+}
+
+@Composable
+private fun WeekendEveningHeroCard(
+    countdownLabel: String,
+    nextActiveAppointment: Appointment?,
+    upcomingTestsPreview: List<UpcomingTestEntry>,
+    onOpenTestPrep: (UpcomingTestEntry) -> Unit,
+    onPlanStudyBlock: () -> Unit,
+    onOpenRooster: () -> Unit
+) {
+    val windowsPhoneMode = isWindowsPhone
+    val iosMode = isIosLiquidGlass
+    val heroShape = appCardShape(standard = 24.dp, nothing = 24.dp)
+    val containerColor = when {
+        windowsPhoneMode -> MaterialTheme.colorScheme.surfaceContainerLow
+        iosMode -> appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainer)
+        else -> MaterialTheme.colorScheme.surfaceContainer
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("hero_empty_card"),
+        shape = heroShape,
+        border = nothingCardBorder(),
+        colors = CardDefaults.cardColors(containerColor = containerColor)
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Surface(
+                    shape = if (windowsPhoneMode) RectangleShape else CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.NightsStay,
+                            contentDescription = "Vrije avond of weekend",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (windowsPhoneMode) "weekend / vrije avond" else "Weekend / Vrije Avond",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = if (windowsPhoneMode) FontWeight.Light else FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Surface(
+                        shape = appButtonShape(),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Text(
+                            text = countdownLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+            }
+
+            if (nextActiveAppointment != null) {
+                val nextDisp = rememberSubjectDisplay(
+                    rawTitleOrName = nextActiveAppointment.subjectName.cleanSchoolText() ?: nextActiveAppointment.title,
+                    rawCode = nextActiveAppointment.subjectCode
+                )
+                Surface(
+                    shape = appInnerCardShape(standard = 14.dp, nothing = 14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .agendaPressable(onClick = onOpenRooster)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = nextDisp.icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Eerstvolgend: ${nextDisp.displayName}",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "${nextActiveAppointment.startTime} - ${nextActiveAppointment.endTime}" +
+                                    (nextActiveAppointment.classroom.cleanSchoolText()?.let { " • Lok. $it" } ?: ""),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (upcomingTestsPreview.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "Aankomende toetsen",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    upcomingTestsPreview.forEach { test ->
+                        val testDisp = rememberSubjectDisplay(rawTitleOrName = test.subject)
+                        Surface(
+                            shape = appInnerCardShape(standard = 12.dp, nothing = 12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .agendaPressable(onClick = { onOpenTestPrep(test) })
+                                .testTag("hero_upcoming_test_${test.id}")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    OneUiPillBadge(text = test.typeBadge)
+                                    Text(
+                                        text = testDisp.displayName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Text(
+                                    text = test.countdownLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilledTonalButton(
+                    onClick = onPlanStudyBlock,
+                    shape = appButtonShape(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .testTag("hero_plan_study_block_button")
+                ) {
+                    Icon(Icons.Default.EditCalendar, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Plan studieblok", fontWeight = FontWeight.Bold)
+                }
+                OutlinedButton(
+                    onClick = onOpenRooster,
+                    shape = appButtonShape(),
+                    modifier = Modifier
+                        .height(44.dp)
+                        .testTag("hero_open_rooster_button")
+                ) {
+                    Text("Rooster")
+                }
+            }
+        }
     }
 }
 
@@ -1380,6 +1892,8 @@ fun HeroClassCard(
     appointment: Appointment,
     statusLabel: String,
     changedDiff: String? = null,
+    progressFraction: Float? = null,
+    isAlertHero: Boolean = false,
     onCardClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1398,21 +1912,30 @@ fun HeroClassCard(
 
     val heroShape = appCardShape(standard = 26.dp, nothing = 26.dp)
     val cardContainerColor = when {
+        windowsPhoneMode && isAlertHero -> MetroCrimson
         windowsPhoneMode -> MaterialTheme.colorScheme.primary
+        isAlertHero -> MaterialTheme.colorScheme.errorContainer
         iosMode -> appLiquidGlassContainerColor(MaterialTheme.colorScheme.surfaceContainer)
         else -> MaterialTheme.colorScheme.surfaceContainer
     }
-    val heroPrimaryText = if (windowsPhoneMode) Color.White else MaterialTheme.colorScheme.onSurface
-    val heroSecondaryText = if (windowsPhoneMode) Color.White.copy(alpha = 0.86f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val heroPrimaryText = when {
+        windowsPhoneMode -> Color.White
+        isAlertHero -> MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val heroSecondaryText = when {
+        windowsPhoneMode -> Color.White.copy(alpha = 0.86f)
+        isAlertHero -> MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
 
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clip(heroShape)
-            .clickable(onClick = onCardClick)
+            .agendaPressable(onClick = onCardClick)
             .testTag("hero_class_card"),
         shape = heroShape,
-        border = nothingCardBorder(),
+        border = nothingCardBorder(isAlert = isAlertHero),
         colors = CardDefaults.cardColors(
             containerColor = cardContainerColor
         )
@@ -1619,6 +2142,24 @@ fun HeroClassCard(
                     }
                 }
             }
+            if (progressFraction != null) {
+                val animatedProgress by animateFloatAsState(
+                    targetValue = progressFraction.coerceIn(0f, 1f),
+                    animationSpec = agendaSpring(),
+                    label = "hero_lesson_progress"
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                LinearProgressIndicator(
+                    progress = { animatedProgress },
+                    color = if (windowsPhoneMode) Color.White else MaterialTheme.colorScheme.primary,
+                    trackColor = if (windowsPhoneMode) Color.White.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(if (windowsPhoneMode) RectangleShape else CircleShape)
+                        .testTag("hero_lesson_progress_bar")
+                )
+            }
         }
     }
 }
@@ -1629,6 +2170,7 @@ fun TodayClassRow(
     isKwtSelectable: Boolean = false,
     changedDiff: String? = null,
     onOpenKwt: () -> Unit = {},
+    onOpenDetail: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isCanceled = appointment.isCanceled
@@ -1668,9 +2210,7 @@ fun TodayClassRow(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .then(
-                if (isKwtSelectable) Modifier.clip(rowShape).clickable(onClick = onOpenKwt) else Modifier
-            )
+            .agendaPressable(onClick = onOpenDetail)
             .testTag("today_class_item_${appointment.id}"),
         shape = rowShape,
         border = nothingCardBorder(isAlert = isCanceled),

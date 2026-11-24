@@ -26,7 +26,11 @@ import com.example.ui.components.appSheetContainerColor
 import com.example.ui.components.appSheetShape
 import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.rememberAgendaHaptics
+import com.example.ui.components.rememberAnimatedScoreText
+import java.util.Locale
 import kotlin.math.round
+import kotlin.math.roundToInt
 
 fun calculateRequiredGradeForTarget(
     currentGrades: List<GradeItem>,
@@ -48,6 +52,7 @@ fun WhatIfBottomSheet(
     allSubjects: List<SubjectGradeSummary> = listOf(subjectSummary),
     onDismiss: () -> Unit
 ) {
+    val haptics = rememberAgendaHaptics()
     val subjectList = remember(subjectSummary, allSubjects) {
         if (allSubjects.isNotEmpty()) allSubjects else listOf(subjectSummary)
     }
@@ -55,6 +60,8 @@ fun WhatIfBottomSheet(
     var calculatorMode by remember { mutableIntStateOf(0) } // 0: Doelgemiddelde, 1: Wat moet ik halen?
     var targetAverage by remember { mutableDoubleStateOf(6.0) }
     var testWeight by remember { mutableDoubleStateOf(2.0) }
+    var lastTargetStep by remember { mutableIntStateOf((targetAverage * 10).roundToInt()) }
+    var lastWeightStep by remember { mutableIntStateOf(testWeight.roundToInt()) }
 
     val requiredScore = remember(selectedSubject, targetAverage, testWeight) {
         calculateRequiredGradeForTarget(
@@ -63,6 +70,8 @@ fun WhatIfBottomSheet(
             nextTestWeight = testWeight
         )
     }
+    val animatedTargetText = rememberAnimatedScoreText(targetAverage, locale = Locale.US)
+    val animatedRequiredText = rememberAnimatedScoreText(requiredScore.coerceIn(1.0, 10.0), locale = Locale.US)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -119,14 +128,20 @@ fun WhatIfBottomSheet(
             ) {
                 SegmentedButton(
                     selected = calculatorMode == 0,
-                    onClick = { calculatorMode = 0 },
+                    onClick = {
+                        haptics.tick()
+                        calculatorMode = 0
+                    },
                     shape = SegmentedButtonDefaults.itemShape(0, 2)
                 ) {
                     Text("Simulator")
                 }
                 SegmentedButton(
                     selected = calculatorMode == 1,
-                    onClick = { calculatorMode = 1 },
+                    onClick = {
+                        haptics.tick()
+                        calculatorMode = 1
+                    },
                     shape = SegmentedButtonDefaults.itemShape(1, 2)
                 ) {
                     Text("Wat moet ik halen?")
@@ -146,7 +161,10 @@ fun WhatIfBottomSheet(
                         val isSelected = subj.subjectName == selectedSubject.subjectName && subj.subjectCode == selectedSubject.subjectCode
                         FilterChip(
                             selected = isSelected,
-                            onClick = { selectedSubject = subj },
+                            onClick = {
+                                haptics.tick()
+                                selectedSubject = subj
+                            },
                             label = { Text("${subj.subjectName.capitalizeSubjectName()} (${subj.weightedAverage})") }
                         )
                     }
@@ -170,7 +188,11 @@ fun WhatIfBottomSheet(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (calculatorMode == 1) {
                         FilledTonalIconButton(
-                            onClick = { targetAverage = round((targetAverage - 0.1).coerceAtLeast(1.0) * 10) / 10.0 },
+                            onClick = {
+                                haptics.tick()
+                                targetAverage = round((targetAverage - 0.1).coerceAtLeast(1.0) * 10) / 10.0
+                                lastTargetStep = (targetAverage * 10).roundToInt()
+                            },
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(Icons.Default.Remove, contentDescription = "Lager doel", modifier = Modifier.size(18.dp))
@@ -181,7 +203,7 @@ fun WhatIfBottomSheet(
                         color = MaterialTheme.colorScheme.primaryContainer
                     ) {
                         Text(
-                            text = "$targetAverage",
+                            text = animatedTargetText,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -190,7 +212,11 @@ fun WhatIfBottomSheet(
                     }
                     if (calculatorMode == 1) {
                         FilledTonalIconButton(
-                            onClick = { targetAverage = round((targetAverage + 0.1).coerceAtMost(10.0) * 10) / 10.0 },
+                            onClick = {
+                                haptics.tick()
+                                targetAverage = round((targetAverage + 0.1).coerceAtMost(10.0) * 10) / 10.0
+                                lastTargetStep = (targetAverage * 10).roundToInt()
+                            },
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(Icons.Default.Add, contentDescription = "Hoger doel", modifier = Modifier.size(18.dp))
@@ -208,7 +234,11 @@ fun WhatIfBottomSheet(
                 items(presets) { preset ->
                     FilterChip(
                         selected = targetAverage == preset,
-                        onClick = { targetAverage = preset },
+                        onClick = {
+                            haptics.tick()
+                            targetAverage = preset
+                            lastTargetStep = (preset * 10).roundToInt()
+                        },
                         label = { Text("$preset") },
                         modifier = Modifier.testTag("target_preset_${preset}")
                     )
@@ -217,7 +247,14 @@ fun WhatIfBottomSheet(
 
             Slider(
                 value = targetAverage.toFloat().coerceIn(1.0f, 10.0f),
-                onValueChange = { targetAverage = round(it * 10) / 10.0 },
+                onValueChange = {
+                    val step = (it * 10).roundToInt()
+                    if (step != lastTargetStep) {
+                        lastTargetStep = step
+                        haptics.tick()
+                    }
+                    targetAverage = step / 10.0
+                },
                 valueRange = 1.0f..10.0f,
                 steps = 89,
                 modifier = Modifier
@@ -263,7 +300,11 @@ fun WhatIfBottomSheet(
                 listOf(1, 2, 3, 4).forEach { w ->
                     FilterChip(
                         selected = testWeight.toInt() == w,
-                        onClick = { testWeight = w.toDouble() },
+                        onClick = {
+                            haptics.tick()
+                            testWeight = w.toDouble()
+                            lastWeightStep = w
+                        },
                         label = { Text("${w}x") },
                         modifier = Modifier
                             .weight(1f)
@@ -274,7 +315,14 @@ fun WhatIfBottomSheet(
 
             Slider(
                 value = testWeight.toFloat().coerceIn(1f, 5f),
-                onValueChange = { testWeight = it.toDouble() },
+                onValueChange = {
+                    val step = it.roundToInt()
+                    if (step != lastWeightStep) {
+                        lastWeightStep = step
+                        haptics.tick()
+                    }
+                    testWeight = step.toDouble()
+                },
                 valueRange = 1f..5f,
                 steps = 3,
                 modifier = Modifier
@@ -340,7 +388,7 @@ fun WhatIfBottomSheet(
                         text = when {
                             isSafe -> "≥ 1.0"
                             isImpossible -> "$requiredScore (> 10.0)"
-                            else -> "$requiredScore"
+                            else -> animatedRequiredText
                         },
                         style = if (isImpossible) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.displayLarge,
                         fontWeight = FontWeight.Bold,

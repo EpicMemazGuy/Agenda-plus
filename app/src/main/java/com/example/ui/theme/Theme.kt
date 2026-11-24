@@ -16,6 +16,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -484,6 +485,14 @@ fun AgendaPlusTheme(
         SideEffect {
             val window = (view.context as? Activity)?.window
             if (window != null) {
+                @Suppress("DEPRECATION")
+                window.statusBarColor = Color.Transparent.toArgb()
+                @Suppress("DEPRECATION")
+                window.navigationBarColor = Color.Transparent.toArgb()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    window.isStatusBarContrastEnforced = false
+                    window.isNavigationBarContrastEnforced = false
+                }
                 val controller = WindowCompat.getInsetsController(window, view)
                 val useDarkIcons = !isNothing && !effectiveDark
                 controller.isAppearanceLightStatusBars = useDarkIcons

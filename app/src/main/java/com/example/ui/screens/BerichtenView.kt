@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +35,8 @@ import com.example.ui.components.appSheetContainerColor
 import com.example.ui.components.isNothingOs
 import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.rememberAgendaHaptics
+import com.example.ui.components.staggeredEntrance
 import kotlinx.coroutines.launch
 
 @Composable
@@ -46,6 +49,7 @@ fun BerichtenView(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
+    val haptics = rememberAgendaHaptics()
     var selectedFolderId by remember { mutableStateOf<Long?>(null) }
     var unreadOnly by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -70,6 +74,7 @@ fun BerichtenView(
     val oneUiInsets = LocalOneUiScreenInsets.current
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = if (oneUiMode) Color.Transparent else MaterialTheme.colorScheme.background,
         modifier = modifier.testTag("berichten_view")
     ) { innerPadding ->
@@ -143,10 +148,13 @@ fun BerichtenView(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    item {
+                    item(key = "folder_chip_all") {
                         FilterChip(
                             selected = selectedFolderId == null,
-                            onClick = { selectedFolderId = null },
+                            onClick = {
+                                haptics.tick()
+                                selectedFolderId = null
+                            },
                             label = { Text("Alle (${messages.size})") },
                             modifier = Modifier.testTag("folder_chip_all")
                         )
@@ -154,7 +162,10 @@ fun BerichtenView(
                     items(folders, key = { it.id }) { folder ->
                         FilterChip(
                             selected = selectedFolderId == folder.id,
-                            onClick = { selectedFolderId = folder.id },
+                            onClick = {
+                                haptics.tick()
+                                selectedFolderId = folder.id
+                            },
                             label = {
                                 val countSuffix = if (folder.unreadCount > 0) " (${folder.unreadCount})" else ""
                                 Text("${folder.name}$countSuffix")
@@ -162,10 +173,13 @@ fun BerichtenView(
                             modifier = Modifier.testTag("folder_chip_${folder.id}")
                         )
                     }
-                    item {
+                    item(key = "filter_unread_chip") {
                         FilterChip(
                             selected = unreadOnly,
-                            onClick = { unreadOnly = !unreadOnly },
+                            onClick = {
+                                haptics.tick()
+                                unreadOnly = !unreadOnly
+                            },
                             leadingIcon = if (unreadOnly) {
                                 { Icon(Icons.Default.MarkEmailUnread, contentDescription = null, modifier = Modifier.size(16.dp)) }
                             } else null,
@@ -216,10 +230,12 @@ fun BerichtenView(
                     }
                 }
             } else {
-                items(filteredMessages, key = { it.id }) { msg ->
+                itemsIndexed(filteredMessages, key = { _, it -> it.id }) { idx, msg ->
                     MessageRowCard(
                         message = msg,
+                        modifier = Modifier.staggeredEntrance(idx),
                         onClick = {
+                            haptics.tick()
                             activeMessage = msg
                             loadedDetailBody = msg.body.ifBlank { null }
                             if (!msg.isRead) {
@@ -255,7 +271,8 @@ fun BerichtenView(
 @Composable
 private fun MessageRowCard(
     message: MagisterMessage,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val cardShape = appCardShape(standard = 18.dp, nothing = 22.dp)
     Card(
@@ -264,7 +281,7 @@ private fun MessageRowCard(
         colors = CardDefaults.cardColors(
             containerColor = if (message.isRead) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainer
         ),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(cardShape)
             .clickable(onClick = onClick)

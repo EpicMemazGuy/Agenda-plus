@@ -55,10 +55,12 @@ import com.example.ui.AppTab
 import com.example.ui.MeerSection
 import com.example.ui.components.AppBottomNavigationBar
 import com.example.ui.components.AppTopBar
+import com.example.ui.components.LocalHapticsEnabled
 import com.example.ui.components.LocalOneUiBackdropState
 import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.LocalSubjectCustomizationState
 import com.example.ui.components.OneUiBackdropState
+import com.example.ui.components.agendaSpring
 import com.example.ui.components.oneUiSpring
 import com.example.ui.components.oneUiTween
 import com.example.ui.dialogs.AddTaskDialog
@@ -175,6 +177,8 @@ fun AgendaPlusApp(
 ) {
     val session by viewModel.currentSession.collectAsStateWithLifecycle()
     val hasCompletedOnboarding by viewModel.hasCompletedOnboarding.collectAsStateWithLifecycle()
+    val hasSkippedLogin by viewModel.hasSkippedLogin.collectAsStateWithLifecycle()
+    val hapticsEnabled by viewModel.hapticsEnabled.collectAsStateWithLifecycle()
     val agendaStyle by viewModel.agendaStyle.collectAsStateWithLifecycle()
     val uiScale by viewModel.uiScale.collectAsStateWithLifecycle()
     val appThemeStyle by viewModel.appThemeStyle.collectAsStateWithLifecycle()
@@ -320,24 +324,41 @@ fun AgendaPlusApp(
     CompositionLocalProvider(
         LocalDensity provides scaledDensity,
         LocalMetroAccent provides metroAccent,
-        LocalSubjectCustomizationState provides subjectCustomizationUiState
+        LocalSubjectCustomizationState provides subjectCustomizationUiState,
+        LocalHapticsEnabled provides hapticsEnabled
     ) {
         // 1. First-download onboarding setup wizard (only on initial install or if reopened in settings)
         if (!hasCompletedOnboarding) {
             SetupWizardScreen(
                 initialStyle = agendaStyle,
                 initialScale = uiScale,
-                onComplete = { style, scale ->
-                    viewModel.completeOnboarding(style, scale)
+                initialThemeStyle = appThemeStyle,
+                initialDarkModePref = darkModePreference,
+                initialDndEnabled = lessonDndConfig.enabled,
+                initialCalendarBridgeEnabled = calendarBridgeConfig.enabled,
+                onPreviewTheme = { style, darkPref ->
+                    viewModel.setAppThemeStyle(style)
+                    viewModel.setDarkModePreference(darkPref)
+                },
+                onComplete = { style, scale, themeStyle, darkPref, dndEnabled, calendarEnabled ->
+                    viewModel.completeOnboarding(
+                        style = style,
+                        scale = scale,
+                        themeStyle = themeStyle,
+                        darkModePref = darkPref,
+                        dndEnabled = dndEnabled,
+                        calendarBridgeEnabled = calendarEnabled
+                    )
                 }
             )
-        } else if (!session.isAuthenticated) {
-            // 2. Login landing screen (skipped automatically once authenticated!)
+        } else if (!session.isAuthenticated && !hasSkippedLogin) {
+            // 2. Login landing screen (skipped automatically once authenticated or if user chooses guest mode)
             WelcomeScreen(
                 onSelectProvider = { provider ->
                     viewModel.selectProviderAndOpenLogin(provider)
                 },
-                onOpenRawConsole = { viewModel.openRawConsole() }
+                onOpenRawConsole = { viewModel.openRawConsole() },
+                onSkipLogin = { viewModel.skipMagisterLogin() }
             )
         } else {
             // 3. Main Authenticated School Dashboard
@@ -509,6 +530,18 @@ fun AgendaPlusApp(
                             onToggleCustomScheduleItem = { id, done -> viewModel.toggleCustomScheduleItem(id, done) },
                             onDeleteCustomScheduleItem = { id -> viewModel.deleteCustomScheduleItem(id) },
                             onOpenKwtSlot = { appt -> viewModel.openKwtSlotSheet(appt) },
+                            onOpenTestPrep = { key, subj, title, stof, targetDateIso ->
+                                activeChecklistTargetDateIso = targetDateIso
+                                viewModel.openTestPrepChecklist(key, subj, title, stof)
+                            },
+                            onEditSubject = { code, detectedName ->
+                                viewModel.openSubjectEditor(code, detectedName)
+                            },
+                            onPlanStudyBlockForDate = { dateIso, dow ->
+                                customDialogDateIso = dateIso
+                                customDialogDayOfWeek = dow
+                                viewModel.openCustomScheduleDialog(null)
+                            },
                             onHeaderCollapsedChange = { isHeaderCollapsed = it },
                             studentName = session.studentName,
                             modifier = contentModifier
@@ -553,6 +586,7 @@ fun AgendaPlusApp(
                     AppTab.HUISWERK -> {
                         HuiswerkScreen(
                             tasks = tasks,
+                            isRefreshing = isRefreshing,
                             selectedCategory = taskFilter,
                             testPrepChecklists = testPrepChecklists,
                             studyGuides = studyGuides,
@@ -573,6 +607,7 @@ fun AgendaPlusApp(
                     AppTab.CIJFERS -> {
                         CijfersScreen(
                             summaries = gradeSummaries,
+                            isRefreshing = isRefreshing,
                             gradeUnboxingEnabled = gradeUnboxingEnabled,
                             unboxedGradeIds = unboxedGradeIds,
                             onOpenWhatIf = { viewModel.openWhatIf(it) },
@@ -711,6 +746,11 @@ fun AgendaPlusApp(
                             onSyncCalendarNow = { viewModel.syncCalendarNow() },
                             onExportIcsFile = { scope -> viewModel.exportIcsFile(scope) },
                             onSetLessonDndConfig = { viewModel.setLessonDndConfig(it) },
+                            hapticsEnabled = hapticsEnabled,
+                            onSetHapticsEnabled = { viewModel.setHapticsEnabled(it) },
+                            onLoginRequested = {
+                                viewModel.selectProviderAndOpenLogin(com.example.model.SchoolProvider.MAGISTER)
+                            },
                             onHeaderCollapsedChange = { isHeaderCollapsed = it },
                             modifier = contentModifier
                         )
@@ -790,7 +830,18 @@ fun AgendaPlusApp(
                     topBar = { topBarComposable(Modifier) },
                     bottomBar = { bottomBarComposable(Modifier) }
                 ) { innerPadding ->
-                    renderTabContent(currentTab, Modifier.padding(innerPadding))
+                    AnimatedContent(
+                        targetState = currentTab,
+                        transitionSpec = {
+                            (fadeIn(oneUiTween(220)) + scaleIn(
+                                initialScale = 0.985f,
+                                animationSpec = agendaSpring()
+                            )) togetherWith fadeOut(oneUiTween(160))
+                        },
+                        label = "standard_tab_transition"
+                    ) { activeTab ->
+                        renderTabContent(activeTab, Modifier.padding(innerPadding))
+                    }
                 }
             }
         }

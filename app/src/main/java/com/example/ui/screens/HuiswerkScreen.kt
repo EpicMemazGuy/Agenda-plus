@@ -1,10 +1,12 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,10 +34,12 @@ import java.util.Date
 import java.util.Locale
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.AppThemedHeader
+import com.example.ui.components.HomeworkLoadingSkeleton
 import com.example.ui.components.LocalOneUiScreenInsets
 import com.example.ui.components.LocalSubjectCustomizationState
 import com.example.ui.components.OneUiExpandingHeader
 import com.example.ui.components.OneUiPillBadge
+import com.example.ui.components.agendaSpring
 import com.example.ui.components.appButtonShape
 import com.example.ui.components.appCardShape
 import com.example.ui.components.appLiquidGlassContainerColor
@@ -46,13 +50,16 @@ import com.example.ui.components.isNothingOs
 import com.example.ui.components.isOneUi85
 import com.example.ui.components.isWindowsPhone
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.rememberAgendaHaptics
 import com.example.ui.components.rememberSubjectDisplay
+import com.example.ui.components.staggeredEntrance
 import com.example.ui.theme.MetroCrimson
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HuiswerkScreen(
     tasks: List<HomeworkTask>,
+    isRefreshing: Boolean = false,
     selectedCategory: TaskCategory?,
     testPrepChecklists: Map<String, TestPrepChecklist> = emptyMap(),
     studyGuides: List<StudyGuide> = emptyList(),
@@ -66,6 +73,7 @@ fun HuiswerkScreen(
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val haptics = rememberAgendaHaptics()
     val oneUiMode = isOneUi85
     val windowsPhoneMode = isWindowsPhone
     val iosMode = isIosLiquidGlass
@@ -98,16 +106,25 @@ fun HuiswerkScreen(
 
     val completedCount = tasks.count { it.isCompleted }
     val totalCount = tasks.size
-    val progressFraction = if (totalCount > 0) completedCount.toFloat() / totalCount.toFloat() else 0f
+    val rawProgressFraction = if (totalCount > 0) completedCount.toFloat() / totalCount.toFloat() else 0f
+    val progressFraction by animateFloatAsState(
+        targetValue = rawProgressFraction,
+        animationSpec = agendaSpring(),
+        label = "homework_progress"
+    )
 
     val oneUiInsets = LocalOneUiScreenInsets.current
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = if (usesFrostedInset) Color.Transparent else MaterialTheme.colorScheme.background,
         modifier = modifier.testTag("huiswerk_screen"),
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = onAddTaskClick,
+                onClick = {
+                    haptics.tick()
+                    onAddTaskClick()
+                },
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
                 text = { Text("Taak toevoegen") },
                 containerColor = MaterialTheme.colorScheme.primary,
@@ -147,7 +164,7 @@ fun HuiswerkScreen(
             }
 
             // Header & Progress Card
-            item {
+            item(key = "homework_progress_card") {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -202,28 +219,73 @@ fun HuiswerkScreen(
                 }
             }
 
+            if (totalCount > 0 && completedCount == totalCount) {
+                item(key = "homework_all_completed_card") {
+                    Surface(
+                        shape = appCardShape(standard = 20.dp, nothing = 22.dp),
+                        color = appLiquidGlassContainerColor(MaterialTheme.colorScheme.primaryContainer),
+                        border = nothingCardBorder(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("homework_all_completed_card")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.EmojiEvents,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Alles afgerond — lekker bezig!",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    text = "Alle $totalCount taken zijn afgevinkt. Tijd om te ontspannen of vooruit te werken.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // Category Filter Chips Row
-            item {
+            item(key = "category_filter_row") {
                 LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("category_filter_row"),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    item {
+                    item(key = "filter_chip_all") {
                         FilterChip(
                             selected = selectedCategory == null,
-                            onClick = { onSelectCategory(null) },
+                            onClick = {
+                                haptics.tick()
+                                onSelectCategory(null)
+                            },
                             label = { Text("Alles ($totalCount)") },
                             modifier = Modifier.testTag("filter_chip_all")
                         )
                     }
 
-                    items(TaskCategory.values()) { category ->
+                    items(TaskCategory.values(), key = { it.name }) { category ->
                         val count = tasks.count { it.category == category }
                         FilterChip(
                             selected = selectedCategory == category,
-                            onClick = { onSelectCategory(category) },
+                            onClick = {
+                                haptics.tick()
+                                onSelectCategory(category)
+                            },
                             label = { Text("${category.labelDutch} ($count)") },
                             modifier = Modifier.testTag("filter_chip_${category.name}")
                         )
@@ -232,8 +294,12 @@ fun HuiswerkScreen(
             }
 
             // Task List
-            if (filteredTasks.isEmpty()) {
-                item {
+            if (isRefreshing && filteredTasks.isEmpty()) {
+                item(key = "homework_loading_skeleton") {
+                    HomeworkLoadingSkeleton()
+                }
+            } else if (filteredTasks.isEmpty()) {
+                item(key = "empty_homework_state") {
                     Surface(
                         shape = appCardShape(standard = 20.dp, nothing = 20.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -262,7 +328,7 @@ fun HuiswerkScreen(
                     }
                 }
             } else {
-                items(filteredTasks, key = { it.id }) { task ->
+                itemsIndexed(filteredTasks, key = { _, it -> it.id }) { idx, task ->
                     val isTest = task.isTest
                     val checklistKey = "task_${task.id}"
                     val checklist = testPrepChecklists[checklistKey]
@@ -283,13 +349,23 @@ fun HuiswerkScreen(
                         isTest = isTest,
                         checklistProgressText = checklist?.let { "${it.completedCount}/${it.topics.size} klaar" },
                         hasResourceLink = matchedResourceUrl != null,
-                        onToggle = { onToggleTask(task.id) },
-                        onStartFocus = { onStartFocusSession(task) },
+                        onToggle = {
+                            haptics.confirm()
+                            onToggleTask(task.id)
+                        },
+                        onStartFocus = {
+                            haptics.tick()
+                            onStartFocusSession(task)
+                        },
                         onOpenResource = matchedResourceUrl?.let { url ->
-                            { onOpenResourceUrl("${task.subject.capitalizeSubjectName()} • Bron", url) }
+                            {
+                                haptics.tick()
+                                onOpenResourceUrl("${task.subject.capitalizeSubjectName()} • Bron", url)
+                            }
                         },
                         onOpenStudyMode = if (isTest || task.isPresentation) {
                             {
+                                haptics.tick()
                                 val combinedStof = listOf(task.title, task.description)
                                     .filter { it.isNotBlank() }
                                     .joinToString("\n")
@@ -301,7 +377,8 @@ fun HuiswerkScreen(
                                     task.dueDay
                                 )
                             }
-                        } else null
+                        } else null,
+                        modifier = Modifier.staggeredEntrance(idx)
                     )
                 }
             }

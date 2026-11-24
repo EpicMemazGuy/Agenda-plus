@@ -72,6 +72,7 @@ fun AppBottomNavigationBar(
     val axolaMode = isAxolaCustom
     val axolaTheme = LocalAxolaCustomTheme.current
     val isDark = LocalDarkThemeActive.current
+    val haptics = rememberAgendaHaptics()
 
     val navItems = remember {
         listOf(
@@ -188,7 +189,10 @@ fun AppBottomNavigationBar(
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = ripple(bounded = true)
-                                ) { onTabSelected(item.tab) }
+                                ) {
+                                    haptics.tick()
+                                    onTabSelected(item.tab)
+                                }
                                 .padding(vertical = 7.dp, horizontal = 2.dp)
                                 .testTag(item.testTag)
                         ) {
@@ -254,7 +258,10 @@ fun AppBottomNavigationBar(
                         modifier = Modifier
                             .weight(1f)
                             .height(60.dp)
-                            .clickable { onTabSelected(item.tab) }
+                            .clickable {
+                                haptics.tick()
+                                onTabSelected(item.tab)
+                            }
                             .testTag(item.testTag)
                     ) {
                         Box(
@@ -315,7 +322,10 @@ fun AppBottomNavigationBar(
                     }
                     NavigationBarItem(
                         selected = isSelected,
-                        onClick = { onTabSelected(item.tab) },
+                        onClick = {
+                            haptics.tick()
+                            onTabSelected(item.tab)
+                        },
                         icon = {
                             Icon(
                                 imageVector = if (isSelected) item.selectedIcon else item.unselectedIcon,

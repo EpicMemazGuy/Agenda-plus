@@ -2,7 +2,7 @@ package com.example.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -25,6 +25,8 @@ import com.example.ui.components.appSheetContainerColor
 import com.example.ui.components.appSheetShape
 import com.example.ui.components.isOneUi85
 import com.example.ui.components.nothingCardBorder
+import com.example.ui.components.rememberAgendaHaptics
+import com.example.ui.components.staggeredEntrance
 import kotlinx.coroutines.launch
 
 @Composable
@@ -35,6 +37,7 @@ fun KwtView(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
+    val haptics = rememberAgendaHaptics()
     var activeEnrollmentId by remember { mutableStateOf<Long?>(null) }
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
 
@@ -106,12 +109,14 @@ fun KwtView(
                 }
             }
         } else {
-            items(kwtSlots, key = { it.appointmentId }) { slot ->
+            itemsIndexed(kwtSlots, key = { _, it -> it.appointmentId }) { idx, slot ->
                 KwtSlotCard(
                     slot = slot,
                     isOffline = isOffline,
                     activeEnrollmentId = activeEnrollmentId,
+                    modifier = Modifier.staggeredEntrance(idx),
                     onSelectOption = { opt ->
+                        haptics.confirm()
                         scope.launch {
                             activeEnrollmentId = opt.id
                             val res = onEnrollOption(slot.appointmentId, opt.id)
@@ -134,7 +139,8 @@ private fun KwtSlotCard(
     slot: KwtSlot,
     isOffline: Boolean,
     activeEnrollmentId: Long?,
-    onSelectOption: (KwtOption) -> Unit
+    onSelectOption: (KwtOption) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Card(
         shape = appCardShape(standard = 20.dp, nothing = 24.dp),
@@ -142,7 +148,7 @@ private fun KwtSlotCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .testTag("kwt_slot_card_${slot.appointmentId}")
     ) {

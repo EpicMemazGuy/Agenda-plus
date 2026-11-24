@@ -263,10 +263,7 @@ fun HuiswerkScreen(
                 }
             } else {
                 items(filteredTasks, key = { it.id }) { task ->
-                    val isTest = task.category == TaskCategory.EXAM ||
-                        task.category == TaskCategory.MAJOR_TEST ||
-                        isTestKeywordMatch(task.title) ||
-                        isTestKeywordMatch(task.description)
+                    val isTest = task.isTest
                     val checklistKey = "task_${task.id}"
                     val checklist = testPrepChecklists[checklistKey]
                     val normalizedSubj = task.subject.trim().lowercase(Locale.getDefault())
@@ -291,7 +288,7 @@ fun HuiswerkScreen(
                         onOpenResource = matchedResourceUrl?.let { url ->
                             { onOpenResourceUrl("${task.subject.capitalizeSubjectName()} • Bron", url) }
                         },
-                        onOpenStudyMode = if (isTest) {
+                        onOpenStudyMode = if (isTest || task.isPresentation) {
                             {
                                 val combinedStof = listOf(task.title, task.description)
                                     .filter { it.isNotBlank() }

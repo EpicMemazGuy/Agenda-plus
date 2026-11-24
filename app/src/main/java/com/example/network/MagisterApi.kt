@@ -884,7 +884,7 @@ class MagisterClient {
 
                     val appointmentType = item.optInt("Type", item.optInt("type", 0))
                     val infoType = item.optInt("InfoType", item.optInt("infoType", 0))
-                    val isKwt = appointmentType == 1 || infoType == 3 ||
+                    val isKwt = appointmentType == 1 ||
                         rawTitle.contains("KWT", ignoreCase = true) ||
                         rawTitle.contains("keuzeles", ignoreCase = true) ||
                         rawTitle.contains("keuzewerktijd", ignoreCase = true)
@@ -1132,17 +1132,25 @@ class MagisterClient {
         val tasks = mutableListOf<HomeworkTask>()
 
         // 1. Convert appointments that contain valid non-null homework or tests into tasks
-        appointments.filter { !it.homework.cleanSchoolText().isNullOrBlank() || it.isTestOrExam }.forEachIndexed { idx, appt ->
+        appointments.filter { !it.homework.cleanSchoolText().isNullOrBlank() || it.isTestOrExam || it.isPresentation }.forEachIndexed { idx, appt ->
             val hwTitle = appt.homework.cleanSchoolText() ?: appt.title.cleanSchoolText() ?: return@forEachIndexed
             val teacherLabel = appt.teacherName.cleanSchoolText()?.let { "Opgegeven door $it" } ?: "Uit lesrooster"
-            val isMajor = appt.infoType in listOf(2, 3) ||
-                hwTitle.contains("proefwerk", ignoreCase = true) ||
-                Regex("""\bpw\b""", RegexOption.IGNORE_CASE).containsMatchIn(hwTitle) ||
-                hwTitle.contains("tentamen", ignoreCase = true) ||
-                hwTitle.contains("examen", ignoreCase = true)
+
+            // Official Magister test system & Presentation checker:
+            // - Presentation: detected via keyword checker ("spreekbeurt", "presentatie")
+            // - InfoType 2 (PW), 3 (Toets/Tentamen): official Magister tests -> MAJOR_TEST
+            // - InfoType 4 (SO), 5 (MO), or AppointmentType 7 (Toets): official Magister test -> EXAM
+            // - InfoType 1 (Huiswerk): ALWAYS HOMEWORK (never a test, even if notes say "Oefenen SO")
+            // - If InfoType == 0: check if appointment title explicitly designates a test/PO on the rooster
             val category = when {
-                isMajor -> TaskCategory.MAJOR_TEST
-                appt.isTestOrExam -> TaskCategory.EXAM
+                appt.isPresentation -> TaskCategory.PRESENTATION
+                appt.infoType in listOf(2, 3) -> TaskCategory.MAJOR_TEST
+                appt.infoType in listOf(4, 5) -> TaskCategory.EXAM
+                appt.appointmentType == 7 -> TaskCategory.EXAM
+                appt.infoType == 1 -> TaskCategory.HOMEWORK
+                isPoMatch(appt.title) -> TaskCategory.PRACTICAL_ASSIGNMENT
+                isMajorTestTitle(appt.title) -> TaskCategory.MAJOR_TEST
+                isExamTitle(appt.title) -> TaskCategory.EXAM
                 else -> TaskCategory.HOMEWORK
             }
             tasks.add(
@@ -1178,8 +1186,10 @@ class MagisterClient {
                     val desc = item.optCleanString("Omschrijving", "omschrijving") ?: ""
                     val deadline = item.optCleanString("InleverenVoor", "inleverenVoor")?.take(16) ?: "Binnenkort"
                     val cat = when {
-                        title.contains("proefwerk", ignoreCase = true) || desc.contains("proefwerk", ignoreCase = true) -> TaskCategory.MAJOR_TEST
-                        isTestKeywordMatch(title) || isTestKeywordMatch(desc) -> TaskCategory.EXAM
+                        isPresentationKeywordMatch(title) || isPresentationKeywordMatch(desc) -> TaskCategory.PRESENTATION
+                        isPoMatch(title) || isPoMatch(desc) -> TaskCategory.PRACTICAL_ASSIGNMENT
+                        isMajorTestTitle(title) -> TaskCategory.MAJOR_TEST
+                        isExamTitle(title) -> TaskCategory.EXAM
                         else -> TaskCategory.HOMEWORK
                     }
 

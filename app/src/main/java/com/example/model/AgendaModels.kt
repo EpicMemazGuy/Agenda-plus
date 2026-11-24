@@ -22,7 +22,8 @@ enum class TaskCategory(val labelDutch: String) {
     HOMEWORK("Huiswerk"),
     EXAM("Toets"),
     MAJOR_TEST("Grote Toets"),
-    PRESENTATION("Presentatie")
+    PRESENTATION("Presentatie"),
+    PRACTICAL_ASSIGNMENT("PO")
 }
 
 enum class TaskPriority {
@@ -205,10 +206,39 @@ data class Appointment(
     val appointmentType: Int = 0,
     val infoType: Int = 0
 ) {
+    /**
+     * Official Magister test detection (PW, SO, Toets, MO, PO).
+     * Official Magister InfoType values:
+     *   0 = Geen / standaard
+     *   1 = Huiswerk (NEVER a test, even if homework text says "Oefenen SO"!)
+     *   2 = Proefwerk (PW)
+     *   3 = Toets / Tentamen
+     *   4 = Schriftelijke Overhoring (SO)
+     *   5 = Mondelinge Overhoring (MO)
+     * Magister AppointmentType:
+     *   7 = Toets
+     * If infoType == 0, we check if the rooster appointment title designates
+     * a test (e.g. "PW Wiskunde", "SO Frans", "PO Geschiedenis").
+     * CRITICAL: Homework text is NEVER used to mark an appointment as a test.
+     */
+    val isOfficialMagisterTest: Boolean
+        get() = infoType in 2..5 || appointmentType == 7
+
     val isTestOrExam: Boolean
-        get() = infoType in 2..5 ||
-            isTestKeywordMatch(title) ||
-            isTestKeywordMatch(homework)
+        get() {
+            if (isOfficialMagisterTest) return true
+            if (infoType == 1 && appointmentType != 7) {
+                // Magister explicitly marked this appointment as Huiswerk
+                return false
+            }
+            return isOfficialTestTitle(title)
+        }
+
+    val isPresentation: Boolean
+        get() = isPresentationKeywordMatch(title) || isPresentationKeywordMatch(homework)
+
+    val isPracticalAssignment: Boolean
+        get() = isPoMatch(title)
 }
 
 data class Disruption(
@@ -230,7 +260,15 @@ data class HomeworkTask(
     val category: TaskCategory,
     val isCompleted: Boolean = false,
     val priority: TaskPriority = TaskPriority.MEDIUM
-)
+) {
+    val isTest: Boolean
+        get() = category == TaskCategory.EXAM ||
+            category == TaskCategory.MAJOR_TEST ||
+            category == TaskCategory.PRACTICAL_ASSIGNMENT
+
+    val isPresentation: Boolean
+        get() = category == TaskCategory.PRESENTATION
+}
 
 enum class GradeScopeFilter(val labelDutch: String) {
     ALL("Alle"),
@@ -456,14 +494,65 @@ fun String?.capitalizeSubjectName(): String {
     }
 }
 
-private val TEST_KEYWORD_REGEX = Regex(
-    """\b(toets|proefwerk|pw|so|mo|tentamen|repetitie|examen|luistertoets|spreekbeurt|schriftelijke overhoring|mondelinge overhoring)\b""",
+private val PRESENTATION_KEYWORD_REGEX = Regex(
+    """\b(spreekbeurt|presentatie|presenteren|mondelinge presentatie)\b""",
     RegexOption.IGNORE_CASE
 )
 
+fun isPresentationKeywordMatch(text: String?): Boolean {
+    val clean = text.cleanSchoolText() ?: return false
+    return PRESENTATION_KEYWORD_REGEX.containsMatchIn(clean)
+}
+
+private val PO_KEYWORD_REGEX = Regex(
+    """\b(po|praktische opdracht|inleveropdracht)\b""",
+    RegexOption.IGNORE_CASE
+)
+
+fun isPoMatch(text: String?): Boolean {
+    val clean = text.cleanSchoolText() ?: return false
+    return PO_KEYWORD_REGEX.containsMatchIn(clean)
+}
+
+private val OFFICIAL_TEST_TITLE_REGEX = Regex(
+    """\b(pw|proefwerk|so|schriftelijke overhoring|toets|tentamen|examen|repetitie|mo|mondelinge overhoring|po|praktische opdracht)\b""",
+    RegexOption.IGNORE_CASE
+)
+
+fun isOfficialTestTitle(title: String?): Boolean {
+    val clean = title.cleanSchoolText() ?: return false
+    return OFFICIAL_TEST_TITLE_REGEX.containsMatchIn(clean)
+}
+
+private val MAJOR_TEST_TITLE_REGEX = Regex(
+    """\b(pw|proefwerk|tentamen|examen|repetitie)\b""",
+    RegexOption.IGNORE_CASE
+)
+
+fun isMajorTestTitle(title: String?): Boolean {
+    val clean = title.cleanSchoolText() ?: return false
+    return MAJOR_TEST_TITLE_REGEX.containsMatchIn(clean)
+}
+
+private val EXAM_TITLE_REGEX = Regex(
+    """\b(so|schriftelijke overhoring|toets|mo|mondelinge overhoring|luistertoets)\b""",
+    RegexOption.IGNORE_CASE
+)
+
+fun isExamTitle(title: String?): Boolean {
+    val clean = title.cleanSchoolText() ?: return false
+    return EXAM_TITLE_REGEX.containsMatchIn(clean)
+}
+
+/**
+ * Backward-compatibility helper: ONLY checks if a text qualifies as an official test title,
+ * or if it contains a presentation keyword.
+ * NOTE: NEVER call this on homework body text to detect a test, as teacher notes like "Oefenen SO"
+ * are regular homework exercises, not tests!
+ */
 fun isTestKeywordMatch(text: String?): Boolean {
     val clean = text.cleanSchoolText() ?: return false
-    return TEST_KEYWORD_REGEX.containsMatchIn(clean)
+    return isOfficialTestTitle(clean)
 }
 
 enum class AxolaBackgroundStyle(

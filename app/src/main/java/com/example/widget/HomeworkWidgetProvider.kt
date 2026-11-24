@@ -149,7 +149,7 @@ class HomeworkWidgetProvider : AppWidgetProvider() {
                 .filter { !it.isCompleted }
                 .sortedWith(
                     compareByDescending<com.example.model.HomeworkTask> {
-                        it.category == TaskCategory.MAJOR_TEST || it.category == TaskCategory.EXAM
+                        it.isTest || it.isPresentation
                     }.thenBy { it.dueDate }
                 )
 
@@ -198,9 +198,15 @@ class HomeworkWidgetProvider : AppWidgetProvider() {
                             state = customState
                         )
                         val subj = resolved.displayName
-                        val isExam = task.category == TaskCategory.EXAM || task.category == TaskCategory.MAJOR_TEST
+                        val badgeText = when {
+                            task.category == TaskCategory.PRESENTATION -> "PRESENTATIE • $subj"
+                            task.category == TaskCategory.PRACTICAL_ASSIGNMENT -> "PO • $subj"
+                            task.isTest -> "TOETS • $subj"
+                            else -> subj.take(12)
+                        }
+                        val isExam = task.isTest
                         views.setTextViewText(titleId, title)
-                        views.setTextViewText(metaId, if (isExam) "TOETS • $subj" else subj.take(12))
+                        views.setTextViewText(metaId, badgeText)
 
                         val toggleIntent = Intent(context, HomeworkWidgetProvider::class.java).apply {
                             action = ACTION_TOGGLE_TASK

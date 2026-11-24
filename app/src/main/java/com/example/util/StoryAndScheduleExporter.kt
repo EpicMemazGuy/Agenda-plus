@@ -1394,7 +1394,7 @@ object StoryAndScheduleExporter {
         tasks
             .filter {
                 !it.isCompleted &&
-                    (it.category == TaskCategory.EXAM || it.category == TaskCategory.MAJOR_TEST) &&
+                    (it.isTest || it.isPresentation) &&
                     it.dueDate >= referenceDateIso
             }
             .sortedBy { it.dueDate }

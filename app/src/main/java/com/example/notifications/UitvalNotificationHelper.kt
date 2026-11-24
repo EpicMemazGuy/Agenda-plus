@@ -271,12 +271,9 @@ object UitvalNotificationHelper {
 
         tasks
             .filter { task ->
-                !task.isCompleted && (
-                    task.category == TaskCategory.EXAM ||
-                        task.category == TaskCategory.MAJOR_TEST ||
-                        isTestKeywordMatch(task.title) ||
-                        isTestKeywordMatch(task.description)
-                    ) && (task.dueDay.length != 10 || task.dueDay >= todayIso)
+                !task.isCompleted &&
+                    (task.isTest || task.isPresentation) &&
+                    (task.dueDay.length != 10 || task.dueDay >= todayIso)
             }
             .forEach { task ->
                 val key = "task_${task.id}_${task.dueDay}"

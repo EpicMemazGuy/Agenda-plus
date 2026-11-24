@@ -63,6 +63,8 @@ import com.example.model.TaskCategory
 import com.example.model.TestPrepChecklist
 import com.example.model.capitalizeSubjectName
 import com.example.model.cleanSchoolText
+import com.example.model.isPresentationKeywordMatch
+import com.example.model.isPoMatch
 import com.example.model.isTestKeywordMatch
 import com.example.ui.components.AppThemedHeader
 import com.example.ui.components.CustomScheduleItemCard
@@ -1980,7 +1982,7 @@ internal fun buildUpcomingTestsList(
             val desc = appt.homework.cleanSchoolText() ?: appt.title.cleanSchoolText() ?: ""
             val sig = "${subject.lowercase()}_${appt.dateIso}_${desc.take(24).lowercase()}"
             if (seenSignature.add(sig)) {
-                val badge = resolveTestTypeBadge(appt.infoType, "${appt.title} $desc")
+                val badge = resolveTestTypeBadge(appt.infoType, appt.title)
                 val dateDisp = formatTestDateDisplay(appt.dateIso, isoFmt, displayFmt)
                 val (countdown, daysRem) = computeTestCountdown(appt.dateIso, todayIso, isoFmt)
                 val roomText = appt.classroom.cleanSchoolText()?.let { " • Lok. $it" } ?: ""
@@ -2005,10 +2007,7 @@ internal fun buildUpcomingTestsList(
             if (task.isCompleted) return@filter false
             val isApptBacked = task.id.startsWith("hw_") && fromApptIds.any { task.id.startsWith("hw_${it}_") }
             if (isApptBacked) return@filter false
-            val isTest = task.category == TaskCategory.EXAM ||
-                task.category == TaskCategory.MAJOR_TEST ||
-                isTestKeywordMatch(task.title) ||
-                isTestKeywordMatch(task.description)
+            val isTest = task.isTest || task.isPresentation
             val isNotPast = task.dueDay.length != 10 || task.dueDay >= todayIso
             isTest && isNotPast
         }
@@ -2025,7 +2024,12 @@ internal fun buildUpcomingTestsList(
             }
             val sig = "${subject.lowercase()}_${iso}_${task.title.take(24).lowercase()}"
             if (seenSignature.add(sig)) {
-                val badge = resolveTestTypeBadge(0, "${task.title} ${task.description}")
+                val badge = when {
+                    task.category == TaskCategory.PRESENTATION -> "Presentatie"
+                    task.category == TaskCategory.PRACTICAL_ASSIGNMENT -> "PO"
+                    task.category == TaskCategory.MAJOR_TEST -> "PW"
+                    else -> resolveTestTypeBadge(0, task.title)
+                }
                 val dateDisp = if (iso.isNotBlank()) formatTestDateDisplay(iso, isoFmt, displayFmt) else task.dueDay
                 val (countdown, daysRem) = computeTestCountdown(iso, todayIso, isoFmt)
                 entries.add(
@@ -2047,13 +2051,19 @@ internal fun buildUpcomingTestsList(
     return entries.sortedBy { it.dateIso }
 }
 
-private fun resolveTestTypeBadge(infoType: Int, text: String): String {
-    val lower = text.lowercase()
+private fun resolveTestTypeBadge(infoType: Int, title: String): String {
+    val lower = title.lowercase()
     return when {
-        infoType == 2 || Regex("""\b(pw|proefwerk)\b""").containsMatchIn(lower) -> "PW"
-        infoType == 4 || Regex("""\b(so|schriftelijke overhoring)\b""").containsMatchIn(lower) -> "SO"
-        infoType == 5 || Regex("""\b(mo|mondeling|spreekbeurt)\b""").containsMatchIn(lower) -> "MO"
-        infoType == 3 || lower.contains("tentamen") || lower.contains("examen") -> "Tentamen"
+        infoType == 2 -> "PW"
+        infoType == 4 -> "SO"
+        infoType == 5 -> "MO"
+        infoType == 3 -> if (lower.contains("tentamen") || lower.contains("examen")) "Tentamen" else "Toets"
+        isPresentationKeywordMatch(title) -> "Presentatie"
+        isPoMatch(title) -> "PO"
+        Regex("""\b(pw|proefwerk)\b""").containsMatchIn(lower) -> "PW"
+        Regex("""\b(so|schriftelijke overhoring)\b""").containsMatchIn(lower) -> "SO"
+        Regex("""\b(mo|mondelinge overhoring)\b""").containsMatchIn(lower) -> "MO"
+        lower.contains("tentamen") || lower.contains("examen") -> "Tentamen"
         else -> "Toets"
     }
 }

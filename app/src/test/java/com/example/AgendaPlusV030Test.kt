@@ -485,4 +485,147 @@ class AgendaPlusV030Test {
         assertEquals(LessonDndMode.VIBRATE, store.getLessonDndConfig().mode)
         assertEquals("#E51400", store.getAxolaCustomTheme().primaryAccentHex)
     }
+
+    // =========================================================================
+    // 6. Magister Official Test System (PW/SO/Toets/PO) & Presentation Checker Tests
+    // =========================================================================
+
+    @Test
+    fun test_magister_official_test_system_and_presentation_checker() {
+        // 1. Regular homework with "Oefenen SO" in homework notes MUST NOT be classified as a test
+        val hwWithSoNotes = Appointment(
+            id = 101L,
+            title = "Wiskunde",
+            subjectCode = "wi",
+            subjectName = "Wiskunde",
+            teacherName = "Bakker",
+            teacherInitials = "BAK",
+            classroom = "102",
+            periodIndex = 1,
+            startTime = "08:30",
+            endTime = "09:20",
+            dayOfWeek = 1,
+            dateIso = "2026-11-25",
+            infoType = 1, // Official Magister InfoType 1 = Huiswerk
+            homework = "Oefenen SO hfst 3 opdrachten 1 t/m 15"
+        )
+        assertFalse("Huiswerk with 'Oefenen SO' in notes must NOT be a test", hwWithSoNotes.isTestOrExam)
+        assertFalse("Huiswerk with 'Oefenen SO' is not a presentation", hwWithSoNotes.isPresentation)
+
+        // 2. Regular homework with "Leren voor toets" in homework notes MUST NOT be a test
+        val hwWithToetsNotes = Appointment(
+            id = 102L,
+            title = "Nederlands",
+            subjectCode = "ne",
+            subjectName = "Nederlands",
+            teacherName = "De Vries",
+            teacherInitials = "DVR",
+            classroom = "104",
+            periodIndex = 2,
+            startTime = "09:20",
+            endTime = "10:10",
+            dayOfWeek = 1,
+            dateIso = "2026-11-25",
+            infoType = 1, // Official Magister InfoType 1 = Huiswerk
+            homework = "Huiswerk: leren voor toets volgende week"
+        )
+        assertFalse("Huiswerk with 'leren voor toets' must NOT be a test", hwWithToetsNotes.isTestOrExam)
+
+        // 3. Official Magister SO (InfoType 4) MUST be classified as a test
+        val officialSo = Appointment(
+            id = 103L,
+            title = "Frans",
+            subjectCode = "fa",
+            subjectName = "Frans",
+            teacherName = "Dubois",
+            teacherInitials = "DUB",
+            classroom = "201",
+            periodIndex = 3,
+            startTime = "10:30",
+            endTime = "11:20",
+            dayOfWeek = 1,
+            dateIso = "2026-11-25",
+            infoType = 4, // Official Magister InfoType 4 = SO
+            homework = "Woordjes Unité 3"
+        )
+        assertTrue("InfoType 4 must be recognized as official Magister test", officialSo.isTestOrExam)
+
+        // 4. Official Magister Proefwerk (InfoType 2) MUST be classified as a test
+        val officialPw = Appointment(
+            id = 104L,
+            title = "Geschiedenis",
+            subjectCode = "gs",
+            subjectName = "Geschiedenis",
+            teacherName = "Jansen",
+            teacherInitials = "JAN",
+            classroom = "205",
+            periodIndex = 4,
+            startTime = "11:20",
+            endTime = "12:10",
+            dayOfWeek = 1,
+            dateIso = "2026-11-25",
+            infoType = 2, // Official Magister InfoType 2 = PW
+            homework = "Hfst 1 t/m 4"
+        )
+        assertTrue("InfoType 2 must be recognized as official Magister test", officialPw.isTestOrExam)
+
+        // 5. Official Magister PO (Praktische Opdracht) on title
+        val officialPo = Appointment(
+            id = 105L,
+            title = "PO Aardrijkskunde Onderzoek",
+            subjectCode = "ak",
+            subjectName = "Aardrijkskunde",
+            teacherName = "Klaassen",
+            teacherInitials = "KLA",
+            classroom = "301",
+            periodIndex = 5,
+            startTime = "12:40",
+            endTime = "13:30",
+            dayOfWeek = 1,
+            dateIso = "2026-11-25",
+            infoType = 0,
+            homework = "Inleveren verslag"
+        )
+        assertTrue("PO in title must be recognized as test/PO", officialPo.isTestOrExam)
+        assertTrue("PO must be recognized as practical assignment", officialPo.isPracticalAssignment)
+
+        // 6. Presentation checker: spreekbeurt / presentatie in homework MUST be recognized as Presentation
+        val spreekbeurtAppt = Appointment(
+            id = 106L,
+            title = "Engels",
+            subjectCode = "en",
+            subjectName = "Engels",
+            teacherName = "Smith",
+            teacherInitials = "SMI",
+            classroom = "108",
+            periodIndex = 6,
+            startTime = "13:30",
+            endTime = "14:20",
+            dayOfWeek = 1,
+            dateIso = "2026-11-25",
+            infoType = 1,
+            homework = "Spreekbeurt voorbereiden over Londen (5 minuten)"
+        )
+        assertTrue("Presentation checker must detect 'spreekbeurt'", spreekbeurtAppt.isPresentation)
+
+        // 7. Test Upcoming Tests list behavior:
+        // hwWithSoNotes and hwWithToetsNotes MUST NOT appear in the upcoming tests list!
+        val allAppts = listOf(hwWithSoNotes, hwWithToetsNotes, officialSo, officialPw, officialPo)
+        val upcoming = com.example.ui.screens.buildUpcomingTestsList(
+            appointments = allAppts,
+            tasks = emptyList(),
+            todayIsoOverride = "2026-11-25"
+        )
+
+        // Only official SO, PW, and PO should be in upcoming tests (size = 3)
+        assertEquals(3, upcoming.size)
+        val subjectsInUpcoming = upcoming.map { it.subject }
+        assertFalse("Wiskunde with 'Oefenen SO' must NOT be in upcoming tests", subjectsInUpcoming.contains("Wiskunde"))
+        assertFalse("Nederlands with 'leren voor toets' must NOT be in upcoming tests", subjectsInUpcoming.contains("Nederlands"))
+
+        val badges = upcoming.associate { it.subject to it.typeBadge }
+        assertEquals("SO", badges["Frans"])
+        assertEquals("PW", badges["Geschiedenis"])
+        assertEquals("PO", badges["PO Aardrijkskunde Onderzoek"])
+    }
 }

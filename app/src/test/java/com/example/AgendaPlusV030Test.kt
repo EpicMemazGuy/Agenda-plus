@@ -609,9 +609,30 @@ class AgendaPlusV030Test {
         )
         assertTrue("Presentation checker must detect 'spreekbeurt'", spreekbeurtAppt.isPresentation)
 
-        // 7. Test Upcoming Tests list behavior:
-        // hwWithSoNotes and hwWithToetsNotes MUST NOT appear in the upcoming tests list!
-        val allAppts = listOf(hwWithSoNotes, hwWithToetsNotes, officialSo, officialPw, officialPo)
+        // 7. Magister Type 7 = KWT (Keuzeles / Keuzewerktijd) MUST be KWT and MUST NOT be classified as a test!
+        val kwtLesson = Appointment(
+            id = 107L,
+            title = "Nederlands",
+            subjectCode = "ne",
+            subjectName = "Nederlands",
+            teacherName = "M.J. van de Laar",
+            teacherInitials = "M.J",
+            classroom = "G044",
+            periodIndex = 2,
+            startTime = "08:45",
+            endTime = "10:00",
+            dayOfWeek = 3,
+            dateIso = "2026-11-25",
+            appointmentType = 7, // Magister Type 7 = KWT
+            infoType = 0,
+            isKwt = false
+        )
+        assertTrue("AppointmentType 7 must be recognized as KWT", kwtLesson.isKwtAppointment)
+        assertFalse("KWT (AppointmentType 7) must NEVER be marked as a test", kwtLesson.isTestOrExam)
+
+        // 8. Test Upcoming Tests list behavior:
+        // hwWithSoNotes, hwWithToetsNotes, and kwtLesson MUST NOT appear in the upcoming tests list!
+        val allAppts = listOf(hwWithSoNotes, hwWithToetsNotes, officialSo, officialPw, officialPo, kwtLesson)
         val upcoming = com.example.ui.screens.buildUpcomingTestsList(
             appointments = allAppts,
             tasks = emptyList(),
@@ -622,7 +643,7 @@ class AgendaPlusV030Test {
         assertEquals(3, upcoming.size)
         val subjectsInUpcoming = upcoming.map { it.subject }
         assertFalse("Wiskunde with 'Oefenen SO' must NOT be in upcoming tests", subjectsInUpcoming.contains("Wiskunde"))
-        assertFalse("Nederlands with 'leren voor toets' must NOT be in upcoming tests", subjectsInUpcoming.contains("Nederlands"))
+        assertFalse("Nederlands KWT or 'leren voor toets' must NOT be in upcoming tests", subjectsInUpcoming.contains("Nederlands"))
 
         val badges = upcoming.associate { it.subject to it.typeBadge }
         assertEquals("SO", badges["Frans"])

@@ -691,7 +691,7 @@ fun RoosterScreen(
                                 ) {
                                     Column(modifier = Modifier.fillMaxWidth()) {
                                         pageAppts.forEachIndexed { idx, appt ->
-                                            val isKwtItem = appt.isKwt || kwtSlots.any { it.appointmentId == appt.id }
+                                            val isKwtItem = appt.isKwtAppointment || kwtSlots.any { it.appointmentId == appt.id }
                                             CompactRoosterRow(
                                                 appointment = appt,
                                                 isKwtSelectable = isKwtItem,
@@ -735,7 +735,7 @@ fun RoosterScreen(
                             when (entry) {
                                 is RoosterDayEntry.Lesson -> {
                                     val appt = entry.appointment
-                                    val isKwtItem = appt.isKwt || kwtSlots.any { it.appointmentId == appt.id }
+                                    val isKwtItem = appt.isKwtAppointment || kwtSlots.any { it.appointmentId == appt.id }
                                     RoosterPeriodCard(
                                         appointment = appt,
                                         isKwtSelectable = isKwtItem,
@@ -917,7 +917,7 @@ fun RoosterScreen(
                             ) {
                                 Column(modifier = Modifier.fillMaxWidth()) {
                                     dayAppointments.forEachIndexed { idx, appt ->
-                                        val isKwtItem = appt.isKwt || kwtSlots.any { it.appointmentId == appt.id }
+                                        val isKwtItem = appt.isKwtAppointment || kwtSlots.any { it.appointmentId == appt.id }
                                         CompactRoosterRow(
                                             appointment = appt,
                                             isKwtSelectable = isKwtItem,
@@ -983,7 +983,7 @@ fun RoosterScreen(
                                 when (entry) {
                                     is RoosterDayEntry.Lesson -> {
                                         val appt = entry.appointment
-                                        val isKwtItem = appt.isKwt || kwtSlots.any { it.appointmentId == appt.id }
+                                        val isKwtItem = appt.isKwtAppointment || kwtSlots.any { it.appointmentId == appt.id }
                                         RoosterPeriodCard(
                                             appointment = appt,
                                             isKwtSelectable = isKwtItem,
@@ -1410,7 +1410,7 @@ fun RoosterScreen(
     }
 
     selectedLessonForDetail?.let { detailAppt ->
-        val isKwtItem = detailAppt.isKwt || kwtSlots.any { it.appointmentId == detailAppt.id }
+        val isKwtItem = detailAppt.isKwtAppointment || kwtSlots.any { it.appointmentId == detailAppt.id }
         val subjectTitle = detailAppt.subjectName.cleanSchoolText() ?: detailAppt.title.cleanSchoolText() ?: "Les"
         LessonDetailSheet(
             appointment = detailAppt,
@@ -1992,6 +1992,20 @@ fun RoosterPeriodCard(
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = badgeFg,
+                                    maxLines = 1,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        } else if (isKwtSelectable) {
+                            Surface(
+                                shape = appButtonShape(),
+                                color = if (onMetroColored) Color.Black.copy(alpha = 0.24f) else MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = "KWT",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (onMetroColored) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
                                     maxLines = 1,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                                 )

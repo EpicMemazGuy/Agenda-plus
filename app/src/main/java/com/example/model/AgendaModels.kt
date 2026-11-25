@@ -215,20 +215,25 @@ data class Appointment(
      *   3 = Toets / Tentamen
      *   4 = Schriftelijke Overhoring (SO)
      *   5 = Mondelinge Overhoring (MO)
-     * Magister AppointmentType:
-     *   7 = Toets
+     * NOTE: Magister Appointment Type 7 is KWT (Keuzewerktijd / Keuzeles), NOT a test!
      * If infoType == 0, we check if the rooster appointment title designates
      * a test (e.g. "PW Wiskunde", "SO Frans", "PO Geschiedenis").
      * CRITICAL: Homework text is NEVER used to mark an appointment as a test.
      */
     val isOfficialMagisterTest: Boolean
-        get() = infoType in 2..5 || appointmentType == 7
+        get() = infoType in 2..5
+
+    val isKwtAppointment: Boolean
+        get() = isKwt || appointmentType == 7 ||
+            title.contains("KWT", ignoreCase = true) ||
+            title.contains("keuzeles", ignoreCase = true) ||
+            title.contains("keuzewerktijd", ignoreCase = true)
 
     val isTestOrExam: Boolean
         get() {
             if (isOfficialMagisterTest) return true
-            if (infoType == 1 && appointmentType != 7) {
-                // Magister explicitly marked this appointment as Huiswerk
+            if (infoType == 1 || isKwtAppointment) {
+                // Magister explicitly marked this appointment as Huiswerk or KWT (Keuzeles)
                 return false
             }
             return isOfficialTestTitle(title)

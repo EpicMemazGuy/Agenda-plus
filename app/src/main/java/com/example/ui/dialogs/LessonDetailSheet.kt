@@ -122,8 +122,8 @@ fun LessonDetailSheet(
                 }
             }
 
-            // Status Banner (Uitval, Gewijzigd, Toets)
-            if (appointment.isCanceled || appointment.isRelocated || appointment.isSubstitution || changedDiff != null || appointment.isTestOrExam) {
+            // Status Banner (Uitval, Gewijzigd, KWT, Toets)
+            if (appointment.isCanceled || appointment.isRelocated || appointment.isSubstitution || changedDiff != null || appointment.isTestOrExam || isKwtSelectable) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -136,6 +136,9 @@ fun LessonDetailSheet(
                         OneUiPillBadge(
                             text = changedDiff ?: if (appointment.isRelocated) "Lokaal gewijzigd" else "Docent gewijzigd"
                         )
+                    }
+                    if (isKwtSelectable && !appointment.isCanceled) {
+                        OneUiPillBadge(text = "KWT / Keuzeles")
                     }
                     if (appointment.isTestOrExam && !appointment.isCanceled) {
                         OneUiPillBadge(

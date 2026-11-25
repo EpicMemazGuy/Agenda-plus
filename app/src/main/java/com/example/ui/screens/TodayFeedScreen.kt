@@ -652,7 +652,7 @@ fun TodayFeedScreen(
                 }
 
                 TodayBlockType.KWT_ALERT -> {
-                    val hasKwt = kwtSlots.isNotEmpty() || appointments.any { it.isKwt }
+                    val hasKwt = kwtSlots.isNotEmpty() || appointments.any { it.isKwtAppointment }
                     if (hasKwt) {
                         item(key = "block_kwt_alert") {
                             val openChoices = kwtSlots.count { slot -> slot.options.none { it.isEnrolled } }
@@ -1075,7 +1075,7 @@ fun TodayFeedScreen(
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             todayClasses.forEachIndexed { idx, appt ->
-                                val isKwtItem = appt.isKwt || kwtSlots.any { it.appointmentId == appt.id }
+                                val isKwtItem = appt.isKwtAppointment || kwtSlots.any { it.appointmentId == appt.id }
                                 CompactRoosterRow(
                                     appointment = appt,
                                     isKwtSelectable = isKwtItem,
@@ -1115,7 +1115,7 @@ fun TodayFeedScreen(
             itemsIndexed(mergedTimeline, key = { _, it -> it.key }) { idx, entry ->
                 when (entry) {
                     is TodayTimelineEntry.Lesson -> {
-                        val isKwtItem = entry.appointment.isKwt || kwtSlots.any { it.appointmentId == entry.appointment.id }
+                        val isKwtItem = entry.appointment.isKwtAppointment || kwtSlots.any { it.appointmentId == entry.appointment.id }
                         TodayClassRow(
                             appointment = entry.appointment,
                             isKwtSelectable = isKwtItem,
@@ -1252,7 +1252,7 @@ fun TodayFeedScreen(
     }
 
     selectedLessonForDetail?.let { detailAppt ->
-        val isKwtItem = detailAppt.isKwt || kwtSlots.any { it.appointmentId == detailAppt.id }
+        val isKwtItem = detailAppt.isKwtAppointment || kwtSlots.any { it.appointmentId == detailAppt.id }
         val subjectTitle = detailAppt.subjectName.cleanSchoolText() ?: detailAppt.title.cleanSchoolText() ?: "Les"
         LessonDetailSheet(
             appointment = detailAppt,
@@ -2313,6 +2313,24 @@ fun TodayClassRow(
                                     text = "GEWIJZIGD",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    } else if (isKwtSelectable) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        if (oneUiMode) {
+                            OneUiPillBadge(text = "KWT")
+                        } else {
+                            Surface(
+                                shape = appButtonShape(),
+                                color = if (onWhiteTile) Color.Black.copy(alpha = 0.22f) else MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = "KWT",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (onWhiteTile) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }

@@ -472,7 +472,7 @@ internal class MagisterExtendedApi(
         val slots = mutableListOf<KwtSlot>()
 
         // 1. Check appointment-linked KWT choices for appointments flagged as KWT
-        val kwtAppointments = appointments.filter { it.isKwt }
+        val kwtAppointments = appointments.filter { it.isKwtAppointment }
         for (appt in kwtAppointments.take(10)) {
             val fetched = fetchKwtSlotForAppointment(tenant, token, personId, appt)
             if (fetched != null) {

@@ -884,7 +884,7 @@ class MagisterClient {
 
                     val appointmentType = item.optInt("Type", item.optInt("type", 0))
                     val infoType = item.optInt("InfoType", item.optInt("infoType", 0))
-                    val isKwt = appointmentType == 1 ||
+                    val isKwt = appointmentType == 7 ||
                         rawTitle.contains("KWT", ignoreCase = true) ||
                         rawTitle.contains("keuzeles", ignoreCase = true) ||
                         rawTitle.contains("keuzewerktijd", ignoreCase = true)
@@ -1139,15 +1139,14 @@ class MagisterClient {
             // Official Magister test system & Presentation checker:
             // - Presentation: detected via keyword checker ("spreekbeurt", "presentatie")
             // - InfoType 2 (PW), 3 (Toets/Tentamen): official Magister tests -> MAJOR_TEST
-            // - InfoType 4 (SO), 5 (MO), or AppointmentType 7 (Toets): official Magister test -> EXAM
-            // - InfoType 1 (Huiswerk): ALWAYS HOMEWORK (never a test, even if notes say "Oefenen SO")
+            // - InfoType 4 (SO), 5 (MO): official Magister test -> EXAM
+            // - InfoType 1 (Huiswerk) or Type 7 (KWT): ALWAYS HOMEWORK (never a test)
             // - If InfoType == 0: check if appointment title explicitly designates a test/PO on the rooster
             val category = when {
                 appt.isPresentation -> TaskCategory.PRESENTATION
                 appt.infoType in listOf(2, 3) -> TaskCategory.MAJOR_TEST
                 appt.infoType in listOf(4, 5) -> TaskCategory.EXAM
-                appt.appointmentType == 7 -> TaskCategory.EXAM
-                appt.infoType == 1 -> TaskCategory.HOMEWORK
+                appt.infoType == 1 || appt.isKwtAppointment -> TaskCategory.HOMEWORK
                 isPoMatch(appt.title) -> TaskCategory.PRACTICAL_ASSIGNMENT
                 isMajorTestTitle(appt.title) -> TaskCategory.MAJOR_TEST
                 isExamTitle(appt.title) -> TaskCategory.EXAM
